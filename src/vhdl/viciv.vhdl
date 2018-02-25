@@ -3451,12 +3451,6 @@ begin
         <= last_ramaccess_screen_row_buffer_address;
       final_screen_row_fetch_address <= last_screen_row_fetch_address;
 
-      -- Screen ram row accesses
-      if this_ramaccess_is_screen_row_fetch='1' then
-        ramaddress <= this_screen_row_fetch_address;
-        report "chipram fetch for screen row data from $" & to_hstring(to_unsigned(to_integer(this_screen_row_fetch_address),16));
-      end if;
-      
       if final_ramaccess_is_screen_row_fetch='1' then
         report "buffering screen ram byte $" & to_hstring(final_ramdata) & " to address $" & to_hstring(to_unsigned(to_integer(final_ramaccess_screen_row_buffer_address),16));
       end if;
@@ -3777,9 +3771,6 @@ begin
               character_data_from_rom <= '0';
             end if;
           end if;
-          -- Ask for first byte of data so that paint can commence immediately.
-          report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
-          ramaddress <= glyph_data_address;
 
           report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
             & " for painting glyph $" & to_hstring(to_unsigned(to_integer(glyph_number),16)) severity note;
@@ -3863,9 +3854,6 @@ begin
             end if;
           end if;
       
-          -- Ask for first byte of data so that paint can commence immediately.
-          report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
-          ramaddress <= glyph_data_address;
           -- upper bit of charrom address is set by $D018, only 258*8 = 2K
           -- range of address is controlled here by character number.
           report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
@@ -3886,10 +3874,6 @@ begin
           glyph_underline <= glyph_underline_drive;
           glyph_bold <= glyph_bold_drive;
           glyph_colour_drive2 <= glyph_colour_drive;
-          if glyph_full_colour = '1' then
-            report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-            ramaddress <= glyph_data_address;
-          end if;
           raster_fetch_state <= PaintMemWait2;
         when PaintMemWait2 =>
           glyph_colour <= glyph_colour_drive2;
@@ -3901,8 +3885,6 @@ begin
             else
               glyph_data_address(2 downto 0) <= glyph_data_address(2 downto 0) - 1;
             end if;
-            report "LEGACY: setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-            ramaddress <= glyph_data_address;
             full_colour_fetch_count <= 0;
             raster_fetch_state <= PaintFullColourFetch;
           else
@@ -3927,8 +3909,6 @@ begin
           if glyph_underline='1' then
             full_colour_data(63 downto 56) <= "11111111";
           end if;
-          report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-          ramaddress <= glyph_data_address;
           if full_colour_fetch_count < 7 then
             full_colour_fetch_count <= full_colour_fetch_count + 1;
             raster_fetch_state <= PaintFullColourFetch;
@@ -4158,7 +4138,6 @@ begin
             end if;
           end if;
         when SpritePointerFetch2 =>
-          ramaddress <= sprite_pointer_address;
           raster_fetch_state <= SpritePointerCompute1;
           if vicii_sprite_pointer_address(23)='1' then
             -- 16-bit sprite pointers, allowing sprites to be sourced from
@@ -4173,8 +4152,6 @@ begin
         when SpritePointerCompute1 =>
           -- Drive stage for ram data to improve timing closure
           raster_fetch_state <= SpritePointerCompute;
-          -- Also drive upper byte of sprite pointer address
-          ramaddress <= sprite_pointer_address;          
         when SpritePointerCompute =>
           -- Sprite data address is 64*pointer value, plus the 16KB bank
           -- from $DD00.  Then we need to add the data offset for this sprite.
@@ -4223,7 +4200,6 @@ begin
             & integer'image(sprite_fetch_sprite_number)
             & " data from $" & to_hstring("000"&sprite_data_address(16 downto 0));
           
-          ramaddress <= sprite_data_address;
           if sprite_fetch_sprite_number < 8 then
             sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 1;
           else
@@ -4242,7 +4218,6 @@ begin
           else
             sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 8;
           end if;
-          ramaddress <= sprite_data_address;
 
           -- Schedule pushing fetched sprite/bitplane byte to next cycle when
           -- the data will be available in ramdata_drive
@@ -4636,6 +4611,64 @@ begin
     end if;
   end process;
 
+  -- ramaddress mux
+  -- This is pulled out into a combinatorial section so that ramaddress changes as soon as the raster_fetch_state
+  -- value changes so that it can be driven into the block ram and sampled at the next clock cycle, thus providing the
+  -- expected data on the next clock as well.
+  process(raster_fetch_state,this_ramaccess_is_screen_row_fetch,glyph_data_address,sprite_pointer_address,sprite_data_address)
+  begin
+    ramaddress <= to_unsigned(0,17);
+    if this_ramaccess_is_screen_row_fetch='1' then
+      report "chipram fetch for screen row data from $" & to_hstring(to_unsigned(to_integer(this_screen_row_fetch_address),16));
+      ramaddress <= this_screen_row_fetch_address;
+    end if;
+
+    case raster_fetch_state is
+      when Idle => null;
+      when FetchScreenRamLine => null;
+      when FetchScreenRamLine2 => null;
+      when FetchFirstCharacter => null;
+      when FetchNextCharacter => null;
+      when FetchCharHighByte => null;
+      when FetchBitmapCell => null;
+      when FetchTextCell => null;
+      when FetchBitmapData =>
+        -- Ask for first byte of data so that paint can commence immediately.
+        report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
+        ramaddress <= glyph_data_address;
+      when FetchTextCellColourAndSource =>
+        -- Ask for first byte of data so that paint can commence immediately.
+        report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
+        ramaddress <= glyph_data_address;
+      when PaintMemWait =>
+        if glyph_full_colour = '1' then
+          report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
+          ramaddress <= glyph_data_address;
+        end if;
+      when PaintMemWait2 =>
+        if glyph_full_colour = '1' then
+          report "LEGACY: setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
+          ramaddress <= glyph_data_address;
+        end if;
+      when PaintFullColourFetch =>
+        report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
+        ramaddress <= glyph_data_address;
+      when PaintMemWait3 => null;
+      when PaintDispatch => null;
+      when SpritePointerFetch2 =>
+        ramaddress <= sprite_pointer_address;
+      when SpritePointerCompute1 =>
+        ramaddress <= sprite_pointer_address;          
+      when SpritePointerCompute => null;
+      when SpritePointerComputeMSB => null;
+      when SpriteDataFetch =>
+        ramaddress <= sprite_data_address;
+      when SpriteDataFetch2 =>
+        ramaddress <= sprite_data_address;
+      when others => null;
+    end case;
+  end process;
+  
   --Route out position counters for compositor
   xcounter_out <= xcounter; 
   ycounter_out <= ycounter;
