@@ -3772,10 +3772,6 @@ begin
             end if;
           end if;
 
-          report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
-            & " for painting glyph $" & to_hstring(to_unsigned(to_integer(glyph_number),16)) severity note;
-          charaddress <= to_integer(glyph_data_address(11 downto 0));
-
           -- Schedule next colour ram byte
           colourramaddress <= colourramaddress + 1;
 
@@ -3854,12 +3850,6 @@ begin
             end if;
           end if;
       
-          -- upper bit of charrom address is set by $D018, only 258*8 = 2K
-          -- range of address is controlled here by character number.
-          report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
-            & " for painting glyph $" & to_hstring(to_unsigned(to_integer(glyph_number),16)) severity note;
-          charaddress <= to_integer(glyph_data_address(11 downto 0));
-
           -- Schedule next colour ram byte
           colourramaddress <= colourramaddress + 1;
           
@@ -4611,6 +4601,26 @@ begin
     end if;
   end process;
 
+  -- charaddress generation
+  process(raster_fetch_state,glyph_data_address)
+  begin
+    charaddress <= to_integer(glyph_data_address(11 downto 0));
+    --charaddress <= to_unsigned(0,12);
+    --case raster_fetch_state is    
+    --  when FetchBitmapData =>
+    --    report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
+    --      & " for painting glyph $" & to_hstring(to_unsigned(to_integer(glyph_number),16)) severity note;
+    --    charaddress <= to_integer(glyph_data_address(11 downto 0));
+    --  when FetchTextCellColourAndSource =>
+    --    -- upper bit of charrom address is set by $D018, only 258*8 = 2K
+    --    -- range of address is controlled here by character number.
+    --    report "setting charaddress to " & integer'image(to_integer(glyph_data_address(10 downto 0)))
+    --        & " for painting glyph $" & to_hstring(to_unsigned(to_integer(glyph_number),16)) severity note;
+    --    charaddress <= to_integer(glyph_data_address(11 downto 0));
+    --  when others => null;
+    -- end case;    
+  end process;
+  
   -- ramaddress mux
   -- This is pulled out into a combinatorial section so that ramaddress changes as soon as the raster_fetch_state
   -- value changes so that it can be driven into the block ram and sampled at the next clock cycle, thus providing the
@@ -4624,14 +4634,6 @@ begin
     end if;
 
     case raster_fetch_state is
-      when Idle => null;
-      when FetchScreenRamLine => null;
-      when FetchScreenRamLine2 => null;
-      when FetchFirstCharacter => null;
-      when FetchNextCharacter => null;
-      when FetchCharHighByte => null;
-      when FetchBitmapCell => null;
-      when FetchTextCell => null;
       when FetchBitmapData =>
         -- Ask for first byte of data so that paint can commence immediately.
         report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
@@ -4653,14 +4655,10 @@ begin
       when PaintFullColourFetch =>
         report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
         ramaddress <= glyph_data_address;
-      when PaintMemWait3 => null;
-      when PaintDispatch => null;
       when SpritePointerFetch2 =>
         ramaddress <= sprite_pointer_address;
       when SpritePointerCompute1 =>
         ramaddress <= sprite_pointer_address;          
-      when SpritePointerCompute => null;
-      when SpritePointerComputeMSB => null;
       when SpriteDataFetch =>
         ramaddress <= sprite_data_address;
       when SpriteDataFetch2 =>
