@@ -605,7 +605,8 @@ begin
   restore_key <= not btn(1);
 
   led_out <= std_logic_vector(led(7 downto 0));
-  sw(7 downto 0) <= sw_in(7 downto 0);
+  sw(15) <= sw_in(7);
+  sw(6 downto 0) <= sw_in(6 downto 0);
   
   vga_red_out(3 downto 0) <= std_logic_vector(vgared(7 downto 4));
   vga_green_out(3 downto 0) <= std_logic_vector(vgagreen(7 downto 4));  
