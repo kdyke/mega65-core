@@ -524,6 +524,8 @@ set obj [get_runs synth_1]
 set_property -name "needs_refresh" -value "1" -objects $obj
 set_property -name "part" -value "xc7a200tfbg484-2" -objects $obj
 set_property -name "strategy" -value "Vivado Synthesis Defaults" -objects $obj
+set_property -name "steps.synth_design.args.gated_clock_conversion" -value "auto" -objects $obj
+set_property -name "steps.synth_design.args.retiming" -value "1" -objects $obj
 
 # set the current synth run
 current_run -synthesis [get_runs synth_1]
