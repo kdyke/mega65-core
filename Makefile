@@ -427,9 +427,9 @@ $(SDCARD_DIR)/BANNER.M65:	$(TOOLDIR)/pngprepare/pngprepare assets/mega65_320x64.
 	$(TOOLDIR)/pngprepare/pngprepare logo $(BINDIR)/mega65_320x64_128colour.png $(SDCARD_DIR)/BANNER.M65
 
 # disk menu program for loading from SD card to $C000 on boot by kickstart
-$(SDCARD_DIR)/C000UTIL.BIN:	$(SRCDIR)/diskmenu_c000.bin
+$(SDCARD_DIR)/C000UTIL.BIN:	$(BINDIR)/diskmenu_c000.bin
 	mkdir -p $(SDCARD_DIR)
-	cp $(SRCDIR)/diskmenu_c000.bin $(SDCARD_DIR)/C000UTIL.BIN
+	cp $(BINDIR)/diskmenu_c000.bin $(SDCARD_DIR)/C000UTIL.BIN
 
 # ============================ done moved, Makefile-dep, print-warn, clean-target
 # c-code that makes and executable that seems to be the 'load-wedge'
