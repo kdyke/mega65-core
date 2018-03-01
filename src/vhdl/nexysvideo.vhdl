@@ -311,10 +311,10 @@ end component;
   signal eth_interrupt : std_logic := 'Z';
   signal eth_clock : std_logic := 'Z';
 
-  signal jblo : std_logic_vector(4 downto 1) := (others => 'Z');
-  signal jbhi : std_logic_vector(10 downto 7) := (others => 'Z');
-  signal jalo : std_logic_vector(4 downto 1) := (others => 'Z');
-  signal jahi : std_logic_vector(10 downto 7) := (others => 'Z');
+  signal jblo : std_logic_vector(4 downto 1) := (others => '0');
+  signal jbhi : std_logic_vector(10 downto 7) := (others => '0');
+  signal jalo : std_logic_vector(4 downto 1) := (others => '0');
+  signal jahi : std_logic_vector(10 downto 7) := (others => '0');
   signal jdlo : std_logic_vector(4 downto 1) := (others => 'Z');
   signal jdhi : std_logic_vector(10 downto 7) := (others => 'Z');
   signal jclo : std_logic_vector(4 downto 1) := (others => 'Z');
