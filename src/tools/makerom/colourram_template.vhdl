@@ -25,7 +25,7 @@ END THEROM;
 architecture behavioural of THEROM is
 
   type ram_t is array (0 to 32767) of std_logic_vector(7 downto 0);
-  signal ram : ram_t := (ROMDATA);
+  shared variable ram : ram_t := (ROMDATA);
 
 begin  -- behavioural
 
