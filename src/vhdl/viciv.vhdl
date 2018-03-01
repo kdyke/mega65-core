@@ -908,7 +908,7 @@ begin
       dina => std_logic_vector(chipram_datain),
       -- VIC-IV side port (read)
       clkb => pixelclock,
-      addrb => std_logic_vector(ramaddress),
+      addrb => std_logic_vector(next_ramaddress),
       unsigned(doutb) => ramdata
       );
 
@@ -3488,6 +3488,8 @@ begin
       end if;
       virtual_row_width_minus1 <= virtual_row_width - 1;
 
+      ramaddress <= next_ramaddress;
+
       report "raster_fetch_state = " & vic_chargen_fsm'image(raster_fetch_state);
       case raster_fetch_state is
         when Idle => null;
@@ -3549,7 +3551,6 @@ begin
           else
             -- More to fetch, so keep scheduling the reads
             character_number <= character_number + 1;
-            next_ramaddress <= screen_row_current_address;
             next_ramaccess_is_screen_row_fetch <= '1';
             next_ramaccess_is_glyph_data_fetch <= '0';
             next_ramaccess_is_sprite_data_fetch <= '0';
@@ -4627,42 +4628,43 @@ begin
   -- expected data on the next clock as well.
   process(raster_fetch_state,this_ramaccess_is_screen_row_fetch,glyph_data_address,sprite_pointer_address,sprite_data_address)
   begin
-    ramaddress <= to_unsigned(0,17);
+    next_ramaddress <= ramaddress;
+
     if this_ramaccess_is_screen_row_fetch='1' then
       report "chipram fetch for screen row data from $" & to_hstring(to_unsigned(to_integer(this_screen_row_fetch_address),16));
-      ramaddress <= this_screen_row_fetch_address;
+      next_ramaddress <= this_screen_row_fetch_address;
     end if;
 
     case raster_fetch_state is
       when FetchBitmapData =>
         -- Ask for first byte of data so that paint can commence immediately.
         report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
-        ramaddress <= glyph_data_address;
+        next_ramaddress <= glyph_data_address;
       when FetchTextCellColourAndSource =>
         -- Ask for first byte of data so that paint can commence immediately.
         report "setting ramaddress to $" & to_hstring("000"&glyph_data_address) & " for glyph painting." severity note;
-        ramaddress <= glyph_data_address;
+        next_ramaddress <= glyph_data_address;
       when PaintMemWait =>
         if glyph_full_colour = '1' then
           report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-          ramaddress <= glyph_data_address;
+          next_ramaddress <= glyph_data_address;
         end if;
       when PaintMemWait2 =>
         if glyph_full_colour = '1' then
           report "LEGACY: setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-          ramaddress <= glyph_data_address;
+          next_ramaddress <= glyph_data_address;
         end if;
       when PaintFullColourFetch =>
         report "setting ramaddress to $x" & to_hstring(glyph_data_address(15 downto 0)) & " for full-colour glyph drawing";
-        ramaddress <= glyph_data_address;
+        next_ramaddress <= glyph_data_address;
       when SpritePointerFetch2 =>
-        ramaddress <= sprite_pointer_address;
+        next_ramaddress <= sprite_pointer_address;
       when SpritePointerCompute1 =>
-        ramaddress <= sprite_pointer_address;          
+        next_ramaddress <= sprite_pointer_address;          
       when SpriteDataFetch =>
-        ramaddress <= sprite_data_address;
+        next_ramaddress <= sprite_data_address;
       when SpriteDataFetch2 =>
-        ramaddress <= sprite_data_address;
+        next_ramaddress <= sprite_data_address;
       when others => null;
     end case;
   end process;
