@@ -798,6 +798,8 @@ architecture Behavioral of viciv is
   -- Read address is in 128th of pixels
   signal raster_buffer_read_address : unsigned(10 downto 0);
   signal raster_buffer_read_address_sub : unsigned(9 downto 0);
+  signal raster_buffer_read_address_next : unsigned(10 downto 0);
+  signal raster_buffer_read_address_sub_next : unsigned(9 downto 0);
   signal raster_buffer_read_data : unsigned(17 downto 0);
   signal raster_buffer_write_address : unsigned(11 downto 0);
   signal raster_buffer_write_data : unsigned(17 downto 0);
@@ -885,7 +887,7 @@ begin
       dinl => std_logic_vector(raster_buffer_write_data),
       unsigned(doutr) => raster_buffer_read_data,
       addrl => std_logic_vector(raster_buffer_write_address(10 downto 0)),
-      addrr => std_logic_vector(raster_buffer_read_address)
+      addrr => std_logic_vector(raster_buffer_read_address_next)
       );
   
   buffer1: entity work.screen_ram_buffer
@@ -2794,6 +2796,9 @@ begin
 --      report "VICII: SPRITE: xcounter(320) = " & integer'image(to_integer(vicii_xcounter_320))
 --        & " (sub) = " & integer'image(vicii_xcounter_sub320);
       if xcounter /= to_integer(frame_width) then
+          raster_buffer_read_address <= raster_buffer_read_address_next;
+          raster_buffer_read_address_sub <= raster_buffer_read_address_sub_next;
+
         xcounter <= xcounter + 1;
         if xcounter = sprite_first_x then
           sprite_x_counting <= '1';
@@ -2844,7 +2849,7 @@ begin
         vicii_xcounter_640 <= to_unsigned(0,10);
         vicii_xcounter_sub320 <= 0;
         vicii_xcounter_sub640 <= 0;
-        raster_buffer_read_address <= (others => '0');
+
         chargen_active <= '0';
         chargen_active_soon <= '0';
         if ycounter /= to_integer(frame_height) then
@@ -3034,34 +3039,6 @@ begin
         chargen_active_soon <= '0';
       end if;
       
-      -- Update current horizontal sub-pixel and pixel position
-      -- Work out if a new logical pixel starts on the next physical pixel
-      -- (overrides general advance).
-      if reg_h640='1' then
-        -- 640 wide characters use x scale directly
-        if raster_buffer_read_address_sub >= 240 then
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub - 240 + chargen_x_scale_drive;
-          raster_buffer_read_address <= raster_buffer_read_address + 2;
-        elsif raster_buffer_read_address_sub >= 120 then
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub - 120 + chargen_x_scale_drive;
-          raster_buffer_read_address <= raster_buffer_read_address + 1;
-        else
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub + chargen_x_scale_drive;
-        end if;
-      else
-        -- 320 wide / 40 column text is 2x as wide, i.e., we halve the x scale
-        -- factor.
-        if raster_buffer_read_address_sub >= 240 then
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub - 240 + chargen_x_scale_drive(7 downto 1);
-          raster_buffer_read_address <= raster_buffer_read_address + 2;
-        elsif raster_buffer_read_address_sub >= 120 then
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub - 120 + chargen_x_scale_drive(7 downto 1);
-          raster_buffer_read_address <= raster_buffer_read_address + 1;
-        else
-          raster_buffer_read_address_sub <= raster_buffer_read_address_sub + chargen_x_scale_drive(7 downto 1);
-        end if;
-      end if;
-
       report "chargen_active=" & std_logic'image(chargen_active)
         & ", xcounter = " & to_string(std_logic_vector(xcounter))
         & ", x_chargen_start = " & to_string(std_logic_vector(x_chargen_start)) severity note;
@@ -3078,8 +3055,8 @@ begin
         chargen_x <= (others => '0');
         report "reset chargen_x" severity note;
         -- Request first byte of pre-rendered character data
-        raster_buffer_read_address <= (others => '0');
-        raster_buffer_read_address_sub <= (others => '0');
+        -- raster_buffer_read_address <= (others => '0');
+        -- raster_buffer_read_address_sub <= (others => '0');
       end if;
       if xcounter = x_chargen_start then
         -- Gets masked to 0 below if displayy is above y_chargen_start
@@ -4620,6 +4597,43 @@ begin
     --    charaddress <= to_integer(glyph_data_address(11 downto 0));
     --  when others => null;
     -- end case;    
+  end process;
+  
+  -- raster buffer read address/sub calculations 
+  -- pulled out so "next" value can be fed directly to raster buffer ram read address.  
+  process(raster_buffer_read_address,raster_buffer_read_address_sub,chargen_x_scale_drive,xcounter,x_chargen_start_minus1)
+  begin
+      raster_buffer_read_address_next <= raster_buffer_read_address;
+      if xcounter = x_chargen_start_minus1 then
+        -- Request first byte of pre-rendered character data
+        raster_buffer_read_address_next <= (others => '0');
+        raster_buffer_read_address_sub_next <= (others => '0');
+      else
+          if reg_h640='1' then
+            -- 640 wide characters use x scale directly
+            if raster_buffer_read_address_sub >= 240 then
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub - 240 + chargen_x_scale_drive;
+              raster_buffer_read_address_next <= raster_buffer_read_address + 2;
+            elsif raster_buffer_read_address_sub >= 120 then
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub - 120 + chargen_x_scale_drive;
+              raster_buffer_read_address_next <= raster_buffer_read_address + 1;
+            else
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub + chargen_x_scale_drive;
+            end if;
+          else
+            -- 320 wide / 40 column text is 2x as wide, i.e., we halve the x scale
+            -- factor.
+            if raster_buffer_read_address_sub >= 240 then
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub - 240 + chargen_x_scale_drive(7 downto 1);
+              raster_buffer_read_address_next <= raster_buffer_read_address + 2;
+            elsif raster_buffer_read_address_sub >= 120 then
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub - 120 + chargen_x_scale_drive(7 downto 1);
+              raster_buffer_read_address_next <= raster_buffer_read_address + 1;
+            else
+              raster_buffer_read_address_sub_next <= raster_buffer_read_address_sub + chargen_x_scale_drive(7 downto 1);
+            end if;
+          end if;
+      end if;
   end process;
   
   -- ramaddress mux
