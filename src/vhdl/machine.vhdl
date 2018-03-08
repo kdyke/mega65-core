@@ -351,6 +351,7 @@ architecture Behavioral of machine is
   signal monitor_mem_stage_trace_mode : std_logic;
   signal monitor_mem_trace_mode : std_logic;
   signal monitor_mem_trace_toggle : std_logic;
+  signal monitor_memory_access_address : unsigned(31 downto 0);
   signal monitor_char : unsigned(7 downto 0);
   signal monitor_char_toggle : std_logic;
   signal monitor_char_busy : std_logic;
@@ -709,6 +710,7 @@ begin
       monitor_map_offset_high => monitor_map_offset_high,
       monitor_map_enables_low => monitor_map_enables_low,
       monitor_map_enables_high => monitor_map_enables_high,
+      monitor_memory_access_address => monitor_memory_access_address,
 
       monitor_mem_address => monitor_mem_address,
       monitor_mem_rdata => monitor_mem_rdata,
@@ -721,7 +723,7 @@ begin
       monitor_mem_trace_mode => monitor_mem_trace_mode,
       monitor_mem_stage_trace_mode => monitor_mem_stage_trace_mode,
       monitor_mem_trace_toggle => monitor_mem_trace_toggle,
-
+      
       slow_access_request_toggle => slow_access_request_toggle,
       slow_access_ready_toggle => slow_access_ready_toggle,    
       slow_access_address => slow_access_address,
@@ -1206,7 +1208,7 @@ begin
     monitor_map_offset_high => monitor_map_offset_high,
     monitor_map_enables_low => monitor_map_enables_low,
     monitor_map_enables_high => monitor_map_enables_high,
-    
+    monitor_memory_access_address => monitor_memory_access_address,
     monitor_mem_address => monitor_mem_address,
     monitor_mem_rdata => monitor_mem_rdata,
     monitor_mem_wdata => monitor_mem_wdata,
