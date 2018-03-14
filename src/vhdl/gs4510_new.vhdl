@@ -260,6 +260,7 @@ end component;
   signal shadow_address_next : integer range 0 to 131071 := 0;
   signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
   signal shadow_wdata : unsigned(7 downto 0)  := (others => '0');
+  signal shadow_wdata_next : unsigned(7 downto 0)  := (others => '0');
   signal shadow_write_count : unsigned(7 downto 0)  := (others => '0');
   signal shadow_no_write_count : unsigned(7 downto 0)  := (others => '0');
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
@@ -267,11 +268,15 @@ end component;
   signal shadow_write : std_logic := '0';
   signal shadow_write_next : std_logic := '0';
 
+  signal long_address_read : unsigned(27 downto 0)  := (others => '0');
+  signal long_address_write : unsigned(27 downto 0)  := (others => '0');
+  
   -- ROM RAM control
   signal rom_address : integer range 0 to 131071 := 0;
   signal rom_address_next : integer range 0 to 131071 := 0;
   signal rom_rdata : unsigned(7 downto 0)  := (others => '0');
   signal rom_wdata : unsigned(7 downto 0)  := (others => '0');
+  signal rom_wdata_next : unsigned(7 downto 0)  := (others => '0');
   signal rom_write_count : unsigned(7 downto 0)  := (others => '0');
   signal rom_no_write_count : unsigned(7 downto 0)  := (others => '0');
   signal rom_write : std_logic := '0';
@@ -1445,21 +1450,23 @@ begin
       fastio_write <= '0'; shadow_write <= '0';
 
       -- Remap GeoRAM memory accesses
-      if real_long_address(27 downto 16) = x"FFD"
-        and real_long_address(11 downto 8) = x"E" then
-        long_address := georam_page&real_long_address(7 downto 0);
-      end if;
+      --if real_long_address(27 downto 16) = x"FFD"
+      --  and real_long_address(11 downto 8) = x"E" then
+      --  long_address := georam_page&real_long_address(7 downto 0);
+      --end if;
       
-      if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
-        -- colour ram access: remap to $FF80000 - $FF807FF
-        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-		  -- also remap to $7F40000 - $7F407FF
-      elsif real_long_address(27 downto 16) = x"7F4" then
-  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-  		else
-        long_address := real_long_address;
-      end if;
+      --if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
+      --  -- colour ram access: remap to $FF80000 - $FF807FF
+      --  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+		  ---- also remap to $7F40000 - $7F407FF
+      --elsif real_long_address(27 downto 16) = x"7F4" then
+  		--  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		--else
+      --  long_address := real_long_address;
+      --end if;
 
+      long_address := long_address_read;
+      
       report "Reading from long address $" & to_hstring(long_address) severity note;
       mem_reading <= '1';
       
@@ -1488,8 +1495,11 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      shadow_address <= to_integer(long_address(16 downto 0));
-      rom_address <= to_integer(long_address(16 downto 0));
+      --shadow_address <= to_integer(long_address(16 downto 0));
+      shadow_address <= shadow_address_next;
+      -- shadow_address <= to_integer(long_address(16 downto 0));
+      rom_address <= rom_address_next;
+      -- rom_address <= to_integer(long_address(16 downto 0));
       rom_write <= '0';
 
       report "MEMORY long_address = $" & to_hstring(long_address);
@@ -1931,8 +1941,10 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      shadow_address <= to_integer(long_address(16 downto 0));
-      rom_address <= to_integer(long_address(16 downto 0));
+      shadow_address <= shadow_address_next;
+      --shadow_address <= to_integer(long_address(16 downto 0));
+      rom_address <= rom_address_next;
+      --rom_address <= to_integer(long_address(16 downto 0));
       rom_write <= '0';
       
       shadow_write_flags(0) <= '1';
@@ -1946,10 +1958,10 @@ begin
       end if;
 
       -- Remap GeoRAM memory accesses
-      if real_long_address(27 downto 16) = x"FFD"
-        and real_long_address(11 downto 8)= x"E" then
-        long_address := georam_page&real_long_address(7 downto 0);
-      end if;
+      --if real_long_address(27 downto 16) = x"FFD"
+      --  and real_long_address(11 downto 8)= x"E" then
+      --  long_address := georam_page&real_long_address(7 downto 0);
+      --end if;
 
       -- Set GeoRAM page (gets munged later with GeoRAM base and mask values
       -- provided by the hypervisor)
@@ -2002,34 +2014,36 @@ begin
       end if;
 
 
-      report "real_long_address for write = $" & to_hstring(real_long_address);
-      if
+      --report "real_long_address for write = $" & to_hstring(real_long_address);
+      --if
         -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
         -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
-        (real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
-        or
+        --(real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
+        --or
         -- FFD[0-3]800-BFF
-        (real_long_address(27 downto 16) = x"FFD"
-         and real_long_address(15 downto 14) = "00"
-         and real_long_address(11 downto 10) = "10")        
-      then
-        report "Writing to colour RAM";
+        --(real_long_address(27 downto 16) = x"FFD"
+        -- and real_long_address(15 downto 14) = "00"
+        -- and real_long_address(11 downto 10) = "10")        
+      --then
+        --report "Writing to colour RAM";
 	-- Write to shadow RAM
-        shadow_write <= '0';
-        rom_write <= '0';
+        -- shadow_write <= '0';
+        -- rom_write <= '0';
 
         -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
-        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+        --long_address := x"FF80"&'0'&real_long_address(10 downto 0);
 
         -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
         -- Is this for creating a linear memory map for quick task swapping, or
         -- something else? (PGS)
-      elsif real_long_address(27 downto 16) = x"7F4" then
-  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-      else
-        long_address := real_long_address;
-      end if;
+        --elsif real_long_address(27 downto 16) = x"7F4" then
+  		  --long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+        --else
+        --long_address := real_long_address;
+        --end if;
 
+      long_address := long_address_write;
+      
       last_write_address <= real_long_address;
 
       -- Write to CPU port
@@ -2131,9 +2145,11 @@ begin
       -- This ensures that shadow ram is consistent with the shadowed address space
       -- when the CPU reads from shadow ram.
       -- Get the shadow RAM address on the bus fast to improve timing.
-      shadow_address <= to_integer(long_address(16 downto 0));
+      shadow_address <= shadow_address_next;
+      -- shadow_address <= to_integer(long_address(16 downto 0));
       shadow_wdata <= value;
-      rom_address <= to_integer(long_address(16 downto 0));
+      rom_address <= rom_address_next;
+      -- rom_address <= to_integer(long_address(16 downto 0));
       rom_wdata <= value;
       if long_address(27 downto 16)="0000"&shadow_bank then
         report "writing to shadow RAM via shadow_bank" severity note;
@@ -5295,8 +5311,10 @@ begin
           -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
-          shadow_address <= to_integer(memory_access_address(16 downto 0));
-          rom_address <= to_integer(memory_access_address(16 downto 0));
+          shadow_address <= shadow_address_next;
+          -- shadow_address <= to_integer(memory_access_address(16 downto 0));
+          rom_address <= rom_address_next;
+          -- rom_address <= to_integer(memory_access_address(16 downto 0));
           rom_write <= '0';
           
           if memory_access_address = x"FFD3700"
@@ -5378,12 +5396,28 @@ begin
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
     variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
+    
+    variable shadow_address_var : integer range 0 to 131071 := 0;
+    variable shadow_write_var : std_logic := '0';
+    variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
+
+    variable rom_address_var : integer range 0 to 131071 := 0;
+    variable rom_write_var : std_logic := '0';
+    variable rom_wdata_var : unsigned(7 downto 0) := x"FF";
+
+    variable long_address_read_var : unsigned(27 downto 0) := x"FFFFFFF";
+    variable long_address_write_var : unsigned(27 downto 0) := x"FFFFFFF";
+
     variable temp_addr : unsigned(15 downto 0);    
     variable stack_pop : std_logic;
     variable stack_push : std_logic;
     variable virtual_reg_p : std_logic_vector(7 downto 0);
     variable reg_pages_dirty_var : std_logic_vector(3 downto 0)  := (others => '0');
   
+    -- temp hack as I work to move this code around...
+    variable real_long_address : unsigned(27 downto 0);
+    variable long_address : unsigned(27 downto 0);
+    
     -- purpose: Convert a 16-bit C64 address to native RAM (or I/O or ROM) address
     impure function resolve_address_to_long(short_address : unsigned(15 downto 0);
                                             writeP : boolean)
@@ -5635,6 +5669,16 @@ begin
     memory_access_resolve_address := '1';
     memory_access_wdata := x"FF";
 
+    -- By default, shadow/rom addresses hold previous values
+    shadow_address_var := shadow_address;
+    rom_address_var := rom_address;
+    
+    -- These always reset after each cycle though (no feedback loop)
+    shadow_write_var := '0';--shadow_write;
+    shadow_wdata_var := x"FF"; --shadow_wdata;
+    rom_write_var := '0';--shadow_write;
+    rom_wdata_var := x"FF"; --shadow_wdata;
+        
     case state is
       when VectorRead =>
         if hypervisor_mode='1' then
@@ -6139,12 +6183,97 @@ begin
       end if;
     end if;
 
-    if memory_access_resolve_address = '1' then
-      if memory_access_write='1' then
+    --shadow_address_var := memory_access_address(long_address(16 downto 0));
+    shadow_wdata_var := memory_access_wdata;
+    rom_wdata_var := memory_access_wdata;
+
+    if memory_access_write='1' then
+      if memory_access_resolve_address = '1' then
         memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),true);
-      elsif memory_access_read='1' then
+      end if;
+
+      real_long_address := memory_access_address;
+
+      -- Remap GeoRAM memory accesses
+      --if real_long_address(27 downto 16) = x"FFD"
+        --and real_long_address(11 downto 8)= x"E" then
+        --long_address := georam_page&real_long_address(7 downto 0);
+        --end if;
+
+      -- shadow_address_var := to_integer(long_address(16 downto 0));
+      
+      if
+        -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
+        -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
+        (real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
+        or
+        -- FFD[0-3]800-BFF
+        (real_long_address(27 downto 16) = x"FFD"
+         and real_long_address(15 downto 14) = "00"
+         and real_long_address(11 downto 10) = "10")        
+      then
+        report "Writing to colour RAM";
+	-- Write to shadow RAM
+        -- shadow_write <= '0';
+        -- rom_write <= '0';
+
+        -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
+        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+
+        -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
+        -- Is this for creating a linear memory map for quick task swapping, or
+        -- something else? (PGS)
+      elsif real_long_address(27 downto 16) = x"7F4" then
+  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+      else
+        long_address := real_long_address;
+      end if;
+      
+      long_address_write_var := long_address;
+      
+      shadow_address_var := to_integer(long_address(16 downto 0));
+      rom_address_var := to_integer(long_address(16 downto 0));
+      
+      if long_address(27 downto 16)="0000"&shadow_bank then
+        report "writing to shadow RAM via shadow_bank" severity note;
+        shadow_write_var := '1';
+      end if;
+      if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
+        report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
+        shadow_write_var := '1';
+      elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
+        report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
+        rom_write_var := not rom_writeprotect;
+      end if;
+            
+    elsif memory_access_read='1' then
+       
+      if memory_access_resolve_address = '1' then
         memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),false);
       end if;
+
+      real_long_address := memory_access_address;
+      
+      -- Remap GeoRAM memory accesses
+      if real_long_address(27 downto 16) = x"FFD"
+        and real_long_address(11 downto 8) = x"E" then
+        long_address := georam_page&real_long_address(7 downto 0);
+      end if;
+      
+      if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
+        -- colour ram access: remap to $FF80000 - $FF807FF
+        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+		  -- also remap to $7F40000 - $7F407FF
+      elsif real_long_address(27 downto 16) = x"7F4" then
+  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		else
+        long_address := real_long_address;
+      end if;
+      
+      long_address_read_var := long_address;
+      shadow_address_var := to_integer(long_address(16 downto 0));
+      rom_address_var := to_integer(long_address(16 downto 0));
+      
     end if;
     
     -- Assign outputs to signals that clocked side can see and use...
@@ -6154,6 +6283,18 @@ begin
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
     reg_pages_dirty_next <= reg_pages_dirty_var;
+    
+    -- Update shadow signals
+    shadow_address_next <= shadow_address_var;
+    shadow_wdata_next <= shadow_wdata_var;
+    shadow_write_next <= shadow_write_var;
+
+    rom_address_next <= rom_address_var;
+    rom_wdata_next <= rom_wdata_var;
+    rom_write_next <= rom_write_var;
+    
+    long_address_read <= long_address_read_var;
+    long_address_write <= long_address_write_var;
     
   end process;
   
