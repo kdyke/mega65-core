@@ -224,6 +224,24 @@ entity machine is
          uart_rx : in std_logic;
          uart_tx : out std_logic;
          
+         -- CPU block ram debug
+         -- Debugging
+         shadow_address_i_dbg_out : out std_logic_vector(16 downto 0);
+         shadow_address_o_dbg_out : out std_logic_vector(16 downto 0);
+         shadow_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
+         shadow_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
+         shadow_address_write_dbg_out : out std_logic;
+         shadow_address_read_dbg_out : out std_logic;
+         rom_address_i_dbg_out : out std_logic_vector(16 downto 0);
+         rom_address_o_dbg_out : out std_logic_vector(16 downto 0);
+         rom_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
+         rom_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
+         rom_address_write_dbg_out : out std_logic;
+         rom_address_read_dbg_out : out std_logic;
+         cpu_state_out : out std_logic_vector(15 downto 0);
+         shadow_address_state_dbg_out : out std_logic_vector(3 downto 0);
+         proceed_dbg_out : out std_logic;
+         
          ----------------------------------------------------------------------
          -- Debug interfaces on Nexys4 board
          ----------------------------------------------------------------------
@@ -309,6 +327,8 @@ architecture Behavioral of machine is
   signal fastio_wdata : std_logic_vector(7 downto 0);
   signal fastio_rdata : std_logic_vector(7 downto 0);
   signal kickstart_rdata : std_logic_vector(7 downto 0);
+  signal kickstart_address : std_logic_vector(13 downto 0);
+  
   signal fastio_vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
 
@@ -664,6 +684,21 @@ begin
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
 
+      shadow_address_i_dbg_out => shadow_address_i_dbg_out,
+      shadow_address_o_dbg_out => shadow_address_o_dbg_out,
+      shadow_address_rdata_dbg_out => shadow_address_rdata_dbg_out,
+      shadow_address_wdata_dbg_out => shadow_address_wdata_dbg_out,
+      shadow_address_write_dbg_out => shadow_address_write_dbg_out,
+      shadow_address_read_dbg_out => shadow_address_read_dbg_out,
+      rom_address_i_dbg_out => rom_address_i_dbg_out,
+      rom_address_o_dbg_out => rom_address_o_dbg_out,
+      rom_address_rdata_dbg_out => rom_address_rdata_dbg_out,
+      rom_address_wdata_dbg_out => rom_address_wdata_dbg_out,
+      rom_address_write_dbg_out => rom_address_write_dbg_out,
+      rom_address_read_dbg_out => rom_address_read_dbg_out,
+      shadow_address_state_dbg_out => shadow_address_state_dbg_out,
+      proceed_dbg_out => proceed_dbg_out,
+      
       irq_hypervisor => sw(4 downto 2),    -- JBM
       
       -- Hypervisor signals: we need to tell kickstart memory whether
@@ -746,6 +781,7 @@ begin
       fastio_vic_rdata => fastio_vic_rdata,
       fastio_colour_ram_rdata => colour_ram_fastio_rdata,
       kickstart_rdata => kickstart_rdata,
+      kickstart_address_out => kickstart_address,
       colour_ram_cs => colour_ram_cs,
       charrom_write_cs => charrom_write_cs,
 
@@ -943,6 +979,7 @@ begin
       r => fastio_read, w => fastio_write,
       data_i => fastio_wdata, data_o => fastio_rdata,
       kickstart_rdata => kickstart_rdata,
+      kickstart_address => kickstart_address,
       colourram_at_dc00 => colourram_at_dc00,
       drive_led => drive_led,
       motor => motor,
@@ -1256,6 +1293,7 @@ begin
     end if;
   end process;
   
+  cpu_state_out <= std_logic_vector(monitor_state);
   UART_TXD<=uart_txd_sig; 
   
 end Behavioral;

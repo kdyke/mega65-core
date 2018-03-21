@@ -165,6 +165,19 @@ entity container is
 --         ddr2_dqs_p     : inout std_logic_vector(1 downto 0);
 --         ddr2_dqs_n     : inout std_logic_vector(1 downto 0);
          
+-- FMC Debug interfaces
+        addr_o_dbg : out std_logic_vector(15 downto 0);
+        addr_i_dbg : out std_logic_vector(15 downto 0);
+        addr_w_dbg : out std_logic;
+        addr_r_dbg : out std_logic;
+        addr_read : out std_logic_vector(7 downto 0);
+        addr_write : out std_logic_vector(7 downto 0);
+        cpu_state : out std_logic_vector(7 downto 0);
+        addr_state : out std_logic_vector(3 downto 0);
+        proceed_dbg_out  : out std_logic;
+       
+        addr_clk : out std_logic;
+        
          ----------------------------------------------------------------------
          -- Debug interfaces on Nexys4 board
          ----------------------------------------------------------------------
@@ -355,6 +368,22 @@ end component;
   signal sawtooth_phase : integer := 0;
   signal sawtooth_counter : integer := 0;
   signal sawtooth_level : integer := 0;
+  
+  -- Debugging
+  signal shadow_address_i_dbg_out : std_logic_vector(16 downto 0);
+  signal shadow_address_o_dbg_out : std_logic_vector(16 downto 0);
+  signal shadow_address_rdata_dbg_out : std_logic_vector(7 downto 0);
+  signal shadow_address_wdata_dbg_out : std_logic_vector(7 downto 0);
+  signal shadow_address_write_dbg_out : std_logic;
+  signal shadow_address_read_dbg_out : std_logic;
+  signal rom_address_i_dbg_out : std_logic_vector(16 downto 0);
+  signal rom_address_o_dbg_out : std_logic_vector(16 downto 0);
+  signal rom_address_rdata_dbg_out : std_logic_vector(7 downto 0);
+  signal rom_address_wdata_dbg_out : std_logic_vector(7 downto 0);
+  signal rom_address_write_dbg_out : std_logic;
+  signal rom_address_read_dbg_out : std_logic;
+  signal cpu_state_out : std_logic_vector(15 downto 0);
+  signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
   
 begin
   
@@ -594,17 +623,39 @@ begin
       UART_TXD => UART_TXD,
       RsRx => RsRx,
       
+          -- debug
+          shadow_address_i_dbg_out => shadow_address_i_dbg_out,
+          shadow_address_o_dbg_out => shadow_address_o_dbg_out,
+          shadow_address_rdata_dbg_out => shadow_address_rdata_dbg_out,
+          shadow_address_wdata_dbg_out => shadow_address_wdata_dbg_out,
+          shadow_address_write_dbg_out => shadow_address_write_dbg_out,
+          shadow_address_read_dbg_out => shadow_address_read_dbg_out,
+          rom_address_i_dbg_out => rom_address_i_dbg_out,
+          rom_address_o_dbg_out => rom_address_o_dbg_out,
+          rom_address_rdata_dbg_out => rom_address_rdata_dbg_out,
+          rom_address_wdata_dbg_out => rom_address_wdata_dbg_out,
+          rom_address_write_dbg_out => rom_address_write_dbg_out,
+          rom_address_read_dbg_out => rom_address_read_dbg_out,
+          cpu_state_out => cpu_state_out,
+          shadow_address_state_dbg_out => shadow_address_state_dbg_out,
+          proceed_dbg_out => proceed_dbg_out,
+          
       sseg_ca => sseg_ca,
       sseg_an => sseg_an
       );
 
+      -- temp hacks
+      --sdClock <= '0';
+      --UART_TXD <= '0';
+      --sdMOSI <= '0';
   
   -- Hardware buttons for triggering IRQ & NMI
   irq <= not btn(0);
   nmi <= not btn(4);
   restore_key <= not btn(1);
 
-  led_out <= std_logic_vector(led(7 downto 0));
+  led_out(7 downto 0) <= std_logic_vector(led(7 downto 0));
+  
   sw(15) <= sw_in(7);
   sw(11) <= sw_in(6);
   sw(5 downto 0) <= sw_in(5 downto 0);
@@ -615,9 +666,28 @@ begin
   vga_hsync_out <= hsync;
   vga_vsync_out <= vsync;
   
+  addr_clk <= cpuclock;
+  addr_o_dbg(15 downto 0) <= shadow_address_o_dbg_out(15 downto 0);
+  addr_i_dbg(15 downto 0) <= shadow_address_i_dbg_out(15 downto 0);
+  addr_read <= shadow_address_rdata_dbg_out;
+  addr_write <= shadow_address_wdata_dbg_out;
+  addr_w_dbg <= shadow_address_write_dbg_out;
+  addr_r_dbg <= shadow_address_read_dbg_out;
+  addr_state <= shadow_address_state_dbg_out;
+  
+  cpu_state(7 downto 0) <= cpu_state_out(15 downto 8);
+  
+  --addr_o_dbg(15 downto 0) <= "0011001000010000";  -- 3210 
+  --addr_i_dbg(15 downto 0) <= "0111011001010100";  -- 7654
+  --addr_read <= "10011000"; --shadow_address_rdata_dbg_out;
+  --addr_write <= "10111010"; --shadow_address_wdata_dbg_out;
+  --addr_w_dbg <= cpuclock;
+  --addr_r_dbg <= not cpuclock;
+  
   process (cpuclock)
   begin
     if rising_edge(cpuclock) then
+    
       -- Debug audio output
       if sw(7) = '0' then
         ampPWM <= ampPWM_internal;

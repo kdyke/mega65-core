@@ -139,6 +139,22 @@ entity gs4510 is
       monitor_mem_stage_trace_mode : in std_logic;
       monitor_mem_trace_toggle : in std_logic;
     
+      -- Debugging
+      shadow_address_i_dbg_out : out std_logic_vector(16 downto 0);
+      shadow_address_o_dbg_out : out std_logic_vector(16 downto 0);
+      shadow_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
+      shadow_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
+      shadow_address_write_dbg_out : out std_logic;
+      shadow_address_read_dbg_out : out std_logic;
+      rom_address_i_dbg_out : out std_logic_vector(16 downto 0);
+      rom_address_o_dbg_out : out std_logic_vector(16 downto 0);
+      rom_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
+      rom_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
+      rom_address_write_dbg_out : out std_logic;
+      rom_address_read_dbg_out : out std_logic;
+      shadow_address_state_dbg_out : out std_logic_vector(3 downto 0);
+      proceed_dbg_out : out std_logic;
+      
     ---------------------------------------------------------------------------
     -- Interface to ChipRAM in video controller (just 128KB for now)
     ---------------------------------------------------------------------------
@@ -173,6 +189,8 @@ entity gs4510 is
     fastio_wdata : out std_logic_vector(7 downto 0);
     fastio_rdata : in std_logic_vector(7 downto 0);
     kickstart_rdata : in std_logic_vector(7 downto 0);
+    kickstart_address_out : out std_logic_vector(13 downto 0);
+    
     sector_buffer_mapped : in std_logic;
     fastio_vic_rdata : in std_logic_vector(7 downto 0);
     fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
@@ -208,12 +226,16 @@ architecture Behavioural of gs4510 is
   
 component shadowram is
   port (Clk : in std_logic;
-        address : in integer range 0 to 131071;
+        address_i : in integer range 0 to 131071;
+        address_i_dbg : out integer range 0 to 131071;
         we : in std_logic;
         data_i : in unsigned(7 downto 0);
-        data_o : out unsigned(7 downto 0);
+        writes : out unsigned(7 downto 0);
         no_writes : out unsigned(7 downto 0);
-        writes : out unsigned(7 downto 0)
+        -- Clk_o : in std_logic;
+        address_o : in integer range 0 to 131071;
+        address_o_dbg : out integer range 0 to 131071;
+        data_o : out unsigned(7 downto 0)
         );
 end component;
 
@@ -257,7 +279,12 @@ end component;
   -- Shadow RAM control
   signal shadow_bank : unsigned(7 downto 0)  := (others => '0');
   signal shadow_address : integer range 0 to 131071 := 0;
+  signal shadow_address_i_dbg : integer range 0 to 131071 := 0;
+  signal shadow_address_o_dbg : integer range 0 to 131071 := 0;
   signal shadow_address_next : integer range 0 to 131071 := 0;
+  signal shadow_address_state_dbg : std_logic_vector(3 downto 0) := "0000";
+  signal shadow_address_state_dbg_next : std_logic_vector(3 downto 0) := "0000";
+  
   signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
   signal shadow_wdata : unsigned(7 downto 0)  := (others => '0');
   signal shadow_wdata_next : unsigned(7 downto 0)  := (others => '0');
@@ -268,11 +295,18 @@ end component;
   signal shadow_write : std_logic := '0';
   signal shadow_write_next : std_logic := '0';
 
+  signal kickstart_address : std_logic_vector(13 downto 0);
+  signal kickstart_address_next : std_logic_vector(13 downto 0);
+  
+  signal read_data : unsigned(7 downto 0)  := (others => '0');
+  
   signal long_address_read : unsigned(27 downto 0)  := (others => '0');
   signal long_address_write : unsigned(27 downto 0)  := (others => '0');
   
   -- ROM RAM control
   signal rom_address : integer range 0 to 131071 := 0;
+  signal rom_address_i_dbg : integer range 0 to 131071 := 0;
+  signal rom_address_o_dbg : integer range 0 to 131071 := 0;
   signal rom_address_next : integer range 0 to 131071 := 0;
   signal rom_rdata : unsigned(7 downto 0)  := (others => '0');
   signal rom_wdata : unsigned(7 downto 0)  := (others => '0');
@@ -661,45 +695,45 @@ signal dmagic_src_addr : unsigned(35 downto 0)  := (others => '0'); -- in 256ths
     InstructionDecode,  -- $16                -- 0x13
     InstructionDecode6502,                    -- 0x14
     Cycle2,Cycle3,                            -- 0x15, 0x16
-    Flat32Got2ndArgument,Flat32Byte3,Flat32Byte4,
-    Flat32SaveAddress,
-    Flat32SaveAddress1,Flat32SaveAddress2,Flat32SaveAddress3,Flat32SaveAddress4,
-    Flat32Dereference0,
-    Flat32Dereference1,Flat32Dereference2,Flat32Dereference3,Flat32Dereference4,
-    Flat32Translate,Flat32Dispatch,
-    Flat32RTS,
-    Pull,
-    RTI,RTI2,
-    RTS,RTS1,RTS2,RTS3,
-    B16TakeBranch,
-    InnXReadVectorLow,
-    InnXReadVectorHigh,
-    InnSPYReadVectorLow,
-    InnSPYReadVectorHigh,
-    InnYReadVectorLow,
-    InnYReadVectorHigh,
-    InnZReadVectorLow,
-    InnZReadVectorHigh,
-    InnZReadVectorByte2,
-    InnZReadVectorByte3,
-    InnZReadVectorByte4,
-    CallSubroutine,CallSubroutine2,
-    ZPRelReadZP,
-    JumpAbsXReadArg2,
-    JumpIAbsReadArg2,
-    JumpIAbsXReadArg2,
-    JumpDereference,
-    JumpDereference2,
-    JumpDereference3,
-    TakeBranch8,
-    LoadTarget,
-    WriteCommit,DummyWrite,
-    WordOpReadHigh,
-    WordOpWriteLow,
-    WordOpWriteHigh,
-    PushWordLow,PushWordHigh,
-    Pop,
-    MicrocodeInterpret
+    Flat32Got2ndArgument,Flat32Byte3,Flat32Byte4,           -- 0x17, 0x18, 0x19
+    Flat32SaveAddress,                        -- 0x1a
+    Flat32SaveAddress1,Flat32SaveAddress2,Flat32SaveAddress3,Flat32SaveAddress4,  -- 0x1b, 0x1c, 0x1d, 0x1e
+    Flat32Dereference0,                       -- 0x1f
+    Flat32Dereference1,Flat32Dereference2,Flat32Dereference3,Flat32Dereference4,  -- 0x20, 0x21, 0x22, 0x23
+    Flat32Translate,Flat32Dispatch,         -- 0x24, 0x25
+    Flat32RTS,                              -- 0x26
+    Pull,                                   -- 0x27
+    RTI,RTI2,                               -- 0x28, 0x29
+    RTS,RTS1,RTS2,RTS3,                     -- 0x2a, 0x2b, 0x2c, 0x2d
+    B16TakeBranch,                          -- 0x2e
+    InnXReadVectorLow,                      -- 0x2f
+    InnXReadVectorHigh,                     -- 0x30
+    InnSPYReadVectorLow,                    -- 0x31
+    InnSPYReadVectorHigh,                   -- 0x32
+    InnYReadVectorLow,                      -- 0x33
+    InnYReadVectorHigh,                     -- 0x34
+    InnZReadVectorLow,                      -- 0x35
+    InnZReadVectorHigh,                     -- 0x36
+    InnZReadVectorByte2,                    -- 0x37
+    InnZReadVectorByte3,                    -- 0x38
+    InnZReadVectorByte4,                    -- 0x39
+    CallSubroutine,CallSubroutine2,         -- 0x3a, 0x3b
+    ZPRelReadZP,                            -- 0x3c
+    JumpAbsXReadArg2,                       -- 0x3d
+    JumpIAbsReadArg2,                       -- 0x3e
+    JumpIAbsXReadArg2,                      -- 0x3f
+    JumpDereference,                        -- 0x40
+    JumpDereference2,                       -- 0x41
+    JumpDereference3,                       -- 0x42
+    TakeBranch8,                            -- 0x43
+    LoadTarget,                             -- 0x44
+    WriteCommit,DummyWrite,                 -- 0x45, 0x46
+    WordOpReadHigh,                         -- 0x47
+    WordOpWriteLow,                         -- 0x48
+    WordOpWriteHigh,                        -- 0x49
+    PushWordLow,PushWordHigh,               -- 0x4a, 0x4b
+    Pop,                                    -- 0x4c
+    MicrocodeInterpret                      -- 0x4d
     );
   signal state : processor_state := ResetLow;
   signal fast_fetch_state : processor_state := InstructionDecode;
@@ -1128,21 +1162,31 @@ begin
 
   shadowram0 : shadowram port map (
     clk     => clock,
-    address => shadow_address,
+    address_i => shadow_address,
+    address_i_dbg => shadow_address_i_dbg,
     we      => shadow_write,
     data_i  => shadow_wdata,
-    data_o  => shadow_rdata,
     no_writes => shadow_no_write_count,
-    writes => shadow_write_count);
+    writes => shadow_write_count,
+    --clk_o     => clock,
+    address_o => shadow_address_next,
+    address_o_dbg => shadow_address_o_dbg,
+    data_o  => shadow_rdata
+    );
 
   romram0 : shadowram port map (
-    clk     => clock,
-    address => rom_address,
+    clk   => clock,
+    address_i => rom_address,
+    address_i_dbg => rom_address_i_dbg,
     we      => rom_write,
     data_i  => rom_wdata,
-    data_o  => rom_rdata,
     no_writes => rom_no_write_count,
-    writes => rom_write_count);
+    writes => rom_write_count,
+    -- clk_o     => clock,
+    address_o => rom_address_next,
+    address_o_dbg => rom_address_o_dbg,
+    data_o  => rom_rdata
+    );
 
   zpcache0: entity work.ram36x1k port map (
     clkl => clock,
@@ -1449,22 +1493,6 @@ begin
       -- Stop writing when reading.     
       fastio_write <= '0'; shadow_write <= '0';
 
-      -- Remap GeoRAM memory accesses
-      --if real_long_address(27 downto 16) = x"FFD"
-      --  and real_long_address(11 downto 8) = x"E" then
-      --  long_address := georam_page&real_long_address(7 downto 0);
-      --end if;
-      
-      --if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
-      --  -- colour ram access: remap to $FF80000 - $FF807FF
-      --  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-		  ---- also remap to $7F40000 - $7F407FF
-      --elsif real_long_address(27 downto 16) = x"7F4" then
-  		--  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-  		--else
-      --  long_address := real_long_address;
-      --end if;
-
       long_address := long_address_read;
       
       report "Reading from long address $" & to_hstring(long_address) severity note;
@@ -1495,11 +1523,6 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      --shadow_address <= to_integer(long_address(16 downto 0));
-      shadow_address <= shadow_address_next;
-      -- shadow_address <= to_integer(long_address(16 downto 0));
-      rom_address <= rom_address_next;
-      -- rom_address <= to_integer(long_address(16 downto 0));
       rom_write <= '0';
 
       report "MEMORY long_address = $" & to_hstring(long_address);
@@ -1555,6 +1578,7 @@ begin
         -- @ IO:C65 $0030000-$0031FFF - 16KB C65 DOS ROM
         
         report "Preparing to read from Shadow";
+        shadow_address <= shadow_address_next;
         read_source <= Shadow;
         accessing_shadow <= '1';
         wait_states <= shadow_wait_states;
@@ -1572,6 +1596,7 @@ begin
         -- Reading from chipram, so read from the bottom 128KB of the shadow RAM
         -- instead.
         report "Preparing to read from Shadow";
+        shadow_address <= shadow_address_next;
         read_source <= Shadow;
         accessing_shadow <= '1';
         accessing_rom <= '0';
@@ -1589,6 +1614,7 @@ begin
       elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
         -- Reading from 128KB ROM
         report "Preparing to read from ROMRAM";
+        rom_address <= rom_address_next;
         read_source <= ROMRAM;
         accessing_shadow <= '0';
         accessing_rom <= '1';
@@ -1662,7 +1688,8 @@ begin
           fastio_read <= '0';
           accessing_kickstart_fastio <= '1';
           read_source <= Kickstart;
-        end if;  
+          kickstart_address <= kickstart_address_next;          
+        end if;
         if long_address(19 downto 16) = x"D" then
           if long_address(15 downto 14) = "00" then    --   $D{0,1,2,3}XXX
             if long_address(11 downto 10) = "00" then  --   $D{0,1,2,3}{0,1,2,3}XX
@@ -1730,18 +1757,6 @@ begin
 
     end read_long_address;
     
-    impure function read_data
-      return unsigned is
-    begin  -- read_data
-      case read_source is
-        when Shadow => return shadow_rdata;
-        when ROMRAM => return rom_rdata;
-        when others =>
-          -- report "reading from somewhere other than shadowram" severity note;
-          return read_data_copy;
-      end case;
-    end read_data;
-
     -- purpose: obtain the byte of memory that has been read
     impure function read_data_complex
       return unsigned is
@@ -1909,7 +1924,7 @@ begin
         when FastIO =>
           report "reading normal fastio byte $" & to_hstring(fastio_rdata) severity note;
           return unsigned(fastio_rdata);
-        when KickStart =>
+        when Kickstart =>
           report "reading kickstart fastio byte $" & to_hstring(kickstart_rdata) severity note;
           return unsigned(kickstart_rdata);
         when SlowRAM =>
@@ -1941,10 +1956,6 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      shadow_address <= shadow_address_next;
-      --shadow_address <= to_integer(long_address(16 downto 0));
-      rom_address <= rom_address_next;
-      --rom_address <= to_integer(long_address(16 downto 0));
       rom_write <= '0';
       
       shadow_write_flags(0) <= '1';
@@ -1956,12 +1967,6 @@ begin
       else
         wait_states_non_zero <= '0';
       end if;
-
-      -- Remap GeoRAM memory accesses
-      --if real_long_address(27 downto 16) = x"FFD"
-      --  and real_long_address(11 downto 8)= x"E" then
-      --  long_address := georam_page&real_long_address(7 downto 0);
-      --end if;
 
       -- Set GeoRAM page (gets munged later with GeoRAM base and mask values
       -- provided by the hypervisor)
@@ -2012,35 +2017,6 @@ begin
           reu_hold_reu_address <= value(6);
         end if;        
       end if;
-
-
-      --report "real_long_address for write = $" & to_hstring(real_long_address);
-      --if
-        -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
-        -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
-        --(real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
-        --or
-        -- FFD[0-3]800-BFF
-        --(real_long_address(27 downto 16) = x"FFD"
-        -- and real_long_address(15 downto 14) = "00"
-        -- and real_long_address(11 downto 10) = "10")        
-      --then
-        --report "Writing to colour RAM";
-	-- Write to shadow RAM
-        -- shadow_write <= '0';
-        -- rom_write <= '0';
-
-        -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
-        --long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-
-        -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
-        -- Is this for creating a linear memory map for quick task swapping, or
-        -- something else? (PGS)
-        --elsif real_long_address(27 downto 16) = x"7F4" then
-  		  --long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-        --else
-        --long_address := real_long_address;
-        --end if;
 
       long_address := long_address_write;
       
@@ -2145,20 +2121,19 @@ begin
       -- This ensures that shadow ram is consistent with the shadowed address space
       -- when the CPU reads from shadow ram.
       -- Get the shadow RAM address on the bus fast to improve timing.
-      shadow_address <= shadow_address_next;
-      -- shadow_address <= to_integer(long_address(16 downto 0));
       shadow_wdata <= value;
-      rom_address <= rom_address_next;
-      -- rom_address <= to_integer(long_address(16 downto 0));
       rom_wdata <= value;
+      
       if long_address(27 downto 16)="0000"&shadow_bank then
         report "writing to shadow RAM via shadow_bank" severity note;
+        shadow_address <= shadow_address_next;
         shadow_write <= '1';
         rom_write <= '0';
         shadow_write_flags(3) <= '1';
       end if;
       if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
         report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
+        shadow_address <= shadow_address_next;
         shadow_write <= '1';
         rom_write <= '0';
         fastio_write <= '0';
@@ -2189,11 +2164,11 @@ begin
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
 
-
       --Also mapped to 7F20000-7F3FFFF (is this for 1MB linear address space
       --for task switching?)
       elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
         report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
+        rom_address <= rom_address_next;
         shadow_write <= '0';
         rom_write <= not rom_writeprotect;
         fastio_write <= '0';        
@@ -2557,6 +2532,11 @@ begin
     -- BEGINNING OF MAIN PROCESS FOR CPU
     if rising_edge(clock) and all_pause='0' then
 
+      -- These two always remember their prior value
+      --shadow_address <= shadow_address_next;
+      --rom_address <= rom_address_next;
+      shadow_address_state_dbg <= shadow_address_state_dbg_next;
+      
       dat_bitplane_addresses_drive <= dat_bitplane_addresses;
       dat_offset_drive <= dat_offset;
       
@@ -5281,20 +5261,6 @@ begin
             reg_sph <= reg_sph + 1;
           end if;
         end if;
-
-        -- Mark pages dirty as necessary        
-        if(reg_pages_dirty_next(0) = '1') then
-          reg_pages_dirty(0) <= '1';
-        end if;
-        if(reg_pages_dirty_next(1) = '1') then
-          reg_pages_dirty(1) <= '1';
-        end if;
-        if(reg_pages_dirty_next(2) = '1') then
-          reg_pages_dirty(2) <= '1';
-        end if;
-        if(reg_pages_dirty_next(3) = '1') then
-          reg_pages_dirty(3) <= '1';
-        end if;
         
         -- Effect memory accesses.
         -- Note that we cannot combine address resolution for read and write,
@@ -5308,13 +5274,23 @@ begin
         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
+          -- Mark pages dirty as necessary        
+          if(reg_pages_dirty_next(0) = '1') then
+            reg_pages_dirty(0) <= '1';
+          end if;
+          if(reg_pages_dirty_next(1) = '1') then
+            reg_pages_dirty(1) <= '1';
+          end if;
+          if(reg_pages_dirty_next(2) = '1') then
+            reg_pages_dirty(2) <= '1';
+          end if;
+          if(reg_pages_dirty_next(3) = '1') then
+            reg_pages_dirty(3) <= '1';
+          end if;
+
           -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
-          shadow_address <= shadow_address_next;
-          -- shadow_address <= to_integer(memory_access_address(16 downto 0));
-          rom_address <= rom_address_next;
-          -- rom_address <= to_integer(memory_access_address(16 downto 0));
           rom_write <= '0';
           
           if memory_access_address = x"FFD3700"
@@ -5389,7 +5365,10 @@ begin
     monitor_mem_read,monitor_mem_setpc,dmagic_src_addr,dmagic_dest_addr,viciii_iomode,reg_dmagic_transparent_value,
     reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_pagenumber,reg_addr32save,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
-    dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,reg_pageactive
+    dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,reg_pageactive,shadow_rdata,proceed,
+    reg_mult_a,read_data,shadow_address_state_dbg,shadow_wdata,rom_wdata,shadow_address,rom_address,kickstart_address,
+    reg_pageid,shadow_bank,rom_writeprotect,georam_page,rom_address_i_dbg,rom_address_o_dbg,shadow_address_state_dbg,
+    kickstart_address_next
     )
     variable memory_access_address : unsigned(27 downto 0) := x"FFFFFFF";
     variable memory_access_read : std_logic := '0';
@@ -5399,11 +5378,15 @@ begin
     
     variable shadow_address_var : integer range 0 to 131071 := 0;
     variable shadow_write_var : std_logic := '0';
+    variable shadow_read_var : std_logic := '0';
     variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
 
     variable rom_address_var : integer range 0 to 131071 := 0;
     variable rom_write_var : std_logic := '0';
+    variable rom_read_var : std_logic := '0';
     variable rom_wdata_var : unsigned(7 downto 0) := x"FF";
+
+    variable kickstart_address_var : std_logic_vector(13 downto 0);
 
     variable long_address_read_var : unsigned(27 downto 0) := x"FFFFFFF";
     variable long_address_write_var : unsigned(27 downto 0) := x"FFFFFFF";
@@ -5414,6 +5397,8 @@ begin
     variable virtual_reg_p : std_logic_vector(7 downto 0);
     variable reg_pages_dirty_var : std_logic_vector(3 downto 0)  := (others => '0');
   
+    variable shadow_address_state_dbg_var : std_logic_vector(3 downto 0);
+    
     -- temp hack as I work to move this code around...
     variable real_long_address : unsigned(27 downto 0);
     variable long_address : unsigned(27 downto 0);
@@ -5662,620 +5647,662 @@ begin
     virtual_reg_p(1) := flag_z;
     virtual_reg_p(0) := flag_c;
         
-    -- By default read next byte in instruction stream.
-    memory_access_read := '1';
+    -- Don't do anything by default...
+    memory_access_read := '0';
     memory_access_write := '0';
-    memory_access_address := x"000"&reg_pc;
-    memory_access_resolve_address := '1';
-    memory_access_wdata := x"FF";
+    memory_access_resolve_address := '0';
 
     -- By default, shadow/rom addresses hold previous values
-    shadow_address_var := shadow_address;
-    rom_address_var := rom_address;
     
     -- These always reset after each cycle though (no feedback loop)
-    shadow_write_var := '0';--shadow_write;
-    shadow_wdata_var := x"FF"; --shadow_wdata;
-    rom_write_var := '0';--shadow_write;
-    rom_wdata_var := x"FF"; --shadow_wdata;
-        
-    case state is
-      when VectorRead =>
-        if hypervisor_mode='1' then
-          -- Vectors move in hypervisor mode to be inside the hypervisor
-          -- ROM at $81Fx
-          memory_access_address := x"FF801F"&vector;
-        else
-          memory_access_address := x"000FFF"&vector;
-        end if;
-      when Interrupt =>
-        stack_push := '1';
-        memory_access_wdata := reg_pc(15 downto 8);
-      when InterruptPushPCL =>
-        stack_push := '1';
-        memory_access_wdata := reg_pc(7 downto 0);
-      when InterruptPushP =>
-        stack_push := '1';
-        memory_access_wdata := reg_t;
-      when RTI =>
-        stack_pop := '1';
-      when RTI2 =>
-        stack_pop := '1';
-      when RTS =>
-        stack_pop := '1';
-      when RTS1 =>
-        stack_pop := '1';
-      when RTS3 =>
-        -- Read the instruction byte following
-        memory_access_address := x"000"&reg_pc;
-        memory_access_read := '1';
-      when ProcessorHold =>
-        -- Hold CPU while blocked by monitor
-
-        if monitor_mem_attention_request_drive='1' then
-          -- Memory access by serial monitor.
-          if monitor_mem_address_drive(27 downto 16) = x"777" then
-            -- M777xxxx in serial monitor reads memory from CPU's perspective
-            memory_access_resolve_address := '1';
-          else
-            memory_access_resolve_address := '0';
-          end if;
-          
-          if monitor_mem_write_drive='1' then
-            -- Write to specified long address (or short if address is $777xxxx)
-            memory_access_address := unsigned(monitor_mem_address_drive);
-            memory_access_write := '1';
-            memory_access_wdata := monitor_mem_wdata_drive;
-          elsif monitor_mem_read='1' then
-            -- and optionally set PC
-            if monitor_mem_setpc='0' then
-              -- otherwise just read from memory
-              memory_access_address := unsigned(monitor_mem_address_drive);
-              memory_access_read := '1';
-            end if;
-          end if;
-        else
-          -- Don't do anything while the processor is held.
-          memory_access_write := '0';
-          memory_access_read := '0';
-        end if;
-      when DMAgicTrigger =>
-        -- Begin to load DMA registers
-        -- We load them from the 20 bit address stored $D700 - $D702
-        -- plus the 8-bit MB value in $D704
-        memory_access_address := reg_dmagic_addr;
-        memory_access_resolve_address := '0';
-        memory_access_read := '1';
-      when DMAgicReadOptions =>
-        memory_access_address := reg_dmagic_addr;
-        memory_access_resolve_address := '0';
-        memory_access_read := '1';
-      when DMAgicReadList =>
-        memory_access_address := reg_dmagic_addr;
-        memory_access_resolve_address := '0';
-        memory_access_read := '1';
-      when DMAgicFill =>
-        memory_access_write := '1';
-        memory_access_wdata := dmagic_src_addr(15 downto 8);
-        memory_access_resolve_address := '0';
-        memory_access_address := dmagic_dest_addr(35 downto 8);
-
-        -- redirect memory write to IO block if required
-        if dmagic_dest_addr(23 downto 20) = x"d" and dmagic_dest_io='1' then
-          memory_access_address(27 downto 16) := x"FFD";
-          memory_access_address(15 downto 14) := "00";
-          memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
-        end if;
-        
-      when DMAgicCopyRead =>
-        -- Do memory read
-        memory_access_read := '1';
-        memory_access_resolve_address := '0';
-        memory_access_address := dmagic_src_addr(35 downto 8);
-
-        -- redirect memory write to IO block if required
-        if dmagic_src_addr(23 downto 20) = x"d" and dmagic_src_io='1' then
-          memory_access_address(27 downto 16) := x"FFD";
-          memory_access_address(15 downto 14) := "00";
-          memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
-        end if;
-        
-      when DMAgicCopyWrite =>
-        
-        if dmagic_first_read = '0' then
-          -- Do memory write
-          if (reg_t /= reg_dmagic_transparent_value)
-            or (reg_dmagic_use_transparent_value='0') then
-            memory_access_write := '1';
-          else
-            memory_access_write := '0';
-          end if;
-          memory_access_wdata := reg_t;
-          memory_access_resolve_address := '0';
-          memory_access_address := dmagic_dest_addr(35 downto 8);
-
-          -- redirect memory write to IO block if required
-          if dmagic_dest_addr(15 downto 12) = x"d" and dmagic_dest_io='1' then
-            memory_access_address(27 downto 16) := x"FFD";
-            memory_access_address(15 downto 14) := "00";
-            memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
-          end if;
-        end if;
-      when Cycle2 =>
-        -- Fetch arg2 if required (only for 3 byte addressing modes)
-        -- Also begin processing operations that don't need any more data
-        -- to start, so that we don't waste a cycle on every 2-byte instruction.
-        -- (We have this block last, so that it can override the destination
-        -- state).
-        case reg_addressingmode is
-          when M_nn =>
-            if is_load='1' or is_rmw='1' then
-              -- On memory read wait-state, read from RAM, so that FastIO
-              -- lines clear
-              memory_access_read := '1';
-              memory_access_address := x"0000002";
-              memory_access_resolve_address := '0';
-            end if;
-          when M_nnX =>
-            if is_load='1' or is_rmw='1' then
-              -- On memory read wait-state, read from RAM, so that FastIO
-              -- lines clear
-              memory_access_read := '1';
-              memory_access_address := x"0000002";
-              memory_access_resolve_address := '0';
-            end if;
-          when M_nnY =>
-            if is_load='1' or is_rmw='1' then
-              -- On memory read wait-state, read from RAM, so that FastIO
-              -- lines clear
-              memory_access_read := '1';
-              memory_access_address := x"0000002";
-              memory_access_resolve_address := '0';
-            end if;
-          when others =>
-            null;
-        end case;              
-        memory_access_wdata := reg_pagenumber(17 downto 10);
-      when Flat32SaveAddress2 =>
-        stack_push := '1';
-        memory_access_wdata := reg_addr32save(23 downto 16);
-      when Flat32SaveAddress3 =>
-        stack_push := '1';
-        memory_access_wdata := reg_addr32save(15 downto 8);
-      when Flat32SaveAddress4 =>
-        stack_push := '1';
-        memory_access_wdata := reg_addr32save(7 downto 0);
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';                
-      when Flat32Dereference1 =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';                
-      when Flat32Dereference2 =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';                
-      when Flat32Dereference3 =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';                
-      when Flat32Dereference4 =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';                
-      when Cycle3 =>
-
-        if reg_instruction = I_RTS or reg_instruction = I_RTI then
-          stack_pop := '1';
-        else
-          case reg_addressingmode is
-            when M_impl =>  -- Handled in MicrocodeInterpret
-            when M_A =>     -- Handled in MicrocodeInterpret
-            when M_InnX =>                    
-              temp_addr := reg_b & (reg_arg1+reg_X);
-              memory_access_read := '1';
-              memory_access_address := x"000"&temp_addr;
-              memory_access_resolve_address := '1';
-            when M_nn =>
-              if is_load='1' or is_rmw='1' then
-                -- On memory read wait-state, read from RAM, so that FastIO
-                -- lines clear
-                memory_access_read := '1';
-                memory_access_address := x"0000002";
-                memory_access_resolve_address := '0';
-              end if;
-            when M_immnn => -- Handled in MicrocodeInterpret
-            when M_nnnn =>
-              -- If it is a branch, write the low bits of the programme
-              -- counter now.  We will read the 2nd argument next cycle
-              if reg_instruction = I_JSR or reg_instruction = I_BSR then
-                memory_access_read := '0';
-                memory_access_write := '1';
-                memory_access_address := x"000"&reg_sph&reg_sp;
-                memory_access_resolve_address := '1';
-                memory_access_wdata := reg_pc_jsr(15 downto 8);
-              else
-                if is_load='1' or is_rmw='1' then
-                  -- On memory read wait-state, read from RAM, so that FastIO
-                  -- lines clear
-                  memory_access_read := '1';
-                  memory_access_address := x"0000002";
-                  memory_access_resolve_address := '0';
-                end if;
-              end if;
-            when M_nnrr =>
-              memory_access_read := '1';
-              memory_access_address := x"000"&reg_b&reg_arg1;
-              memory_access_resolve_address := '1';
-            when M_InnY =>
-              temp_addr := reg_b&reg_arg1;
-              memory_access_read := '1';
-              memory_access_address := x"000"&temp_addr;
-              memory_access_resolve_address := '1';
-            when M_InnZ =>
-              temp_addr := reg_b&reg_arg1;
-              memory_access_read := '1';
-              memory_access_address := x"000"&temp_addr;
-              memory_access_resolve_address := '1';
-            when M_nnX =>
-              temp_addr := reg_b & (reg_arg1 + reg_X);
-              if is_load='1' or is_rmw='1' then
-                -- On memory read wait-state, read from RAM, so that FastIO
-                -- lines clear
-                memory_access_read := '1';
-                memory_access_address := x"0000002";
-                memory_access_resolve_address := '0';
-              end if;
-            when M_nnY =>
-              temp_addr := reg_b & (reg_arg1 + reg_Y);
-              if is_load='1' or is_rmw='1' then
-                -- On memory read wait-state, read from RAM, so that FastIO
-                -- lines clear
-                memory_access_read := '1';
-                memory_access_address := x"0000002";
-                memory_access_resolve_address := '0';
-              end if;
-            when M_nnnnY =>
-              if is_load='1' or is_rmw='1' then
-                -- On memory read wait-state, read from RAM, so that FastIO
-                -- lines clear
-                memory_access_read := '1';
-                memory_access_address := x"0000002";
-                memory_access_resolve_address := '0';
-              end if;
-            when M_nnnnX =>
-              if is_load='1' or is_rmw='1' then
-                -- On memory read wait-state, read from RAM, so that FastIO
-                -- lines clear
-                memory_access_read := '1';
-                memory_access_address := x"0000002";
-                memory_access_resolve_address := '0';
-              end if;
-            when M_InnSPY =>
-              temp_addr :=  to_unsigned(to_integer(reg_b&reg_arg1)
-                                        +to_integer(reg_sph&reg_sp),16);
-              memory_access_read := '1';
-              memory_access_address := x"000"&temp_addr;
-              memory_access_resolve_address := '1';
-            when others =>
-              null;
-          end case;
-        end if;
-      when CallSubroutine =>
-        -- Push PCH
-        memory_access_read := '0';
-        memory_access_write := '1';
-        memory_access_address := x"000"&reg_sph&reg_sp;
-        memory_access_resolve_address := '1';
-        memory_access_wdata := reg_pc_jsr(7 downto 0);
-      when CallSubroutine2 =>
-        -- Immediately start reading the next instruction
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnXReadVectorLow =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnXReadVectorHigh =>
-        if is_load='1' or is_rmw='1' then
-          -- On memory read wait-state, read from RAM, so that FastIO
-          -- lines clear
-          memory_access_read := '1';
-          memory_access_address := x"0000002";
-          memory_access_resolve_address := '0';
-        end if;
-      when InnSPYReadVectorLow =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnSPYReadVectorHigh =>
-        if is_load='1' or is_rmw='1' then
-          -- On memory read wait-state, read from RAM, so that FastIO
-          -- lines clear
-          memory_access_read := '1';
-          memory_access_address := x"0000002";
-          memory_access_resolve_address := '0';
-        end if;
-      when InnYReadVectorLow =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnYReadVectorHigh =>
-        if is_load='1' or is_rmw='1' then
-          -- On memory read wait-state, read from RAM, so that FastIO
-          -- lines clear
-          memory_access_read := '1';
-          memory_access_address := x"0000002";
-          memory_access_resolve_address := '0';
-        end if;
-      when InnZReadVectorLow =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnZReadVectorByte2 =>
-        -- Do addition of Z register as we go along, so that we don't have
-        -- a 32-bit carry.
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnZReadVectorByte3 =>
-        -- Do addition of Z register as we go along, so that we don't have
-        -- a 32-bit carry.
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when InnZReadVectorByte4 =>
-        if is_load='1' or is_rmw='1' then
-          -- On memory read wait-state, read from RAM, so that FastIO
-          -- lines clear
-          memory_access_read := '1';
-          memory_access_address := x"0000002";
-          memory_access_resolve_address := '0';
-        end if;
-      when InnZReadVectorHigh =>
-        if is_load='1' or is_rmw='1' then
-          -- On memory read wait-state, read from RAM, so that FastIO
-          -- lines clear
-          memory_access_read := '1';
-          memory_access_address := x"0000002";
-          memory_access_resolve_address := '0';
-        end if;
-      when JumpDereference =>
-        -- reg_addr holds the address we want to load a 16 bit address
-        -- from for a JMP or JSR.
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when JumpDereference2 =>
-        memory_access_read := '1';
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-      when JumpDereference3 =>
-        if reg_instruction=I_JMP then
-          null;
-        else
-          memory_access_read := '0';
-          memory_access_write := '1';
-          memory_access_address := x"000"&reg_sph&reg_sp;
-          memory_access_resolve_address := '1';
-          memory_access_wdata := reg_pc_jsr(15 downto 8);
-        end if;        
-      when DummyWrite =>
-        memory_access_address := x"000"&reg_addr;
-        memory_access_resolve_address := '1';
-        memory_access_write := '1';
-        memory_access_read := '0';
-        memory_access_wdata := reg_t_high;
-      when WriteCommit =>
-        memory_access_write := '1';
-        memory_access_address(15 downto 0) := reg_addr;
-        memory_access_resolve_address := not absolute32_addressing_enabled;
-        if absolute32_addressing_enabled='1' then
-          memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
-        else
-          memory_access_address(27 downto 16) := x"000";
-        end if;
-        memory_access_wdata := reg_t;
-      when LoadTarget =>
-        -- For some addressing modes we load the target in a separate
-        -- cycle to improve timing.
-        memory_access_read := '1';
-        memory_access_address(15 downto 0) := reg_addr;
-        memory_access_resolve_address := not absolute32_addressing_enabled;
-        if absolute32_addressing_enabled='1' then
-          memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
-        else
-          memory_access_address(27 downto 16) := x"000";
-        end if;
-      when MicrocodeInterpret =>
-
-        if reg_microcode.mcStoreA='1' then memory_access_wdata := reg_a; end if;
-        if reg_microcode.mcStoreX='1' then memory_access_wdata := reg_x; end if;
-        if reg_microcode.mcStoreY='1' then memory_access_wdata := reg_y; end if;
-        if reg_microcode.mcStoreZ='1' then memory_access_wdata := reg_z; end if;              
-        if reg_microcode.mcStoreP='1' then
-           memory_access_wdata := unsigned(virtual_reg_p);
-           memory_access_wdata(4) := '1';  -- B always set when pushed
-           memory_access_wdata(5) := '1';  -- E always set when pushed
-        end if;              
-        if reg_microcode.mcWriteRegAddr='1' then
-          memory_access_address := x"000"&reg_addr;
-          memory_access_resolve_address := '1';
-        end if;
-        case reg_instruction is
-          when I_PHA => stack_push := '1';
-          when I_PHP => stack_push := '1';
-          when I_PHX => stack_push := '1';
-          when I_PHY => stack_push := '1';
-          when I_PHZ => stack_push := '1';
-          when others => stack_push := '0';
-        end case;              
-        stack_pop := reg_microcode.mcPop;
-        if reg_microcode.mcWordOp='1' then
-          memory_access_address := x"000"&(reg_addr+1);
-          memory_access_resolve_address := '1';
-          memory_access_read := '1';
-        end if;
-        memory_access_write := reg_microcode.mcWriteMem;
-        if reg_microcode.mcWriteMem='1' then
-          memory_access_address(15 downto 0) := reg_addr;
-          memory_access_resolve_address := not absolute32_addressing_enabled;
-          if absolute32_addressing_enabled='1' then
-            memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
-          else
-            memory_access_address(27 downto 16) := x"000";
-          end if;
-        end if;
-      when PushWordLow =>
-        stack_push := '1';
-        memory_access_wdata := reg_t;
-      when PushWordHigh =>
-        stack_push := '1';
-        memory_access_wdata := reg_t_high;
-      when WordOpWriteLow =>
-        memory_access_address := x"000"&(reg_addr);
-        memory_access_resolve_address := '1';
-        memory_access_write := '1';
-        memory_access_wdata := reg_t;
-      when WordOpWriteHigh =>
-        memory_access_address := x"000"&(reg_addr);
-        memory_access_resolve_address := '1';
-        memory_access_write := '1';
-        memory_access_wdata := reg_t_high;
-      when others =>
-        null;
-    end case;            
-
-    if stack_push='1' then
-      memory_access_write := '1';
-      memory_access_address := x"000"&reg_sph&reg_sp;
-      memory_access_resolve_address := '1';      
-    end if;
+    shadow_write_var := '0';
+    shadow_read_var := '0';
+    rom_write_var := '0';
+    rom_read_var := '0';
+    shadow_address_state_dbg_var := shadow_address_state_dbg;
     
-    if stack_pop='1' then
+    -- By default these hold their old value while CPU is halted
+    shadow_wdata_var := shadow_wdata;
+    rom_wdata_var := rom_wdata;
+    shadow_address_next <= shadow_address;
+    rom_address_next <= rom_address;
+    shadow_wdata_next <= shadow_wdata;
+    rom_wdata_next <= rom_wdata;
+    kickstart_address_next <= kickstart_address;
+
+    shadow_address_var := shadow_address;
+    rom_address_var := rom_address;
+
+    kickstart_address_var := kickstart_address;
+
+    if proceed = '1' then
+    
+      -- By default read next byte in instruction stream.
       memory_access_read := '1';
-      if flag_e='0' then
-        -- stack pointer can roam full 64KB
-        memory_access_address := x"000"&((reg_sph&reg_sp)+1);
-      else
-        -- constrain stack pointer to single page if E flag is set
-        memory_access_address := x"000"&reg_sph&(reg_sp+1);
-      end if;
+      memory_access_write := '0';
+      memory_access_address := x"000"&reg_pc;
       memory_access_resolve_address := '1';
-    end if;
+          
+  		case state is
+  		  when VectorRead =>
+  		    if hypervisor_mode='1' then
+  		      -- Vectors move in hypervisor mode to be inside the hypervisor
+  		      -- ROM at $81Fx
+  		      memory_access_address := x"FF801F"&vector;
+  		    else
+  		      memory_access_address := x"000FFF"&vector;
+  		    end if;
+  		  when Interrupt =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_pc(15 downto 8);
+  		  when InterruptPushPCL =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_pc(7 downto 0);
+  		  when InterruptPushP =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_t;
+  		  when RTI =>
+  		    stack_pop := '1';
+  		  when RTI2 =>
+  		    stack_pop := '1';
+  		  when RTS =>
+  		    stack_pop := '1';
+  		  when RTS1 =>
+  		    stack_pop := '1';
+  		  when RTS3 =>
+  		    -- Read the instruction byte following
+  		    memory_access_address := x"000"&reg_pc;
+  		    memory_access_read := '1';
+  		  when ProcessorHold =>
+  		    -- Hold CPU while blocked by monitor
 
-    reg_pages_dirty_var(0) := '0';
-    reg_pages_dirty_var(1) := '0';
-    reg_pages_dirty_var(2) := '0';
-    reg_pages_dirty_var(3) := '0';
-    
-    if (reg_pageactive = '1' ) then
-      if (memory_access_address(15 downto 14) = "01") then
-        case reg_pageid is
-          when "00" => reg_pages_dirty_var(0) := '1'; 
-          when "01" => reg_pages_dirty_var(1) := '1'; 
-          when "10" => reg_pages_dirty_var(2) := '1'; 
-          when "11" => reg_pages_dirty_var(3) := '1';
-          when others => null;
-        end case;
-      end if;
-    end if;
+  		    if monitor_mem_attention_request_drive='1' then
+  		      -- Memory access by serial monitor.
+  		      if monitor_mem_address_drive(27 downto 16) = x"777" then
+  		        -- M777xxxx in serial monitor reads memory from CPU's perspective
+  		        memory_access_resolve_address := '1';
+  		      else
+  		        memory_access_resolve_address := '0';
+  		      end if;
+		      
+  		      if monitor_mem_write_drive='1' then
+  		        -- Write to specified long address (or short if address is $777xxxx)
+  		        memory_access_address := unsigned(monitor_mem_address_drive);
+  		        memory_access_write := '1';
+  		        memory_access_wdata := monitor_mem_wdata_drive;
+  		      elsif monitor_mem_read='1' then
+  		        -- and optionally set PC
+  		        if monitor_mem_setpc='0' then
+  		          -- otherwise just read from memory
+  		          memory_access_address := unsigned(monitor_mem_address_drive);
+  		          memory_access_read := '1';
+  		        end if;
+  		      end if;
+  		    else
+  		      -- Don't do anything while the processor is held.
+  		      memory_access_write := '0';
+  		      memory_access_read := '0';
+  		    end if;
+  		  when DMAgicTrigger =>
+  		    -- Begin to load DMA registers
+  		    -- We load them from the 20 bit address stored $D700 - $D702
+  		    -- plus the 8-bit MB value in $D704
+  		    memory_access_address := reg_dmagic_addr;
+  		    memory_access_resolve_address := '0';
+  		    memory_access_read := '1';
+  		  when DMAgicReadOptions =>
+  		    memory_access_address := reg_dmagic_addr;
+  		    memory_access_resolve_address := '0';
+  		    memory_access_read := '1';
+  		  when DMAgicReadList =>
+  		    memory_access_address := reg_dmagic_addr;
+  		    memory_access_resolve_address := '0';
+  		    memory_access_read := '1';
+  		  when DMAgicFill =>
+  		    memory_access_write := '1';
+  		    memory_access_wdata := dmagic_src_addr(15 downto 8);
+  		    memory_access_resolve_address := '0';
+  		    memory_access_address := dmagic_dest_addr(35 downto 8);
 
-    --shadow_address_var := memory_access_address(long_address(16 downto 0));
-    shadow_wdata_var := memory_access_wdata;
-    rom_wdata_var := memory_access_wdata;
+  		    -- redirect memory write to IO block if required
+  		    if dmagic_dest_addr(23 downto 20) = x"d" and dmagic_dest_io='1' then
+  		      memory_access_address(27 downto 16) := x"FFD";
+  		      memory_access_address(15 downto 14) := "00";
+  		      memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
+  		    end if;
+		    
+  		  when DMAgicCopyRead =>
+  		    -- Do memory read
+  		    memory_access_read := '1';
+  		    memory_access_resolve_address := '0';
+  		    memory_access_address := dmagic_src_addr(35 downto 8);
 
-    if memory_access_write='1' then
-      if memory_access_resolve_address = '1' then
-        memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),true);
-      end if;
+  		    -- redirect memory write to IO block if required
+  		    if dmagic_src_addr(23 downto 20) = x"d" and dmagic_src_io='1' then
+  		      memory_access_address(27 downto 16) := x"FFD";
+  		      memory_access_address(15 downto 14) := "00";
+  		      memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
+  		    end if;
+		    
+  		  when DMAgicCopyWrite =>
+		    
+  		    if dmagic_first_read = '0' then
+  		      -- Do memory write
+  		      if (reg_t /= reg_dmagic_transparent_value)
+  		        or (reg_dmagic_use_transparent_value='0') then
+  		        memory_access_write := '1';
+  		      else
+  		        memory_access_write := '0';
+  		      end if;
+  		      memory_access_wdata := reg_t;
+  		      memory_access_resolve_address := '0';
+  		      memory_access_address := dmagic_dest_addr(35 downto 8);
 
-      real_long_address := memory_access_address;
+  		      -- redirect memory write to IO block if required
+  		      if dmagic_dest_addr(15 downto 12) = x"d" and dmagic_dest_io='1' then
+  		        memory_access_address(27 downto 16) := x"FFD";
+  		        memory_access_address(15 downto 14) := "00";
+  		        memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
+  		      end if;
+  		    end if;
+  		  when Cycle2 =>
+  		    -- Fetch arg2 if required (only for 3 byte addressing modes)
+  		    -- Also begin processing operations that don't need any more data
+  		    -- to start, so that we don't waste a cycle on every 2-byte instruction.
+  		    -- (We have this block last, so that it can override the destination
+  		    -- state).
+  		    case reg_addressingmode is
+  		      when M_nn =>
+  		        if is_load='1' or is_rmw='1' then
+  		          -- On memory read wait-state, read from RAM, so that FastIO
+  		          -- lines clear
+  		          memory_access_read := '1';
+  		          memory_access_address := x"0000002";
+  		          memory_access_resolve_address := '0';
+  		        end if;
+  		      when M_nnX =>
+  		        if is_load='1' or is_rmw='1' then
+  		          -- On memory read wait-state, read from RAM, so that FastIO
+  		          -- lines clear
+  		          memory_access_read := '1';
+  		          memory_access_address := x"0000002";
+  		          memory_access_resolve_address := '0';
+  		        end if;
+  		      when M_nnY =>
+  		        if is_load='1' or is_rmw='1' then
+  		          -- On memory read wait-state, read from RAM, so that FastIO
+  		          -- lines clear
+  		          memory_access_read := '1';
+  		          memory_access_address := x"0000002";
+  		          memory_access_resolve_address := '0';
+  		        end if;
+  		      when others =>
+  		        null;
+  		    end case;              
+  		    memory_access_wdata := reg_pagenumber(17 downto 10);
+  		  when Flat32SaveAddress2 =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_addr32save(23 downto 16);
+  		  when Flat32SaveAddress3 =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_addr32save(15 downto 8);
+  		  when Flat32SaveAddress4 =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_addr32save(7 downto 0);
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';                
+  		  when Flat32Dereference1 =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';                
+  		  when Flat32Dereference2 =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';                
+  		  when Flat32Dereference3 =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';                
+  		  when Flat32Dereference4 =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';                
+  		  when Cycle3 =>
 
-      -- Remap GeoRAM memory accesses
-      --if real_long_address(27 downto 16) = x"FFD"
-        --and real_long_address(11 downto 8)= x"E" then
-        --long_address := georam_page&real_long_address(7 downto 0);
-        --end if;
+  		    if reg_instruction = I_RTS or reg_instruction = I_RTI then
+  		      stack_pop := '1';
+  		    else
+  		      case reg_addressingmode is
+  		        when M_impl =>  -- Handled in MicrocodeInterpret
+  		        when M_A =>     -- Handled in MicrocodeInterpret
+  		        when M_InnX =>                    
+  		          temp_addr := reg_b & (reg_arg1+reg_X);
+  		          memory_access_read := '1';
+  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_resolve_address := '1';
+  		        when M_nn =>
+  		          if is_load='1' or is_rmw='1' then
+  		            -- On memory read wait-state, read from RAM, so that FastIO
+  		            -- lines clear
+  		            memory_access_read := '1';
+  		            memory_access_address := x"0000002";
+  		            memory_access_resolve_address := '0';
+  		          end if;
+  		        when M_immnn => -- Handled in MicrocodeInterpret
+  		        when M_nnnn =>
+  		          -- If it is a branch, write the low bits of the programme
+  		          -- counter now.  We will read the 2nd argument next cycle
+  		          if reg_instruction = I_JSR or reg_instruction = I_BSR then
+  		            memory_access_read := '0';
+  		            memory_access_write := '1';
+  		            memory_access_address := x"000"&reg_sph&reg_sp;
+  		            memory_access_resolve_address := '1';
+  		            memory_access_wdata := reg_pc_jsr(15 downto 8);
+  		          else
+  		            if is_load='1' or is_rmw='1' then
+  		              -- On memory read wait-state, read from RAM, so that FastIO
+  		              -- lines clear
+  		              memory_access_read := '1';
+  		              memory_access_address := x"0000002";
+  		              memory_access_resolve_address := '0';
+  		            end if;
+  		          end if;
+  		        when M_nnrr =>
+  		          memory_access_read := '1';
+  		          memory_access_address := x"000"&reg_b&reg_arg1;
+  		          memory_access_resolve_address := '1';
+  		        when M_InnY =>
+  		          temp_addr := reg_b&reg_arg1;
+  		          memory_access_read := '1';
+  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_resolve_address := '1';
+  		        when M_InnZ =>
+  		          temp_addr := reg_b&reg_arg1;
+  		          memory_access_read := '1';
+  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_resolve_address := '1';
+  		        when M_nnX =>
+  		          temp_addr := reg_b & (reg_arg1 + reg_X);
+  		          if is_load='1' or is_rmw='1' then
+  		            -- On memory read wait-state, read from RAM, so that FastIO
+  		            -- lines clear
+  		            memory_access_read := '1';
+  		            memory_access_address := x"0000002";
+  		            memory_access_resolve_address := '0';
+  		          end if;
+  		        when M_nnY =>
+  		          temp_addr := reg_b & (reg_arg1 + reg_Y);
+  		          if is_load='1' or is_rmw='1' then
+  		            -- On memory read wait-state, read from RAM, so that FastIO
+  		            -- lines clear
+  		            memory_access_read := '1';
+  		            memory_access_address := x"0000002";
+  		            memory_access_resolve_address := '0';
+  		          end if;
+  		        when M_nnnnY =>
+  		          if is_load='1' or is_rmw='1' then
+  		            -- On memory read wait-state, read from RAM, so that FastIO
+  		            -- lines clear
+  		            memory_access_read := '1';
+  		            memory_access_address := x"0000002";
+  		            memory_access_resolve_address := '0';
+  		          end if;
+  		        when M_nnnnX =>
+  		          if is_load='1' or is_rmw='1' then
+  		            -- On memory read wait-state, read from RAM, so that FastIO
+  		            -- lines clear
+  		            memory_access_read := '1';
+  		            memory_access_address := x"0000002";
+  		            memory_access_resolve_address := '0';
+  		          end if;
+  		        when M_InnSPY =>
+  		          temp_addr :=  to_unsigned(to_integer(reg_b&reg_arg1)
+  		                                    +to_integer(reg_sph&reg_sp),16);
+  		          memory_access_read := '1';
+  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_resolve_address := '1';
+  		        when others =>
+  		          null;
+  		      end case;
+  		    end if;
+  		  when CallSubroutine =>
+  		    -- Push PCH
+  		    memory_access_read := '0';
+  		    memory_access_write := '1';
+  		    memory_access_address := x"000"&reg_sph&reg_sp;
+  		    memory_access_resolve_address := '1';
+  		    memory_access_wdata := reg_pc_jsr(7 downto 0);
+  		  when CallSubroutine2 =>
+  		    -- Immediately start reading the next instruction
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnXReadVectorLow =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnXReadVectorHigh =>
+  		    if is_load='1' or is_rmw='1' then
+  		      -- On memory read wait-state, read from RAM, so that FastIO
+  		      -- lines clear
+  		      memory_access_read := '1';
+  		      memory_access_address := x"0000002";
+  		      memory_access_resolve_address := '0';
+  		    end if;
+  		  when InnSPYReadVectorLow =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnSPYReadVectorHigh =>
+  		    if is_load='1' or is_rmw='1' then
+  		      -- On memory read wait-state, read from RAM, so that FastIO
+  		      -- lines clear
+  		      memory_access_read := '1';
+  		      memory_access_address := x"0000002";
+  		      memory_access_resolve_address := '0';
+  		    end if;
+  		  when InnYReadVectorLow =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnYReadVectorHigh =>
+  		    if is_load='1' or is_rmw='1' then
+  		      -- On memory read wait-state, read from RAM, so that FastIO
+  		      -- lines clear
+  		      memory_access_read := '1';
+  		      memory_access_address := x"0000002";
+  		      memory_access_resolve_address := '0';
+  		    end if;
+  		  when InnZReadVectorLow =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnZReadVectorByte2 =>
+  		    -- Do addition of Z register as we go along, so that we don't have
+  		    -- a 32-bit carry.
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnZReadVectorByte3 =>
+  		    -- Do addition of Z register as we go along, so that we don't have
+  		    -- a 32-bit carry.
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when InnZReadVectorByte4 =>
+  		    if is_load='1' or is_rmw='1' then
+  		      -- On memory read wait-state, read from RAM, so that FastIO
+  		      -- lines clear
+  		      memory_access_read := '1';
+  		      memory_access_address := x"0000002";
+  		      memory_access_resolve_address := '0';
+  		    end if;
+  		  when InnZReadVectorHigh =>
+  		    if is_load='1' or is_rmw='1' then
+  		      -- On memory read wait-state, read from RAM, so that FastIO
+  		      -- lines clear
+  		      memory_access_read := '1';
+  		      memory_access_address := x"0000002";
+  		      memory_access_resolve_address := '0';
+  		    end if;
+  		  when JumpDereference =>
+  		    -- reg_addr holds the address we want to load a 16 bit address
+  		    -- from for a JMP or JSR.
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when JumpDereference2 =>
+  		    memory_access_read := '1';
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		  when JumpDereference3 =>
+  		    if reg_instruction=I_JMP then
+  		      null;
+  		    else
+  		      memory_access_read := '0';
+  		      memory_access_write := '1';
+  		      memory_access_address := x"000"&reg_sph&reg_sp;
+  		      memory_access_resolve_address := '1';
+  		      memory_access_wdata := reg_pc_jsr(15 downto 8);
+  		    end if;        
+  		  when DummyWrite =>
+  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_resolve_address := '1';
+  		    memory_access_write := '1';
+  		    memory_access_read := '0';
+  		    memory_access_wdata := reg_t_high;
+  		  when WriteCommit =>
+  		    memory_access_write := '1';
+  		    memory_access_address(15 downto 0) := reg_addr;
+  		    memory_access_resolve_address := not absolute32_addressing_enabled;
+  		    if absolute32_addressing_enabled='1' then
+  		      memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		    else
+  		      memory_access_address(27 downto 16) := x"000";
+  		    end if;
+  		    memory_access_wdata := reg_t;
+  		  when LoadTarget =>
+  		    -- For some addressing modes we load the target in a separate
+  		    -- cycle to improve timing.
+  		    memory_access_read := '1';
+  		    memory_access_address(15 downto 0) := reg_addr;
+  		    memory_access_resolve_address := not absolute32_addressing_enabled;
+  		    if absolute32_addressing_enabled='1' then
+  		      memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		    else
+  		      memory_access_address(27 downto 16) := x"000";
+  		    end if;
+  		  when MicrocodeInterpret =>
 
-      -- shadow_address_var := to_integer(long_address(16 downto 0));
-      
-      if
-        -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
-        -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
-        (real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
-        or
-        -- FFD[0-3]800-BFF
-        (real_long_address(27 downto 16) = x"FFD"
-         and real_long_address(15 downto 14) = "00"
-         and real_long_address(11 downto 10) = "10")        
-      then
-        report "Writing to colour RAM";
-	-- Write to shadow RAM
-        -- shadow_write <= '0';
-        -- rom_write <= '0';
+  		    if reg_microcode.mcStoreA='1' then memory_access_wdata := reg_a; end if;
+  		    if reg_microcode.mcStoreX='1' then memory_access_wdata := reg_x; end if;
+  		    if reg_microcode.mcStoreY='1' then memory_access_wdata := reg_y; end if;
+  		    if reg_microcode.mcStoreZ='1' then memory_access_wdata := reg_z; end if;              
+  		    if reg_microcode.mcStoreP='1' then
+  		       memory_access_wdata := unsigned(virtual_reg_p);
+  		       memory_access_wdata(4) := '1';  -- B always set when pushed
+  		       memory_access_wdata(5) := '1';  -- E always set when pushed
+  		    end if;              
+  		    if reg_microcode.mcWriteRegAddr='1' then
+  		      memory_access_address := x"000"&reg_addr;
+  		      memory_access_resolve_address := '1';
+  		    end if;
+  		    case reg_instruction is
+  		      when I_PHA => stack_push := '1';
+  		      when I_PHP => stack_push := '1';
+  		      when I_PHX => stack_push := '1';
+  		      when I_PHY => stack_push := '1';
+  		      when I_PHZ => stack_push := '1';
+  		      when others => stack_push := '0';
+  		    end case;              
+  		    stack_pop := reg_microcode.mcPop;
+  		    if reg_microcode.mcWordOp='1' then
+  		      memory_access_address := x"000"&(reg_addr+1);
+  		      memory_access_resolve_address := '1';
+  		      memory_access_read := '1';
+  		    end if;
+  		    memory_access_write := reg_microcode.mcWriteMem;
+  		    if reg_microcode.mcWriteMem='1' then
+  		      memory_access_address(15 downto 0) := reg_addr;
+  		      memory_access_resolve_address := not absolute32_addressing_enabled;
+  		      if absolute32_addressing_enabled='1' then
+  		        memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		      else
+  		        memory_access_address(27 downto 16) := x"000";
+  		      end if;
+  		    end if;
+  		  when PushWordLow =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_t;
+  		  when PushWordHigh =>
+  		    stack_push := '1';
+  		    memory_access_wdata := reg_t_high;
+  		  when WordOpWriteLow =>
+  		    memory_access_address := x"000"&(reg_addr);
+  		    memory_access_resolve_address := '1';
+  		    memory_access_write := '1';
+  		    memory_access_wdata := reg_t;
+  		  when WordOpWriteHigh =>
+  		    memory_access_address := x"000"&(reg_addr);
+  		    memory_access_resolve_address := '1';
+  		    memory_access_write := '1';
+  		    memory_access_wdata := reg_t_high;
+  		  when others =>
+  		    null;
+  		end case;            
 
-        -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
-        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		if stack_push='1' then
+  		  memory_access_write := '1';
+  		  memory_access_address := x"000"&reg_sph&reg_sp;
+  		  memory_access_resolve_address := '1';      
+  		end if;
 
-        -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
-        -- Is this for creating a linear memory map for quick task swapping, or
-        -- something else? (PGS)
-      elsif real_long_address(27 downto 16) = x"7F4" then
-  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-      else
-        long_address := real_long_address;
-      end if;
-      
-      long_address_write_var := long_address;
-      
-      shadow_address_var := to_integer(long_address(16 downto 0));
-      rom_address_var := to_integer(long_address(16 downto 0));
-      
-      if long_address(27 downto 16)="0000"&shadow_bank then
-        report "writing to shadow RAM via shadow_bank" severity note;
-        shadow_write_var := '1';
-      end if;
-      if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
-        report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
-        shadow_write_var := '1';
-      elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
-        report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
-        rom_write_var := not rom_writeprotect;
-      end if;
-            
-    elsif memory_access_read='1' then
+  		if stack_pop='1' then
+  		  memory_access_read := '1';
+  		  if flag_e='0' then
+  		    -- stack pointer can roam full 64KB
+  		    memory_access_address := x"000"&((reg_sph&reg_sp)+1);
+  		  else
+  		    -- constrain stack pointer to single page if E flag is set
+  		    memory_access_address := x"000"&reg_sph&(reg_sp+1);
+  		  end if;
+  		  memory_access_resolve_address := '1';
+  		end if;
+
+  		reg_pages_dirty_var(0) := '0';
+  		reg_pages_dirty_var(1) := '0';
+  		reg_pages_dirty_var(2) := '0';
+  		reg_pages_dirty_var(3) := '0';
+
+  		if (reg_pageactive = '1' ) then
+  		  if (memory_access_address(15 downto 14) = "01") then
+  		    case reg_pageid is
+  		      when "00" => reg_pages_dirty_var(0) := '1'; 
+  		      when "01" => reg_pages_dirty_var(1) := '1'; 
+  		      when "10" => reg_pages_dirty_var(2) := '1'; 
+  		      when "11" => reg_pages_dirty_var(3) := '1';
+  		      when others => null;
+  		    end case;
+  		  end if;
+  		end if;
+
+  		--shadow_address_var := memory_access_address(long_address(16 downto 0));
+  		shadow_wdata_var := memory_access_wdata;
+  		rom_wdata_var := memory_access_wdata;
+
+  		if memory_access_write='1' then
+  		  if memory_access_resolve_address = '1' then
+  		    memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),true);
+  		  end if;
+
+  		  real_long_address := memory_access_address;
+
+  		  -- Remap GeoRAM memory accesses
+  		  --if real_long_address(27 downto 16) = x"FFD"
+  		    --and real_long_address(11 downto 8)= x"E" then
+  		    --long_address := georam_page&real_long_address(7 downto 0);
+  		    --end if;
+
+  		  -- shadow_address_var := to_integer(long_address(16 downto 0));
+		  
+  		  if
+  		    -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
+  		    -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
+  		    (real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
+  		    or
+  		    -- FFD[0-3]800-BFF
+  		    (real_long_address(27 downto 16) = x"FFD"
+  		     and real_long_address(15 downto 14) = "00"
+  		     and real_long_address(11 downto 10) = "10")        
+  		  then
+  		    report "Writing to colour RAM";
+  		    -- Write to shadow RAM
+  		    -- shadow_write <= '0';
+  		    -- rom_write <= '0';
+
+  		    -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
+  		    long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+
+  		    -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
+  		    -- Is this for creating a linear memory map for quick task swapping, or
+  		    -- something else? (PGS)
+  		  elsif real_long_address(27 downto 16) = x"7F4" then
+  				long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		  else
+  		    long_address := real_long_address;
+  		  end if;
+		  
+  		  long_address_write_var := long_address;
+		        
+  		  if long_address(27 downto 16)="0000"&shadow_bank then
+  		    report "writing to shadow RAM via shadow_bank" severity note;
+  		    shadow_write_var := '1';
+  		    shadow_address_var := to_integer(long_address(16 downto 0));
+  		    shadow_address_state_dbg_var := x"8";
+  		  end if;
+  		  if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
+  		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
+  		    shadow_write_var := '1';
+  		    shadow_address_var := to_integer(long_address(16 downto 0));
+  		    shadow_address_state_dbg_var := x"9";
+  		  elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
+  		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
+  		    rom_write_var := not rom_writeprotect;
+  		    rom_address_var := to_integer(long_address(16 downto 0));
+  		  end if;
+		        
+  		elsif memory_access_read='1' then
+		   
+  		  if memory_access_resolve_address = '1' then
+  		    memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),false);
+  		  end if;
+
+  		  real_long_address := memory_access_address;
+		  
+  		  -- Remap GeoRAM memory accesses
+  		  if real_long_address(27 downto 16) = x"FFD"
+  		    and real_long_address(11 downto 8) = x"E" then
+  		    long_address := georam_page&real_long_address(7 downto 0);
+  		  end if;
+		        
+  		  if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
+  		    -- colour ram access: remap to $FF80000 - $FF807FF
+  		    long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  			  -- also remap to $7F40000 - $7F407FF
+  		  elsif real_long_address(27 downto 16) = x"7F4" then
+  				  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  				else
+  		    long_address := real_long_address;
+  		  end if;
+		  
+  		  long_address_read_var := long_address;
+		  
+  		   if long_address(27 downto 16)="0000"&shadow_bank then
+  		     shadow_read_var := '1';
+  		     shadow_address_var := to_integer(long_address(16 downto 0));
+  		     shadow_address_state_dbg_var := x"1";
+  		   elsif long_address(27 downto 17)="00000000000" or long_address(27 downto 17)="01111111000" then
+  		     shadow_read_var := '1';
+  		     shadow_address_var := to_integer(long_address(16 downto 0));
+  		     shadow_address_state_dbg_var := x"2";
+  		   elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
+  		     rom_read_var := '1';
+  		     rom_address_var := to_integer(long_address(16 downto 0));
+  		   end if;
+		   
+         if long_address(19 downto 14)&"00" = x"F8" then
+           kickstart_address_var := std_logic_vector(long_address(13 downto 0));
+         end if;
        
-      if memory_access_resolve_address = '1' then
-        memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),false);
-      end if;
+  		end if;
 
-      real_long_address := memory_access_address;
-      
-      -- Remap GeoRAM memory accesses
-      if real_long_address(27 downto 16) = x"FFD"
-        and real_long_address(11 downto 8) = x"E" then
-        long_address := georam_page&real_long_address(7 downto 0);
-      end if;
-      
-      if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
-        -- colour ram access: remap to $FF80000 - $FF807FF
-        long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-		  -- also remap to $7F40000 - $7F407FF
-      elsif real_long_address(27 downto 16) = x"7F4" then
-  		  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-  		else
-        long_address := real_long_address;
-      end if;
-      
-      long_address_read_var := long_address;
-      shadow_address_var := to_integer(long_address(16 downto 0));
-      rom_address_var := to_integer(long_address(16 downto 0));
+	    shadow_address_next <= shadow_address_var;    
+	    rom_address_next <= rom_address_var;
+      kickstart_address_next <= kickstart_address_var;
       
     end if;
-    
+
     -- Assign outputs to signals that clocked side can see and use...
     memory_access_address_next <= memory_access_address;
     memory_access_read_next <= memory_access_read;
@@ -6284,18 +6311,50 @@ begin
     memory_access_wdata_next <= memory_access_wdata;
     reg_pages_dirty_next <= reg_pages_dirty_var;
     
-    -- Update shadow signals
-    shadow_address_next <= shadow_address_var;
-    shadow_wdata_next <= shadow_wdata_var;
+    shadow_address_state_dbg_next <= shadow_address_state_dbg_var;
+    
     shadow_write_next <= shadow_write_var;
-
-    rom_address_next <= rom_address_var;
-    rom_wdata_next <= rom_wdata_var;
     rom_write_next <= rom_write_var;
     
     long_address_read <= long_address_read_var;
     long_address_write <= long_address_write_var;
+
+    shadow_address_read_dbg_out <= shadow_read_var;
+    shadow_address_write_dbg_out <= shadow_write_var;
+
+    rom_address_read_dbg_out <= rom_read_var;
+    rom_address_write_dbg_out <= rom_write_var;
     
+	shadow_address_wdata_dbg_out <= std_logic_vector(shadow_wdata);
+	shadow_address_rdata_dbg_out <= std_logic_vector(shadow_rdata);
+
+	rom_address_wdata_dbg_out <= std_logic_vector(rom_wdata);
+	rom_address_rdata_dbg_out <= std_logic_vector(rom_rdata);
+
+	shadow_address_i_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
+	--shadow_address_i_dbg_out(13 downto 0) <= kickstart_address_next;
+	shadow_address_o_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
+
+	rom_address_i_dbg_out <= std_logic_vector(to_unsigned(rom_address_i_dbg,17));
+	rom_address_o_dbg_out <= std_logic_vector(to_unsigned(rom_address_o_dbg,17));
+
+	shadow_address_state_dbg_out <= std_logic_vector(to_unsigned(processor_state'pos(state),4));
+	proceed_dbg_out <= proceed;
+
+  kickstart_address_out <= kickstart_address_next;
+  
+  end process;
+
+  -- read_data input mux
+  process (read_source, shadow_rdata, rom_rdata, read_data_copy)
+  begin
+    if(read_source = Shadow) then
+      read_data <= shadow_rdata;
+    elsif(read_source = ROMRAM) then
+      read_data <= rom_rdata;
+    else
+      read_data <= read_data_copy;
+    end if;  
   end process;
   
 end Behavioural;

@@ -224,6 +224,8 @@ entity iomapper is
 
         viciii_iomode : in std_logic_vector(1 downto 0);
         
+        kickstart_address : in std_logic_vector(13 downto 0);
+        
         colourram_at_dc00 : in std_logic
        
         );
@@ -362,7 +364,8 @@ begin
   begin
   kickstartrom : entity work.kickstart port map (
     clk     => clk,
-    address => address(13 downto 0),
+    address => kickstart_address,
+    address_i => address(13 downto 0),
     we      => w,
     cs      => kickstartcs,
     data_o  => kickstart_rdata,
