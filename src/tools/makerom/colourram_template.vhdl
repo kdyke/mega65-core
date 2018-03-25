@@ -40,9 +40,11 @@ begin  -- behavioural
           ram(to_integer(unsigned(addra(14 downto 0)))) := dina;
           report "COLOURRAM: A writing to $" & to_hstring(unsigned(addra))
             & " = $" & to_hstring(dina);
+            douta <= dina;
+          else
+            douta <= ram(to_integer(unsigned(addra(14 downto 0))));            
         end if;
       end if;
-      douta <= ram(to_integer(unsigned(addra(14 downto 0))));
     end if;
   end process;
 
