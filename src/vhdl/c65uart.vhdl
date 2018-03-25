@@ -372,6 +372,9 @@ begin  -- behavioural
       end if;
     end if;
     
+    -- make sure this doesn't infer a latch
+    fastio_rdata <= (others => 'Z');
+    
     -- Reading of registers
     if (fastio_read='1') and (c65uart_cs='1') then
       report "Reading C65 UART controller register";
