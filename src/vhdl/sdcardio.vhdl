@@ -71,9 +71,7 @@ entity sdcardio is
     fastio_write : in std_logic;
     fastio_read : in std_logic;
     fastio_wdata : in unsigned(7 downto 0);
---    fastio_rdata : out unsigned(7 downto 0);
     fastio_rdata_sel : out unsigned(7 downto 0);
-    sdcard_o : out unsigned(7 downto 0);
     
     virtualise_f011 : in std_logic;
     
@@ -212,7 +210,6 @@ architecture behavioural of sdcardio is
   
   signal fastio_rdata_ram : unsigned(7 downto 0);
   signal fastio_rdata : unsigned(7 downto 0);
-  signal fastio_rdata_sel_internal : unsigned(7 downto 0);
   
   signal skip : integer range 0 to 2;
   signal read_data_byte : std_logic := '0';
@@ -374,9 +371,7 @@ architecture behavioural of sdcardio is
   
 begin  -- behavioural
 
-  fastio_rdata_sel <= fastio_rdata_sel_internal;
-  
-  --**********************************************************************
+--**********************************************************************
   -- SD card controller module.
   --**********************************************************************
   
@@ -864,17 +859,14 @@ begin  -- behavioural
       fastio_rdata <= (others => '0');
     end if;
 
-    -- final output mux
+    -- output select
+    fastio_rdata_sel <= (others => 'Z');
     if fastio_read='1' and sectorbuffercs='0' then
-      fastio_rdata_sel_internal <= fastio_rdata;
+      fastio_rdata_sel <= fastio_rdata;
     elsif sectorbuffercs='1' then
-      fastio_rdata_sel_internal <= fastio_rdata_ram;
-    else
-      fastio_rdata_sel_internal <= (others => 'Z');
+      fastio_rdata_sel <= fastio_rdata_ram;
     end if;
-    
-    sdcard_o <= fastio_rdata_sel_internal;
-    
+        
     -- ==================================================================
     -- ==================================================================
     

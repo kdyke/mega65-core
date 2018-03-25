@@ -227,12 +227,6 @@ entity iomapper is
         
         kickstart_address : in std_logic_vector(13 downto 0);
         
-        sectorbuffercs_out : out std_logic;
-        sdcardio_cs_out : out std_logic;
-        ascii_key_buffered_out : out std_logic_vector(7 downto 0);
-        sdcard_o : out std_logic_vector(7 downto 0);
-        cia1portb_ddr_out : out std_logic_vector(7 downto 0);
-        
         colourram_at_dc00 : in std_logic
                
         );
@@ -385,9 +379,6 @@ begin
     data_i  => data_i
     );
   end block;
-
-  ascii_key_buffered_out <= std_logic_vector(ascii_key_buffered);
-  cia1portb_ddr_out <= cia1portb_ddr;
   
   -- IRQ line is wire-anded together as if it had a pullup.
   irq <= cia1_irq and ethernet_irq and uart_irq;
@@ -778,9 +769,7 @@ begin
     fastio_write => w,
     fastio_read => r,
     fastio_wdata => unsigned(data_i),
-    std_logic_vector(sdcard_o) => sdcard_o,
     std_logic_vector(fastio_rdata_sel) => data_o,
---    std_logic_vector(fastio_rdata) => data_o,
     colourram_at_dc00 => colourram_at_dc00,
     viciii_iomode => viciii_iomode,
     sectorbuffermapped => sector_buffer_mapped,
@@ -1008,9 +997,6 @@ begin
       
     end if;
   end process;
-  
-  sectorbuffercs_out <= sectorbuffercs;
-  sdcardio_cs_out <= sdcardio_cs or sdcardio_cs_fast or f011_cs;
   
   process (r,w,address,cia1portb_in,cia1porta_out,colourram_at_dc00,
            sector_buffer_mapped_read)

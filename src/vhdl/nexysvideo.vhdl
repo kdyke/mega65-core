@@ -370,12 +370,12 @@ end component;
   signal sawtooth_level : integer := 0;
   
   -- Debugging
-  signal shadow_address_i_dbg_out : std_logic_vector(16 downto 0);
-  signal shadow_address_o_dbg_out : std_logic_vector(16 downto 0);
-  signal shadow_address_rdata_dbg_out : std_logic_vector(7 downto 0);
-  signal shadow_address_wdata_dbg_out : std_logic_vector(7 downto 0);
-  signal shadow_address_write_dbg_out : std_logic;
-  signal shadow_address_read_dbg_out : std_logic;
+  signal debug_address_w_dbg_out : std_logic_vector(16 downto 0);
+  signal debug_address_r_dbg_out : std_logic_vector(16 downto 0);
+  signal debug_rdata_dbg_out : std_logic_vector(7 downto 0);
+  signal debug_wdata_dbg_out : std_logic_vector(7 downto 0);
+  signal debug_write_dbg_out : std_logic;
+  signal debug_read_dbg_out : std_logic;
   signal rom_address_i_dbg_out : std_logic_vector(16 downto 0);
   signal rom_address_o_dbg_out : std_logic_vector(16 downto 0);
   signal rom_address_rdata_dbg_out : std_logic_vector(7 downto 0);
@@ -625,12 +625,12 @@ begin
       RsRx => RsRx,
       
           -- debug
-          shadow_address_i_dbg_out => shadow_address_i_dbg_out,
-          shadow_address_o_dbg_out => shadow_address_o_dbg_out,
-          shadow_address_rdata_dbg_out => shadow_address_rdata_dbg_out,
-          shadow_address_wdata_dbg_out => shadow_address_wdata_dbg_out,
-          shadow_address_write_dbg_out => shadow_address_write_dbg_out,
-          shadow_address_read_dbg_out => shadow_address_read_dbg_out,
+          debug_address_w_dbg_out => debug_address_w_dbg_out,
+          debug_address_r_dbg_out => debug_address_r_dbg_out,
+          debug_rdata_dbg_out => debug_rdata_dbg_out,
+          debug_wdata_dbg_out => debug_wdata_dbg_out,
+          debug_write_dbg_out => debug_write_dbg_out,
+          debug_read_dbg_out => debug_read_dbg_out,
           rom_address_i_dbg_out => rom_address_i_dbg_out,
           rom_address_o_dbg_out => rom_address_o_dbg_out,
           rom_address_rdata_dbg_out => rom_address_rdata_dbg_out,
@@ -668,12 +668,12 @@ begin
   vga_vsync_out <= vsync;
   
   addr_clk <= cpuclock;
-  addr_o_dbg(15 downto 0) <= shadow_address_o_dbg_out(15 downto 0);
-  addr_i_dbg(15 downto 0) <= shadow_address_i_dbg_out(15 downto 0);
-  addr_read <= shadow_address_rdata_dbg_out;
-  addr_write <= shadow_address_wdata_dbg_out;
-  addr_w_dbg <= shadow_address_write_dbg_out;
-  addr_r_dbg <= shadow_address_read_dbg_out;
+  addr_o_dbg(15 downto 0) <= debug_address_r_dbg_out(15 downto 0);
+  addr_i_dbg(15 downto 0) <= debug_address_w_dbg_out(15 downto 0);
+  addr_read <= debug_rdata_dbg_out;
+  addr_write <= debug_wdata_dbg_out;
+  addr_w_dbg <= debug_write_dbg_out;
+  addr_r_dbg <= debug_read_dbg_out;
   
   -- 12 bits of general purpose state for debugging, assigned by machine layer
   addr_state(3 downto 0) <= debug4_state_out(3 downto 0);  
@@ -681,8 +681,8 @@ begin
   
   --addr_o_dbg(15 downto 0) <= "0011001000010000";  -- 3210 
   --addr_i_dbg(15 downto 0) <= "0111011001010100";  -- 7654
-  --addr_read <= "10011000"; --shadow_address_rdata_dbg_out;
-  --addr_write <= "10111010"; --shadow_address_wdata_dbg_out;
+  --addr_read <= "10011000"; --debug_rdata_dbg_out;
+  --addr_write <= "10111010"; --debug_wdata_dbg_out;
   --addr_w_dbg <= cpuclock;
   --addr_r_dbg <= not cpuclock;
   

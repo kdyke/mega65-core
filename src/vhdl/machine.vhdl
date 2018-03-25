@@ -226,12 +226,12 @@ entity machine is
          
          -- CPU block ram debug
          -- Debugging
-         shadow_address_i_dbg_out : out std_logic_vector(16 downto 0);
-         shadow_address_o_dbg_out : out std_logic_vector(16 downto 0);
-         shadow_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
-         shadow_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
-         shadow_address_write_dbg_out : out std_logic;
-         shadow_address_read_dbg_out : out std_logic;
+         debug_address_w_dbg_out : out std_logic_vector(16 downto 0);
+         debug_address_r_dbg_out : out std_logic_vector(16 downto 0);
+         debug_rdata_dbg_out : out std_logic_vector(7 downto 0);
+         debug_wdata_dbg_out : out std_logic_vector(7 downto 0);
+         debug_write_dbg_out : out std_logic;
+         debug_read_dbg_out : out std_logic;
          rom_address_i_dbg_out : out std_logic_vector(16 downto 0);
          rom_address_o_dbg_out : out std_logic_vector(16 downto 0);
          rom_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
@@ -487,13 +487,6 @@ architecture Behavioral of machine is
   signal amiga_mouse_assume_a : std_logic;
   signal amiga_mouse_assume_b : std_logic;
 
-  -- local debug signals from iomapper
-  signal sectorbuffercs : std_logic;
-  signal sdcardio_cs : std_logic;
-  signal ascii_key_buffered : std_logic_vector(7 downto 0);
-  signal sdcard_o : std_logic_vector(7 downto 0);
-  signal cia1portb_ddr : std_logic_vector(7 downto 0);
-  
   -- local debug signals from CPU
   signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
   
@@ -695,19 +688,13 @@ begin
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
 
-      shadow_address_i_dbg_out => shadow_address_i_dbg_out,
-      shadow_address_o_dbg_out => shadow_address_o_dbg_out,
-      shadow_address_rdata_dbg_out => shadow_address_rdata_dbg_out,
-      shadow_address_wdata_dbg_out => shadow_address_wdata_dbg_out,
-      shadow_address_write_dbg_out => shadow_address_write_dbg_out,
-      shadow_address_read_dbg_out => shadow_address_read_dbg_out,
-      rom_address_i_dbg_out => rom_address_i_dbg_out,
-      rom_address_o_dbg_out => rom_address_o_dbg_out,
-      rom_address_rdata_dbg_out => rom_address_rdata_dbg_out,
-      rom_address_wdata_dbg_out => rom_address_wdata_dbg_out,
-      rom_address_write_dbg_out => rom_address_write_dbg_out,
-      rom_address_read_dbg_out => rom_address_read_dbg_out,
-      shadow_address_state_dbg_out => shadow_address_state_dbg_out,
+      debug_address_w_dbg_out => debug_address_w_dbg_out,
+      debug_address_r_dbg_out => debug_address_r_dbg_out,
+      debug_rdata_dbg_out => debug_rdata_dbg_out,
+      debug_wdata_dbg_out => debug_wdata_dbg_out,
+      debug_write_dbg_out => debug_write_dbg_out,
+      debug_read_dbg_out => debug_read_dbg_out,
+
       proceed_dbg_out => proceed_dbg_out,
       
       irq_hypervisor => sw(4 downto 2),    -- JBM
@@ -1003,13 +990,6 @@ begin
       viciii_iomode => viciii_iomode,
       sector_buffer_mapped => sector_buffer_mapped,
 
-      sectorbuffercs_out => sectorbuffercs,
-      sdcardio_cs_out => sdcardio_cs,
-      ascii_key_buffered_out => ascii_key_buffered,
-      cia1portb_ddr_out => cia1portb_ddr,
-      
-      sdcard_o => sdcard_o,
-      
     f_density => f_density,
     f_motor => f_motor,
     f_select => f_select,
@@ -1313,9 +1293,8 @@ begin
     end if;
   end process;
   
-  debug8_state_out <= cia1portb_ddr;
-  debug4_state_out(3) <= sdcardio_cs;
-  debug4_state_out(2) <= sectorbuffercs;
+  debug8_state_out <= (others => '0');
+  debug4_state_out <= (others => '0');
 
   UART_TXD<=uart_txd_sig; 
   
