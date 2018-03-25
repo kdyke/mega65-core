@@ -2752,7 +2752,7 @@ begin
       if irq_drive = '0' then
         irq <= '0';
       else
-        irq <= 'Z';
+        irq <= '1';
       end if;
       
       

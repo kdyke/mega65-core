@@ -492,6 +492,7 @@ architecture Behavioral of machine is
   signal sdcardio_cs : std_logic;
   signal ascii_key_buffered : std_logic_vector(7 downto 0);
   signal sdcard_o : std_logic_vector(7 downto 0);
+  signal cia1portb_ddr : std_logic_vector(7 downto 0);
   
   -- local debug signals from CPU
   signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
@@ -1005,6 +1006,8 @@ begin
       sectorbuffercs_out => sectorbuffercs,
       sdcardio_cs_out => sdcardio_cs,
       ascii_key_buffered_out => ascii_key_buffered,
+      cia1portb_ddr_out => cia1portb_ddr,
+      
       sdcard_o => sdcard_o,
       
     f_density => f_density,
@@ -1310,7 +1313,7 @@ begin
     end if;
   end process;
   
-  debug8_state_out <= sdcard_o;
+  debug8_state_out <= cia1portb_ddr;
   debug4_state_out(3) <= sdcardio_cs;
   debug4_state_out(2) <= sectorbuffercs;
 
