@@ -238,8 +238,8 @@ entity machine is
          rom_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
          rom_address_write_dbg_out : out std_logic;
          rom_address_read_dbg_out : out std_logic;
-         cpu_state_out : out std_logic_vector(15 downto 0);
-         shadow_address_state_dbg_out : out std_logic_vector(3 downto 0);
+         debug8_state_out : out std_logic_vector(7 downto 0);
+         debug4_state_out : out std_logic_vector(3 downto 0);
          proceed_dbg_out : out std_logic;
          
          ----------------------------------------------------------------------
@@ -322,6 +322,7 @@ architecture Behavioral of machine is
   signal hyper_trap_f011_write : std_logic := '0';
 
   signal fastio_addr : std_logic_vector(19 downto 0);
+  signal fastio_addr_fast : std_logic_vector(19 downto 0);
   signal fastio_read : std_logic;
   signal fastio_write : std_logic;
   signal fastio_wdata : std_logic_vector(7 downto 0);
@@ -486,6 +487,15 @@ architecture Behavioral of machine is
   signal amiga_mouse_assume_a : std_logic;
   signal amiga_mouse_assume_b : std_logic;
 
+  -- local debug signals from iomapper
+  signal sectorbuffercs : std_logic;
+  signal sdcardio_cs : std_logic;
+  signal ascii_key_buffered : std_logic_vector(7 downto 0);
+  signal sdcard_o : std_logic_vector(7 downto 0);
+  
+  -- local debug signals from CPU
+  signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
+  
 begin
 
   ----------------------------------------------------------------------------
@@ -773,6 +783,7 @@ begin
       cpu_leds => cpu_leds,
       
       fastio_addr => fastio_addr,
+      fastio_addr_fast => fastio_addr_fast,
       fastio_read => fastio_read,
       fastio_write => fastio_write,
       fastio_wdata => fastio_wdata,
@@ -976,6 +987,7 @@ begin
       nmi => io_nmi, -- (but we might like to AND this with the hardware IRQ button)
       restore_nmi => restore_nmi,
       address => fastio_addr,
+      addr_fast => fastio_addr_fast,
       r => fastio_read, w => fastio_write,
       data_i => fastio_wdata, data_o => fastio_rdata,
       kickstart_rdata => kickstart_rdata,
@@ -990,6 +1002,11 @@ begin
       viciii_iomode => viciii_iomode,
       sector_buffer_mapped => sector_buffer_mapped,
 
+      sectorbuffercs_out => sectorbuffercs,
+      sdcardio_cs_out => sdcardio_cs,
+      ascii_key_buffered_out => ascii_key_buffered,
+      sdcard_o => sdcard_o,
+      
     f_density => f_density,
     f_motor => f_motor,
     f_select => f_select,
@@ -1293,7 +1310,10 @@ begin
     end if;
   end process;
   
-  cpu_state_out <= std_logic_vector(monitor_state);
+  debug8_state_out <= sdcard_o;
+  debug4_state_out(3) <= sdcardio_cs;
+  debug4_state_out(2) <= sectorbuffercs;
+
   UART_TXD<=uart_txd_sig; 
   
 end Behavioral;

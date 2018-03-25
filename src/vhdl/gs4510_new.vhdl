@@ -184,9 +184,10 @@ entity gs4510 is
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
     fastio_addr : inout std_logic_vector(19 downto 0);
-    fastio_read : out std_logic := '0';
-    fastio_write : out std_logic := '0';
-    fastio_wdata : out std_logic_vector(7 downto 0);
+    fastio_addr_fast : out std_logic_vector(19 downto 0);
+    fastio_read : inout std_logic := '0';
+    fastio_write : inout std_logic := '0';
+    fastio_wdata : inout std_logic_vector(7 downto 0);
     fastio_rdata : in std_logic_vector(7 downto 0);
     kickstart_rdata : in std_logic_vector(7 downto 0);
     kickstart_address_out : out std_logic_vector(13 downto 0);
@@ -297,6 +298,8 @@ end component;
 
   signal kickstart_address : std_logic_vector(13 downto 0);
   signal kickstart_address_next : std_logic_vector(13 downto 0);
+  
+  signal fastio_addr_next : std_logic_vector(19 downto 0);
   
   signal read_data : unsigned(7 downto 0)  := (others => '0');
   
@@ -1638,8 +1641,8 @@ begin
         accessing_colour_ram_fastio <= '0';
         accessing_kickstart_fastio <= '0';
 
-        fastio_addr <= std_logic_vector(long_address(19 downto 0));
-        last_fastio_addr <= std_logic_vector(long_address(19 downto 0));
+        fastio_addr <= fastio_addr_next;
+        last_fastio_addr <= fastio_addr_next;
         fastio_read <= '1';
         proceed <= '0';
         
@@ -2177,8 +2180,8 @@ begin
         shadow_write <= '0';
         rom_write <= '0';
         shadow_write_flags(2) <= '1';
-        fastio_addr <= std_logic_vector(long_address(19 downto 0));
-        last_fastio_addr <= std_logic_vector(long_address(19 downto 0));
+        fastio_addr <= fastio_addr_next;
+        last_fastio_addr <= fastio_addr_next;
         fastio_write <= '1'; fastio_read <= '0';
         report "raising fastio_write" severity note;
         fastio_wdata <= std_logic_vector(value);
@@ -5387,6 +5390,7 @@ begin
     variable rom_wdata_var : unsigned(7 downto 0) := x"FF";
 
     variable kickstart_address_var : std_logic_vector(13 downto 0);
+    variable fastio_addr_var : std_logic_vector(19 downto 0);
 
     variable long_address_read_var : unsigned(27 downto 0) := x"FFFFFFF";
     variable long_address_write_var : unsigned(27 downto 0) := x"FFFFFFF";
@@ -5661,6 +5665,9 @@ begin
     rom_read_var := '0';
     shadow_address_state_dbg_var := shadow_address_state_dbg;
     
+    fastio_addr_var := fastio_addr;
+    fastio_addr_next <= fastio_addr;
+    
     -- By default these hold their old value while CPU is halted
     shadow_wdata_var := shadow_wdata;
     rom_wdata_var := rom_wdata;
@@ -5673,7 +5680,18 @@ begin
     shadow_address_var := shadow_address;
     rom_address_var := rom_address;
 
+    long_address_write_var := x"FFFFFFF";
+    long_address_read_var := x"FFFFFFF";
+
     kickstart_address_var := kickstart_address;
+
+    memory_access_address := x"0000000";
+    memory_access_wdata := x"00";
+
+		reg_pages_dirty_var(0) := '0';
+		reg_pages_dirty_var(1) := '0';
+		reg_pages_dirty_var(2) := '0';
+		reg_pages_dirty_var(3) := '0';
 
     if proceed = '1' then
     
@@ -5682,6 +5700,8 @@ begin
       memory_access_write := '0';
       memory_access_address := x"000"&reg_pc;
       memory_access_resolve_address := '1';
+
+      fastio_addr_var := x"FFFFF";
           
   		case state is
   		  when VectorRead =>
@@ -6170,11 +6190,6 @@ begin
   		  memory_access_resolve_address := '1';
   		end if;
 
-  		reg_pages_dirty_var(0) := '0';
-  		reg_pages_dirty_var(1) := '0';
-  		reg_pages_dirty_var(2) := '0';
-  		reg_pages_dirty_var(3) := '0';
-
   		if (reg_pageactive = '1' ) then
   		  if (memory_access_address(15 downto 14) = "01") then
   		    case reg_pageid is
@@ -6246,12 +6261,28 @@ begin
   		    shadow_write_var := '1';
   		    shadow_address_var := to_integer(long_address(16 downto 0));
   		    shadow_address_state_dbg_var := x"9";
+
+          -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
+          -- when writing here.
+          if long_address(27 downto 12) = x"001F" and long_address(11) = '1' then
+            report "writing to colour RAM via $001F8xx" severity note;
+
+            -- And also to colour RAM
+            fastio_addr_var(19 downto 16) := x"8";
+            fastio_addr_var(15 downto 11) := (others => '0');
+            fastio_addr_var(10 downto 0) := std_logic_vector(long_address(10 downto 0));
+          end if;
+          
   		  elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
   		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
   		    rom_write_var := not rom_writeprotect;
   		    rom_address_var := to_integer(long_address(16 downto 0));
   		  end if;
-		        
+        
+        if long_address(27 downto 24) = x"F" then --
+          fastio_addr_var := std_logic_vector(long_address(19 downto 0));
+        end if;
+        
   		elsif memory_access_read='1' then
 		   
   		  if memory_access_resolve_address = '1' then
@@ -6295,6 +6326,10 @@ begin
            kickstart_address_var := std_logic_vector(long_address(13 downto 0));
          end if;
        
+         if long_address(27 downto 20) = x"FF" then
+           fastio_addr_var := std_logic_vector(long_address(19 downto 0));
+         end if;
+         
   		end if;
 
 	    shadow_address_next <= shadow_address_var;    
@@ -6302,6 +6337,8 @@ begin
       kickstart_address_next <= kickstart_address_var;
       
     end if;
+
+    fastio_addr_next <= fastio_addr_var;
 
     -- Assign outputs to signals that clocked side can see and use...
     memory_access_address_next <= memory_access_address;
@@ -6319,21 +6356,27 @@ begin
     long_address_read <= long_address_read_var;
     long_address_write <= long_address_write_var;
 
-    shadow_address_read_dbg_out <= shadow_read_var;
-    shadow_address_write_dbg_out <= shadow_write_var;
+--    shadow_address_read_dbg_out <= shadow_read_var;
+--    shadow_address_write_dbg_out <= shadow_write_var;
+    shadow_address_read_dbg_out <= fastio_read;
+    shadow_address_write_dbg_out <= fastio_write;
 
     rom_address_read_dbg_out <= rom_read_var;
     rom_address_write_dbg_out <= rom_write_var;
     
-	shadow_address_wdata_dbg_out <= std_logic_vector(shadow_wdata);
-	shadow_address_rdata_dbg_out <= std_logic_vector(shadow_rdata);
+--	shadow_address_wdata_dbg_out <= std_logic_vector(shadow_wdata);
+--	shadow_address_rdata_dbg_out <= std_logic_vector(shadow_rdata);
+	shadow_address_wdata_dbg_out <= std_logic_vector(fastio_wdata);
+	shadow_address_rdata_dbg_out <= std_logic_vector(fastio_rdata);
 
 	rom_address_wdata_dbg_out <= std_logic_vector(rom_wdata);
 	rom_address_rdata_dbg_out <= std_logic_vector(rom_rdata);
 
-	shadow_address_i_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
-	--shadow_address_i_dbg_out(13 downto 0) <= kickstart_address_next;
-	shadow_address_o_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
+--	shadow_address_i_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
+--	shadow_address_o_dbg_out <= std_logic_vector(to_unsigned(shadow_address_next,17));
+
+	shadow_address_i_dbg_out <= fastio_addr(16 downto 0);
+	shadow_address_o_dbg_out <= fastio_addr_next(16 downto 0);
 
 	rom_address_i_dbg_out <= std_logic_vector(to_unsigned(rom_address_i_dbg,17));
 	rom_address_o_dbg_out <= std_logic_vector(to_unsigned(rom_address_o_dbg,17));
@@ -6342,6 +6385,7 @@ begin
 	proceed_dbg_out <= proceed;
 
   kickstart_address_out <= kickstart_address_next;
+  fastio_addr_fast <= fastio_addr_next;
   
   end process;
 

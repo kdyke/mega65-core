@@ -382,8 +382,9 @@ end component;
   signal rom_address_wdata_dbg_out : std_logic_vector(7 downto 0);
   signal rom_address_write_dbg_out : std_logic;
   signal rom_address_read_dbg_out : std_logic;
-  signal cpu_state_out : std_logic_vector(15 downto 0);
-  signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
+  signal debug8_state_out : std_logic_vector(7 downto 0);
+  signal debug4_state_out : std_logic_vector(3 downto 0);
+  signal sdcardio_cs : std_logic;
   
 begin
   
@@ -636,8 +637,8 @@ begin
           rom_address_wdata_dbg_out => rom_address_wdata_dbg_out,
           rom_address_write_dbg_out => rom_address_write_dbg_out,
           rom_address_read_dbg_out => rom_address_read_dbg_out,
-          cpu_state_out => cpu_state_out,
-          shadow_address_state_dbg_out => shadow_address_state_dbg_out,
+          debug8_state_out => debug8_state_out,
+          debug4_state_out => debug4_state_out,
           proceed_dbg_out => proceed_dbg_out,
           
       sseg_ca => sseg_ca,
@@ -657,7 +658,7 @@ begin
   led_out(7 downto 0) <= std_logic_vector(led(7 downto 0));
   
   sw(15) <= sw_in(7);
-  sw(11) <= sw_in(6);
+  sw(12) <= sw_in(6);
   sw(5 downto 0) <= sw_in(5 downto 0);
   
   vga_red_out(3 downto 0) <= std_logic_vector(vgared(7 downto 4));
@@ -673,9 +674,10 @@ begin
   addr_write <= shadow_address_wdata_dbg_out;
   addr_w_dbg <= shadow_address_write_dbg_out;
   addr_r_dbg <= shadow_address_read_dbg_out;
-  addr_state <= shadow_address_state_dbg_out;
   
-  cpu_state(7 downto 0) <= cpu_state_out(15 downto 8);
+  -- 12 bits of general purpose state for debugging, assigned by machine layer
+  addr_state(3 downto 0) <= debug4_state_out(3 downto 0);  
+  cpu_state(7 downto 0) <= debug8_state_out(7 downto 0);
   
   --addr_o_dbg(15 downto 0) <= "0011001000010000";  -- 3210 
   --addr_i_dbg(15 downto 0) <= "0111011001010100";  -- 7654
