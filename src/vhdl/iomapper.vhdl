@@ -229,6 +229,15 @@ entity iomapper is
         
         kickstart_address : in std_logic_vector(13 downto 0);
         
+        -- SD interface Debug output
+        sd_write_address_out : out std_logic_vector(11 downto 0);
+        sd_write_data_out : out std_logic_vector(7 downto 0);
+        sd_write_out : out std_logic;
+        sd_data_ready_out : out std_logic;
+        sd_handshake_out : out std_logic;
+        sd_handshake_internal_out : out std_logic;
+        sd_state_out : out std_logic_vector(3 downto 0);
+        
         colourram_at_dc00 : in std_logic
                
         );
@@ -835,6 +844,14 @@ begin
     QspiDB => QspiDB,
     QspiCSn => QspiCSn,
 
+    sd_write_address_out => sd_write_address_out,
+    sd_write_data_out => sd_write_data_out,
+    sd_write_out => sd_write_out,
+    sd_data_ready_out => sd_data_ready_out,
+    sd_handshake_out => sd_handshake_out,
+    sd_handshake_internal_out => sd_handshake_internal_out,
+    sd_state_out => sd_state_out,
+    
     last_scan_code => last_scan_code
 
     );

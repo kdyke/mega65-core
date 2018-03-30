@@ -153,8 +153,17 @@ entity sdcardio is
     ----------------------------------------------------------------------
     QspiSCK : out std_logic;
     QspiDB : inout std_logic_vector(3 downto 0) := "ZZZZ";
-    QspiCSn : out std_logic            
+    QspiCSn : out std_logic;
 
+    -- SD interface Debug output
+    sd_write_address_out : out std_logic_vector(11 downto 0);
+    sd_write_data_out : out std_logic_vector(7 downto 0);
+    sd_write_out : out std_logic;
+    sd_data_ready_out : out std_logic;
+    sd_handshake_out : out std_logic;
+    sd_handshake_internal_out : out std_logic;
+    sd_state_out : out std_logic_vector(3 downto 0)
+    
     );
 end sdcardio;
 
@@ -237,12 +246,21 @@ architecture behavioural of sdcardio is
 
   signal sector_buffer_mapped : std_logic := '0';
   
-  type sd_state_t is (Idle,
-                      ReadSector,ReadingSector,ReadingSectorAckByte,DoneReadingSector,
-                      FDCReadingSector,
-                      WriteSector,WritingSector,WritingSectorAckByte,
-                      HyperTrapRead,HyperTrapRead2,HyperTrapWrite,
-                      F011WriteSector,DoneWritingSector);
+  type sd_state_t is (Idle,                       -- 0x00
+                      ReadSector,                 -- 0x01
+                      ReadingSector,              -- 0x02
+                      ReadingSectorAckByte,       -- 0x03
+                      DoneReadingSector,          -- 0x04
+                      FDCReadingSector,           -- 0x05
+                      WriteSector,                -- 0x06
+                      WritingSector,              -- 0x07
+                      WritingSectorAckByte,       -- 0x08
+                      HyperTrapRead,              -- 0x09
+                      HyperTrapRead2,             -- 0x0a
+                      HyperTrapWrite,             -- 0x0b
+                      F011WriteSector,            -- 0x0c
+                      DoneWritingSector           -- 0x0d
+                      );
   signal sd_state : sd_state_t := Idle;
 
   -- Diagnostic register for determining SD/SDHC card state.
@@ -374,6 +392,13 @@ begin  -- behavioural
 --**********************************************************************
   -- SD card controller module.
   --**********************************************************************
+  sd_write_address_out <= std_logic_vector(f011_buffer_write_address);
+  sd_write_data_out <= std_logic_vector(f011_buffer_wdata);
+  sd_write_out <= f011_buffer_write;
+  sd_data_ready_out <= sd_data_ready;
+  sd_handshake_out <= sd_handshake;
+  sd_handshake_internal_out <= sd_handshake_internal;
+  sd_state_out <= std_logic_vector(to_unsigned(sd_state_t'pos(sd_state),4));
   
   sd0: entity work.sdcardctrl
     port map (

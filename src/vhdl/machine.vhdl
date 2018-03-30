@@ -543,6 +543,15 @@ architecture Behavioral of machine is
   signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
   signal pixelclock_select : std_logic_vector(7 downto 0);
   
+  -- iomapper (sd) debug signals
+  signal sd_write_address : std_logic_vector(11 downto 0);
+  signal sd_write_data : std_logic_vector(7 downto 0);
+  signal sd_write : std_logic;
+  signal sd_data_ready : std_logic;
+  signal sd_handshake : std_logic;
+  signal sd_handshake_internal : std_logic;
+  signal sd_state : std_logic_vector(3 downto 0);
+  
 begin
 
   ----------------------------------------------------------------------------
@@ -742,14 +751,14 @@ begin
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
 
-      debug_address_w_dbg_out => debug_address_w_dbg_out,
-      debug_address_r_dbg_out => debug_address_r_dbg_out,
-      debug_rdata_dbg_out => debug_rdata_dbg_out,
-      debug_wdata_dbg_out => debug_wdata_dbg_out,
-      debug_write_dbg_out => debug_write_dbg_out,
-      debug_read_dbg_out => debug_read_dbg_out,
+      --debug_address_w_dbg_out => debug_address_w_dbg_out,
+      --debug_address_r_dbg_out => debug_address_r_dbg_out,
+      --debug_rdata_dbg_out => debug_rdata_dbg_out,
+      --debug_wdata_dbg_out => debug_wdata_dbg_out,
+      --debug_write_dbg_out => debug_write_dbg_out,
+      --debug_read_dbg_out => debug_read_dbg_out,
 
-      proceed_dbg_out => proceed_dbg_out,
+      --proceed_dbg_out => proceed_dbg_out,
       
       irq_hypervisor => sw(4 downto 2),    -- JBM
       
@@ -1263,6 +1272,14 @@ begin
       ps2data => ps2data,
       ps2clock => ps2clock,
       
+      sd_write_address_out => sd_write_address,
+      sd_write_data_out => sd_write_data,
+      sd_write_out => sd_write,
+      sd_data_ready_out => sd_data_ready,
+      sd_handshake_out => sd_handshake,
+      sd_handshake_internal_out => sd_handshake_internal,
+      sd_state_out => sd_state,
+      
       scancode_out => scancode_out
       );
 
@@ -1508,8 +1525,15 @@ begin
     end if;
   end process;
   
-  debug8_state_out <= (others => '0');
-  debug4_state_out <= (others => '0');
+  debug_address_w_dbg_out(11 downto 0) <= sd_write_address;
+  debug_write_dbg_out <= sd_write;
+  debug_wdata_dbg_out <= sd_write_data;
+  
+  debug8_state_out(3 downto 0) <= sd_state;
+
+  debug4_state_out(0) <= sd_data_ready;
+  debug4_state_out(1) <= sd_handshake;
+  debug4_state_out(2) <= sd_handshake_internal;
 
   UART_TXD<=uart_txd_sig; 
   
