@@ -148,13 +148,34 @@ entity sdcardio is
     tmpInt : in std_logic;
     tmpCT : in std_logic;
 
+    -- Debug
+    sd_buffer_read_address : out std_logic_vector(11 downto 0);
+    sd_buffer_rdata : out std_logic_vector(7 downto 0);
+
+    sd_buffer_write_address : out std_logic_vector(11 downto 0);
+    sd_buffer_wdata : out std_logic_vector(7 downto 0);
+    
+    sd_buffer_write : out std_logic;
+    sd_state_out : out std_logic_vector(3 downto 0);
+    
+    -- Alternate debug of the raw internal SD card interface
+    sd_addr_out : out std_logic_vector(31 downto 0);
+    sd_data_i_out : out std_logic_vector(7 downto 0);
+    sd_data_o_out : out std_logic_vector(7 downto 0);
+    sd_rd_out : out std_logic;
+    sd_wr_out : out std_logic;
+    sd_hndshk_o_out : out std_logic;
+    sd_hndshk_i_out : out std_logic;
+    sd_busy_out : out std_logic;
+    sd_byte_count_o : out std_logic_vector(9 downto 0);
+    
     ----------------------------------------------------------------------
     -- Flash RAM for holding config
     ----------------------------------------------------------------------
     QspiSCK : out std_logic;
     QspiDB : inout std_logic_vector(3 downto 0) := "ZZZZ";
-    QspiCSn : out std_logic            
-
+    QspiCSn : out std_logic
+    
     );
 end sdcardio;
 
@@ -232,6 +253,7 @@ architecture behavioural of sdcardio is
   signal sd_fill_mode    : std_logic := '0';
   signal sd_fill_value   : unsigned(7 downto 0) := (others => '0');
 
+  signal sd_busy : std_logic;
   
   -- IO mapped register to indicate if SD card interface is busy
   signal sdio_busy : std_logic := '0';
@@ -387,7 +409,11 @@ begin  -- behavioural
       sclk_o => sclk_o,
 
       last_state_o => last_sd_state,
+      sd_byte_count_o => sd_byte_count_o,
+      
       error_o => last_sd_error,
+      
+      busy_o => sd_busy,
       
       addr_i => std_logic_vector(sd_sector),
       sdhc_i => sdhc_mode,
@@ -422,7 +448,7 @@ begin  -- behavioural
   
   -- Locally readable copy of the same data, so that we can read it when writing
   -- to SD card or floppy drive
-  sb_workcopy: entity work.ram8x4096
+  sb_workcopy: entity work.ram8x4096_sync
     port map (
       clk => clock,
 
@@ -467,7 +493,6 @@ begin  -- behavioural
     crc_error => fdc_crc_error,
     sector_end => fdc_sector_end    
     );
-  
   
   
   -- XXX also implement F011 floppy controller emulation.
@@ -712,6 +737,12 @@ begin  -- behavioural
             -- @IO:GS $D68F - Diskimage sector number (bits 24-31)
             fastio_rdata <= diskimage_sector(31 downto 24);
 
+          when x"90" =>
+            fastio_rdata <= last_sd_state;
+          when x"91" =>
+            fastio_rdata <= unsigned(last_sd_error(7 downto 0));
+          when x"92" =>
+            fastio_rdata <= unsigned(last_sd_error(15 downto 8));
 
           when x"a0" =>
             -- @IO:GS $D6A0 - DEBUG FDC read status lines
@@ -874,7 +905,38 @@ begin  -- behavioural
     -- ==================================================================
     -- ==================================================================
     
-    if rising_edge(clock) then
+    -- debug
+    sd_buffer_read_address <= std_logic_vector(f011_buffer_read_address);
+    sd_buffer_rdata <= std_logic_vector(f011_buffer_rdata);
+
+    sd_buffer_write_address <= std_logic_vector(f011_buffer_write_address);
+    sd_buffer_wdata <= std_logic_vector(f011_buffer_wdata);
+  
+    sd_buffer_write <= f011_buffer_write;
+    sd_state_out <= std_logic_vector(to_unsigned(sd_state_t'pos(sd_state),4));
+    
+    -- internal SD controller debug
+    sd_addr_out <= std_logic_vector(sd_sector);
+    sd_data_i_out <= std_logic_vector(sd_wdata);
+    sd_data_o_out <= std_logic_vector(sd_rdata);
+    sd_rd_out <= sd_doread;
+    sd_wr_out <= sd_dowrite;
+    sd_hndshk_o_out <= sd_data_ready;
+    sd_hndshk_i_out <= sd_handshake;
+    sd_busy_out <= sd_busy;
+    
+    case sd_state is    
+      when WriteSector|WritingSector|WritingSectorAckByte =>
+        if f011_sector_fetch='1' then
+          f011_buffer_read_address <= "110"&f011_buffer_disk_address;
+        else
+          f011_buffer_read_address <= "111"&sd_buffer_offset;
+        end if;
+      when others =>
+        f011_buffer_read_address <= "110"&f011_buffer_cpu_address;
+    end case;
+    
+    if rising_edge(clock) then    
 
       target_track <= f011_track;
       target_sector <= f011_sector;
@@ -913,7 +975,7 @@ begin  -- behavioural
       -- Prepare for CPU read request via $D087 if required
       if sb_cpu_read_request='1' and sb_cpu_reading='0' then
         report "CPU read pre-fetch from sector buffer @ $" & to_hstring(f011_buffer_cpu_address);
-        f011_buffer_read_address <= "110"&f011_buffer_cpu_address;
+        --f011_buffer_read_address <= "110"&f011_buffer_cpu_address;
         sb_cpu_reading <= '1';
       else
         sb_cpu_reading <= '0';
@@ -1574,7 +1636,7 @@ begin  -- behavioural
                     f011_sector_fetch <= '0';
 
                     sd_wrote_byte <= '0';
-                    f011_buffer_read_address <= "111"&"000000000";
+                    --f011_buffer_read_address <= "111"&"000000000";
                     sd_buffer_offset <= (others => '0');
                   end if;
 
@@ -1994,7 +2056,7 @@ begin  -- behavioural
           report "Starting to write sector from unified FDC/SD buffer.";
           f011_buffer_cpu_address <= (others => '0');
           sb_cpu_read_request <= '1';
-          f011_buffer_read_address <= "110"&f011_buffer_disk_address;
+          --f011_buffer_read_address <= "110"&f011_buffer_disk_address;
           f011_buffer_disk_pointer_advance <= '1';
           -- Abort CPU buffer read if in progess, since we are reading the buffer
           sb_cpu_reading <= '0';
@@ -2058,12 +2120,6 @@ begin  -- behavioural
               -- Still more bytes to read.
               sd_state <= WritingSector;
 
-              -- Get next byte ready
-              if f011_sector_fetch='1' then
-                f011_buffer_read_address <= "110"&f011_buffer_disk_address;
-              else
-                f011_buffer_read_address <= "111"&sd_buffer_offset;
-              end if;
               f011_buffer_disk_pointer_advance <= '1';
               -- Abort CPU buffer read if in progess, since we are reading the buffer
               sb_cpu_reading <= '0';              

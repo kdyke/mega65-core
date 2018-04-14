@@ -185,6 +185,8 @@ entity SdCardCtrl is
     hndShk_o   : out std_logic;  -- High when controller has taken data or has data to give.
     error_o    : out std_logic_vector(15 downto 0) := (others => '0');
     last_state_o : out unsigned(7 downto 0) := x"00"; 
+    sd_byte_count_o : out std_logic_vector(9 downto 0);
+    
     -- I/O signals to the external SD card.
     cs_bo      : out std_logic                     := '1';  -- Active-low chip-select.
     sclk_o     : out std_logic                     := '0';  -- Serial clock to SD card.
@@ -294,6 +296,7 @@ begin
     variable doDeselect_v     : boolean;  -- When true, de-select SD card after a command is issued.
     
   begin
+
     if rising_edge(clk_i) then
 
       -- PGS 20180124 - Update SD/SDHC card type each cycle
@@ -302,6 +305,8 @@ begin
       else
         CARD_TYPE_G <= SD_CARD_E;
       end if;
+
+      sd_byte_count_o <= std_logic_vector(to_unsigned(byteCnt_v,10));
 
       -- PGS 20180124 - Export current FSM state for debug
       last_state_o <= to_unsigned(fsmstate_t'pos(state_v),8);

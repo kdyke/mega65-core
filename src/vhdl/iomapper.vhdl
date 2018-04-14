@@ -229,7 +229,29 @@ entity iomapper is
         
         kickstart_address : in std_logic_vector(13 downto 0);
         
+        -- Debug
+        sd_buffer_read_address : out std_logic_vector(11 downto 0);
+        sd_buffer_rdata : out std_logic_vector(7 downto 0);
+
+        sd_buffer_write_address : out std_logic_vector(11 downto 0);
+        sd_buffer_wdata : out std_logic_vector(7 downto 0);
+    
+        sd_buffer_write : out std_logic;
+        sd_state_out : out std_logic_vector(3 downto 0);
+        
+        -- Alternate debug of the raw internal SD card interface
+        sd_addr_out : out std_logic_vector(31 downto 0);
+        sd_data_i_out : out std_logic_vector(7 downto 0);
+        sd_data_o_out : out std_logic_vector(7 downto 0);
+        sd_rd_out : out std_logic;
+        sd_wr_out : out std_logic;
+        sd_hndshk_o_out : out std_logic;
+        sd_hndshk_i_out : out std_logic;
+        sd_busy_out : out std_logic;
+        sd_byte_count_o : out std_logic_vector(9 downto 0);
+        
         colourram_at_dc00 : in std_logic
+
                
         );
 end iomapper;
@@ -835,6 +857,26 @@ begin
     QspiDB => QspiDB,
     QspiCSn => QspiCSn,
 
+    sd_buffer_read_address => sd_buffer_read_address,
+    sd_buffer_rdata => sd_buffer_rdata,
+
+    sd_buffer_write_address => sd_buffer_write_address,
+    sd_buffer_wdata => sd_buffer_wdata,
+    
+    sd_buffer_write => sd_buffer_write,
+    sd_state_out => sd_state_out,
+    
+    -- Alternate debug of the raw internal SD card interface
+    sd_addr_out      => sd_addr_out,
+    sd_data_i_out    => sd_data_i_out,
+    sd_data_o_out    => sd_data_o_out,  
+    sd_rd_out        => sd_rd_out,  
+    sd_wr_out        => sd_wr_out,      
+    sd_hndshk_o_out  => sd_hndshk_o_out,
+    sd_hndshk_i_out  => sd_hndshk_i_out,
+    sd_busy_out      => sd_busy_out,
+    sd_byte_count_o  => sd_byte_count_o,
+    
     last_scan_code => last_scan_code
 
     );

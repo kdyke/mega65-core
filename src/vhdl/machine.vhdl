@@ -542,9 +542,20 @@ architecture Behavioral of machine is
   -- local debug signals from CPU
   signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
   signal pixelclock_select : std_logic_vector(7 downto 0);
+
+  -- internal SD debug signals
+  signal sd_addr_out     : std_logic_vector(31 downto 0);
+  signal sd_data_i_out   : std_logic_vector(7 downto 0);
+  signal sd_data_o_out   : std_logic_vector(7 downto 0);
+  signal sd_rd_out       : std_logic;
+  signal sd_wr_out       : std_logic;
+  signal sd_hndshk_o_out : std_logic;
+  signal sd_hndshk_i_out : std_logic;
+  signal sd_busy_out     : std_logic;
+  signal sd_byte_count_o : std_logic_vector(9 downto 0);
   
 begin
-
+  
   ----------------------------------------------------------------------------
   -- IRQ & NMI: If either the hardware buttons on the FPGA board or an IO
   -- device via the IOmapper pull an interrupt line down, then trigger an
@@ -742,15 +753,15 @@ begin
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
 
-      debug_address_w_dbg_out => debug_address_w_dbg_out,
-      debug_address_r_dbg_out => debug_address_r_dbg_out,
-      debug_rdata_dbg_out => debug_rdata_dbg_out,
-      debug_wdata_dbg_out => debug_wdata_dbg_out,
-      debug_write_dbg_out => debug_write_dbg_out,
-      debug_read_dbg_out => debug_read_dbg_out,
-      debug4_state_out => debug4_state_out,
+      --debug_address_w_dbg_out => debug_address_w_dbg_out,
+      --debug_address_r_dbg_out => debug_address_r_dbg_out,
+      --debug_rdata_dbg_out => debug_rdata_dbg_out,
+      --debug_wdata_dbg_out => debug_wdata_dbg_out,
+      --debug_write_dbg_out => debug_write_dbg_out,
+      --debug_read_dbg_out => debug_read_dbg_out,
+      --debug4_state_out => debug4_state_out,
       
-      proceed_dbg_out => proceed_dbg_out,
+      --proceed_dbg_out => proceed_dbg_out,
       
       irq_hypervisor => sw(4 downto 2),    -- JBM
       
@@ -1264,9 +1275,30 @@ begin
       ps2data => ps2data,
       ps2clock => ps2clock,
       
+      -- sdcardio debug
+      sd_buffer_read_address => debug_address_r_dbg_out(11 downto 0),
+      sd_buffer_rdata => debug_rdata_dbg_out,
+
+      --sd_buffer_write_address => debug_address_w_dbg_out(11 downto 0),
+      --sd_buffer_wdata => debug_wdata_dbg_out,
+    
+      --sd_buffer_write => debug_write_dbg_out,
+      sd_state_out => debug4_state_out,
+      
+      sd_addr_out      => sd_addr_out,
+      sd_data_i_out    => sd_data_i_out,
+      sd_data_o_out    => sd_data_o_out,  
+      sd_rd_out        => sd_rd_out,  
+      sd_wr_out        => sd_wr_out,      
+      sd_hndshk_o_out  => sd_hndshk_o_out,
+      sd_hndshk_i_out  => sd_hndshk_i_out,
+      sd_busy_out      => sd_busy_out,
+      sd_byte_count_o  => sd_byte_count_o,
+      
       scancode_out => scancode_out
       );
 
+  
   matrix_compositor0 : entity work.matrix_rain_compositor port map(
     display_shift_in=>display_shift,
     shift_ready_in => shift_ready,
@@ -1509,8 +1541,19 @@ begin
     end if;
   end process;
   
-  debug8_state_out <= std_logic_vector(monitor_state(15 downto 8));
+--  debug8_state_out <= std_logic_vector(monitor_state(15 downto 8));
 --  debug4_state_out <= (others => '0');
+
+  --debug_address_r_dbg_out(15 downto 0) <= sd_addr_out(31 downto 16);
+  debug_address_w_dbg_out(9 downto 0) <= sd_byte_count_o;
+  
+  --debug_rdata_dbg_out <= sd_data_o_out;   -- When asking SD to read, data will show up on its output port
+  debug_wdata_dbg_out <= sd_data_i_out;
+  debug_read_dbg_out <= sd_rd_out;
+  debug_write_dbg_out <= sd_wr_out;
+  debug8_state_out(0) <= sd_busy_out;
+  debug8_state_out(1) <= sd_hndshk_i_out;
+  debug8_state_out(2) <= sd_hndshk_o_out;
 
   UART_TXD<=uart_txd_sig; 
   
