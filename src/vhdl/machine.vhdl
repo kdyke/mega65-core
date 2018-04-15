@@ -1277,7 +1277,7 @@ begin
       
       -- sdcardio debug
       sd_buffer_read_address => debug_address_r_dbg_out(11 downto 0),
-      sd_buffer_rdata => debug_rdata_dbg_out,
+      --sd_buffer_rdata => debug_rdata_dbg_out,
 
       --sd_buffer_write_address => debug_address_w_dbg_out(11 downto 0),
       --sd_buffer_wdata => debug_wdata_dbg_out,
@@ -1547,7 +1547,7 @@ begin
   --debug_address_r_dbg_out(15 downto 0) <= sd_addr_out(31 downto 16);
   debug_address_w_dbg_out(9 downto 0) <= sd_byte_count_o;
   
-  --debug_rdata_dbg_out <= sd_data_o_out;   -- When asking SD to read, data will show up on its output port
+  debug_rdata_dbg_out <= sd_data_o_out;   -- When asking SD to read, data will show up on its output port
   debug_wdata_dbg_out <= sd_data_i_out;
   debug_read_dbg_out <= sd_rd_out;
   debug_write_dbg_out <= sd_wr_out;
