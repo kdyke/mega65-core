@@ -1,4 +1,5 @@
 #!/bin/bash
-. /opt/Xilinx/Vivado/2017.4/settings64.sh
+vver=`( cd /opt/Xilinx/Vivado/ ; ls | tail -1)`
+. /opt/Xilinx/Vivado/${vver}/settings64.sh
 echo vivado $*
 vivado $*
