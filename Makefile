@@ -7,8 +7,8 @@ OPHIS=	../Ophis/bin/ophis -4
 
 VIVADO=	./vivado_wrapper
 
-CA65=  ca65 --cpu 4510
-LD65=  ld65 -t none
+CA65=  cc65/bin/ca65 --cpu 4510
+LD65=  cc65/bin/ld65 -t none
 
 ASSETS=		assets
 SRCDIR=		src
@@ -65,6 +65,10 @@ all:	$(SDCARD_DIR)/MEGA65.D81 $(BINDIR)/mega65r1.mcs $(BINDIR)/nexys4.mcs $(BIND
 
 generated_vhdl:	$(SIMULATIONVHDL)
 
+$(CA65):
+	git submodule init
+	git submodule update
+	( cd cc65 ; make )
 
 # files destined to go on the SD-card to serve as firmware for the MEGA65
 firmware:	$(SDCARD_DIR)/BANNER.M65 \
