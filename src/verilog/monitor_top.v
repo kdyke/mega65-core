@@ -38,7 +38,7 @@
   input [15:0] monitor_cpu_state,
   input monitor_hypervisor_mode,
   input [7:0] monitor_instruction,
-  output wire [27:0] monitor_watch,
+  output wire [23:0] monitor_watch,
   input monitor_watch_match,
   input [7:0] monitor_opcode,
   input [3:0] monitor_ibytes,
@@ -63,7 +63,7 @@
   input monitor_char_toggle,
   output wire monitor_char_busy,
 
-  output wire [27:0] monitor_mem_address,
+  output wire [23:0] monitor_mem_address,
   input [7:0] monitor_mem_rdata,
   output wire [7:0] monitor_mem_wdata,
   output wire monitor_mem_attention_request,

@@ -662,15 +662,15 @@ architecture Behavioral of viciv is
   signal colour_ram_base : unsigned(15 downto 0) := x"0000";
   -- Screen RAM offset ( @ $1000 on boot for debug purposes)
   -- (bits 17-27 are ignored with 128KB chipram)
-  signal screen_ram_base : unsigned(27 downto 0) := x"0000400";
+  signal screen_ram_base : unsigned(23 downto 0) := x"000400";
   -- Pointer to the VIC-II compatibility sprite source vector, usually
   -- screen+$3F8 in 40 column mode, or +$7F8 in VIC-III 80 column mode
-  signal vicii_sprite_pointer_address : unsigned(27 downto 0) := x"00013F8";
+  signal vicii_sprite_pointer_address : unsigned(23 downto 0) := x"0013F8";
 
   -- Character set address.
   -- Size of character set depends on resolution of characters, and whether
   -- full-colour characters are enabled.
-  signal character_set_address : unsigned(27 downto 0) := x"0000000";
+  signal character_set_address : unsigned(23 downto 0) := x"000000";
   signal character_data_from_rom : std_logic := '1';
   -----------------------------------------------------------------------------
   
@@ -1146,7 +1146,7 @@ begin
               );
 
   
-  chipram_address <= next_ramaddress when to_integer(next_ramaddress) < chipram_size else to_unsigned(0,20);
+  chipram_address <= next_ramaddress; -- when to_integer(next_ramaddress) < chipram_size else to_unsigned(0,20);
   ramdata <= chipram_datain;
   
   process(cpuclock,ioclock,fastio_addr,fastio_read,chardata,
@@ -1779,7 +1779,7 @@ begin
           fastio_rdata <= std_logic_vector(screen_ram_base(23 downto 16));
         elsif register_number=99 then
           fastio_rdata(7 downto 4) <= x"0";
-          fastio_rdata(3 downto 0) <= std_logic_vector(screen_ram_base(27 downto 24));
+          fastio_rdata(3 downto 0) <= x"0"; --std_logic_vector(screen_ram_base(27 downto 24));
         elsif register_number=100 then
           fastio_rdata <= std_logic_vector(colour_ram_base(7 downto 0));
         elsif register_number=101 then
@@ -2413,9 +2413,9 @@ begin
                                                   elsif register_number=98 then
                                         -- @IO:GS $D062 VIC-IV screen RAM precise base address (bits 23 - 16)
                                                     screen_ram_base(23 downto 16) <= unsigned(fastio_wdata);
-                                                  elsif register_number=99 then
+                                                    --elsif register_number=99 then
                                         -- @IO:GS $D063 VIC-IV screen RAM precise base address (bits 31 - 24)
-                                                    screen_ram_base(27 downto 24) <= unsigned(fastio_wdata(3 downto 0));
+                                                    --screen_ram_base(27 downto 24) <= unsigned(fastio_wdata(3 downto 0));
                                                   elsif register_number=100 then
                                         -- @IO:GS $D064 VIC-IV colour RAM base address (bits 0 - 7)
                                                     colour_ram_base(7 downto 0) <= unsigned(fastio_wdata);

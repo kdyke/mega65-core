@@ -35,6 +35,292 @@ use work.debugtools.all;
 use work.cputypes.all;
 use work.victypes.all;
 
+entity address_resolver is
+  port (
+    short_address : in unsigned(15 downto 0);
+    writeP : in boolean;
+    gated_exrom : in std_logic; 
+    gated_game : in std_logic;
+    cpuport_ddr : in unsigned(7 downto 0);
+    cpuport_value : in unsigned(7 downto 0);
+    viciii_iomode : in std_logic_vector(1 downto 0);
+    hyper_iomode : in unsigned(7 downto 0);
+    sector_buffer_mapped : in std_logic;
+    colourram_at_dc00 : in std_logic;
+    hypervisor_mode : in std_logic;
+    reg_mb_low : in unsigned(7 downto 0);
+    reg_mb_high : in unsigned(7 downto 0);
+    reg_map_low : in std_logic_vector(3 downto 0);
+    reg_map_high : in std_logic_vector(3 downto 0);
+    reg_offset_low : in unsigned(11 downto 0);
+    reg_offset_high : in unsigned(11 downto 0);
+    rom_at_e000 : in std_logic;
+    rom_at_c000 : in std_logic;
+    rom_at_a000 : in std_logic;
+    rom_at_8000 : in std_logic;
+    dat_bitplane_addresses : in sprite_vector_eight;
+    dat_offset_drive : in unsigned(15 downto 0);
+    resolved_address : out unsigned(23 downto 0)
+    );
+    
+end entity address_resolver;
+
+--purpose: Convert a 16-bit C64 address to native RAM (or I/O or ROM) address
+architecture Behavioural of address_resolver is
+
+attribute keep_hierarchy : string;
+attribute keep_hierarchy of Behavioural : architecture is "yes";
+
+begin
+
+  process(short_address, writeP, gated_exrom, gated_game, 
+          cpuport_value, cpuport_ddr, viciii_iomode, hypervisor_mode, hyper_iomode,
+          sector_buffer_mapped, colourram_at_dc00, 
+          reg_map_high, reg_offset_high, reg_mb_high,
+          reg_map_low,  reg_offset_low,  reg_mb_low,
+          dat_bitplane_addresses, dat_offset_drive,
+          rom_at_8000, rom_at_a000, rom_at_c000, rom_at_e000 )
+
+  variable temp_address : unsigned(23 downto 0);
+  variable blocknum : integer;
+  variable lhc : std_logic_vector(4 downto 0);
+  variable char_access_addr : unsigned(11 downto 0);
+      
+  begin  -- resolve_long_address
+
+    -- Now apply C64-style $01 lines first, because MAP and $D030 take precedence
+    blocknum := to_integer(short_address(15 downto 12));
+
+    lhc(4) := gated_exrom;
+    lhc(3) := gated_game;
+    lhc(2 downto 0) := std_logic_vector(cpuport_value(2 downto 0));
+    lhc(2) := lhc(2) or (not cpuport_ddr(2));
+    lhc(1) := lhc(1) or (not cpuport_ddr(1));
+    lhc(0) := lhc(0) or (not cpuport_ddr(0));
+    
+    if(writeP) then
+      char_access_addr := x"00D";
+    else
+      char_access_addr := x"02D";
+    end if;
+    
+    -- Examination of the C65 interface ROM reveals that MAP instruction
+    -- takes precedence over $01 CPU port when MAP bit is set for a block of RAM.
+
+    -- From https://groups.google.com/forum/#!topic/comp.sys.cbm/C9uWjgleTgc
+    -- Port pin (bit)    $A000 to $BFFF       $D000 to $DFFF       $E000 to $FFFF
+    -- 2 1 0             Read       Write     Read       Write     Read       Write
+    -- --------------    ----------------     ----------------     ----------------
+    -- 0 0 0             RAM        RAM       RAM        RAM       RAM        RAM
+    -- 0 0 1             RAM        RAM       CHAR-ROM   RAM       RAM        RAM
+    -- 0 1 0             RAM        RAM       CHAR-ROM   RAM       KERNAL-ROM RAM
+    -- 0 1 1             BASIC-ROM  RAM       CHAR-ROM   RAM       KERNAL-ROM RAM
+    -- 1 0 0             RAM        RAM       RAM        RAM       RAM        RAM
+    -- 1 0 1             RAM        RAM       I/O        I/O       RAM        RAM
+    -- 1 1 0             RAM        RAM       I/O        I/O       KERNAL-ROM RAM
+    -- 1 1 1             BASIC-ROM  RAM       I/O        I/O       KERNAL-ROM RAM
+    
+    -- default is address in = address out
+    temp_address(23 downto 16) := (others => '0');
+    temp_address(15 downto 0) := short_address;
+
+    -- IO
+    if (blocknum=13) then
+      temp_address(11 downto 0) := short_address(11 downto 0);
+      -- IO is always visible in ultimax mode
+      if gated_exrom/='1' or gated_game/='0' or hypervisor_mode='1' then
+        case lhc(2 downto 0) is
+          when "000" => temp_address(23 downto 12) := x"00D";  -- WRITE RAM
+          when "001" => temp_address(23 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
+          when "010" => temp_address(23 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
+          when "011" => temp_address(23 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
+          when "100" => temp_address(23 downto 12) := x"00D";  -- WRITE RAM
+          when others =>
+            -- All else accesses IO
+            -- C64/C65/C65GS I/O is based on which secret knock has been applied
+            -- to $D02F
+            temp_address(23 downto 12) := x"FD3";
+            temp_address(13 downto 12) := unsigned(viciii_iomode);
+            -- Optionally map SIDs to expansion port
+            if (short_address(11 downto 8) = x"4") and hyper_iomode(2)='1' then
+              temp_address(23 downto 12) := x"7FD";
+            end if;
+            if sector_buffer_mapped='0' and colourram_at_dc00='0' then
+              -- Map $DE00-$DFFF IO expansion areas to expansion port
+              -- (but only if SD card sector buffer is not mapped, and
+              -- 2nd KB of colour RAM is not mapped).
+              if (short_address(11 downto 8) = x"E")
+                or (short_address(11 downto 8) = x"F") then
+                temp_address(23 downto 12) := x"7FD";
+              end if;
+            end if;
+        end case;
+      else
+        temp_address(23 downto 12) := x"FD3";
+        temp_address(13 downto 12) := unsigned(viciii_iomode);
+        if sector_buffer_mapped='0' and colourram_at_dc00='0' then
+          -- Map $DE00-$DFFF IO expansion areas to expansion port
+          -- (but only if SD card sector buffer is not mapped, and
+          -- 2nd KB of colour RAM is not mapped).
+          if (short_address(11 downto 8) = x"E")
+            or (short_address(11 downto 8) = x"F") then
+            temp_address(23 downto 12) := x"7FD";
+          end if;
+        end if;
+      end if;
+    end if;
+
+    -- C64 KERNEL
+    if reg_map_high(3)='0' then
+      if ((blocknum=14) or (blocknum=15)) and ((gated_exrom='1') and (gated_game='0')) then
+        -- ULTIMAX mode external ROM
+        temp_address(23 downto 16) := x"7F";
+      else
+        if (blocknum=14) and (lhc(1)='1') and (writeP=false) then
+          temp_address(23 downto 12) := x"02E";
+        end if;        
+        if (blocknum=15) and (lhc(1)='1') and (writeP=false) then
+          temp_address(23 downto 12) := x"02F";      
+        end if;
+      end if;        
+    end if;      
+    -- C64 BASIC or cartridge ROM LO
+    if reg_map_high(0)='0' then
+      if ((blocknum=8) or (blocknum=9)) and
+        (
+          (
+            ((gated_exrom='1') and (gated_game='0'))
+            or
+            ((gated_exrom='0') and (lhc(1 downto 0)="11"))
+          )
+          and
+          (writeP=false)
+        )
+      then
+        -- ULTIMAX mode or cartridge external ROM
+        temp_address(23 downto 16) := x"7F";
+      end if;
+      if (blocknum=10) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
+        
+        temp_address(23 downto 12) := x"02A";
+      end if;
+      if (blocknum=11) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
+        temp_address(23 downto 12) := x"02B";      
+      end if;
+    end if;
+    
+    if 1 = 0 then
+      
+    if reg_map_high(1)='0' then
+      if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
+        and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
+      then
+        -- ULTIMAX mode or cartridge external ROM
+        temp_address(23 downto 16) := x"7F";          
+      end if;
+    end if;
+
+    -- Expose remaining address space to cartridge port in ultimax mode
+    if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
+      if (reg_map_low(0)='0') and  (blocknum=1) then
+        -- $1000 - $1FFF Ultimax mode
+        temp_address(23 downto 16) := x"7F";
+      end if;
+      if (reg_map_low(1)='0') and (blocknum=2 ) then
+        -- $2000 - $2FFF Ultimax mode
+        -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
+        -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
+        -- it down. Not yet implemented, and won't be perfectly compatible.
+        temp_address(23 downto 16) := x"7F";
+      end if;
+      if (reg_map_low(2)='0') and ((blocknum=4) or (blocknum=5)) then
+        -- $4000 - $5FFF Ultimax mode
+      temp_address(23 downto 16) := x"7F";
+      end if;
+      if (reg_map_low(3)='0') and ((blocknum=6) or (blocknum=7)) then
+        -- $6000 - $7FFF Ultimax mode
+        temp_address(23 downto 16) := x"7F";
+      end if;
+      if (reg_map_high(2)='0') and (blocknum=12) then
+        -- $C000 - $CFFF Ultimax mode
+        temp_address(23 downto 16) := x"7F";
+      end if;
+    end if;
+  end if;
+  
+    -- Lower 8 address bits are never changed
+    temp_address(7 downto 0):=short_address(7 downto 0);
+
+    -- Add the map offset if required
+    blocknum := to_integer(short_address(14 downto 13));
+    if short_address(15)='1' then
+      if reg_map_high(blocknum)='1' then
+        temp_address(23 downto 20) := reg_mb_high(3 downto 0);
+        temp_address(19 downto 8) := reg_offset_high+to_integer(short_address(15 downto 8));
+        temp_address(7 downto 0) := short_address(7 downto 0);       
+      end if;
+    else
+      if reg_map_low(blocknum)='1' then
+        temp_address(23 downto 20) := reg_mb_low(3 downto 0);
+        temp_address(19 downto 8) := reg_offset_low+to_integer(short_address(15 downto 8));
+        temp_address(7 downto 0) := short_address(7 downto 0);
+        report "mapped memory address is $" & to_hstring(temp_address) severity note;
+      end if;
+    end if;
+    
+    -- $D030 ROM select lines:
+    if hypervisor_mode = '0' then
+      blocknum := to_integer(short_address(15 downto 12));
+      if (blocknum=14 or blocknum=15) and (rom_at_e000='1') then
+        temp_address(23 downto 12) := x"03E";
+        if blocknum=15 then temp_address(12):='1'; end if;
+      end if;
+      if (blocknum=12) and rom_at_c000='1' then
+        temp_address(23 downto 12) := x"02C";
+      end if;
+      if (blocknum=10 or blocknum=11) and (rom_at_a000='1') then
+        temp_address(23 downto 12) := x"03A";
+        if blocknum=11 then temp_address(12):='1'; end if;
+      end if;
+      if (blocknum=9) and (rom_at_8000='1') then
+        temp_address(23 downto 12) := x"039";
+      end if;
+      if (blocknum=8) and (rom_at_8000='1') then
+        temp_address(23 downto 12) := x"038";
+      end if;
+    end if;
+
+    -- C65 DAT
+    report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
+    if temp_address(23 downto 3) & "000" = x"FD1040"
+      or temp_address(23 downto 3) & "000" = x"FD3040" then
+      temp_address(23 downto 17) := (others => '0');
+      temp_address(16) := temp_address(0); -- odd/even bitplane bank select
+      -- Bit plane address
+      -- XXX only uses the address from upper nybl -- doesn't pick based on
+      -- odd/even line/frame.
+      temp_address(15 downto 13) :=
+        dat_bitplane_addresses(to_integer(temp_address(2 downto 0)))(7 downto 5);
+      -- Bitplane offset
+      temp_address(12 downto 0) := dat_offset_drive(12 downto 0);
+      report "C65 VIC-III DAT: Address translated to $" & to_hstring(temp_address);
+    end if;
+    
+    resolved_address <= temp_address;
+  end process;
+
+end Behavioural;
+
+use WORK.ALL;
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use ieee.numeric_std.all;
+use Std.TextIO.all;
+use work.debugtools.all;
+use work.cputypes.all;
+use work.victypes.all;
+
 entity gs4510 is
   generic(
     math_unit_enable : boolean := false;
@@ -107,7 +393,7 @@ entity gs4510 is
     monitor_pc : out unsigned(15 downto 0);
     monitor_state : out unsigned(15 downto 0);
     monitor_instruction : out unsigned(7 downto 0);
-    monitor_watch : in unsigned(27 downto 0);
+    monitor_watch : in unsigned(23 downto 0);
     monitor_watch_match : out std_logic;
     monitor_instructionpc : out unsigned(15 downto 0);
     monitor_opcode : out unsigned(7 downto 0);
@@ -131,7 +417,7 @@ entity gs4510 is
     ---------------------------------------------------------------------------
     -- Memory access interface used by monitor
     ---------------------------------------------------------------------------
-    monitor_mem_address : in unsigned(27 downto 0);
+    monitor_mem_address : in unsigned(23 downto 0);
     monitor_mem_rdata : out unsigned(7 downto 0);
     monitor_mem_wdata : in unsigned(7 downto 0);
     monitor_mem_read : in std_logic;
@@ -206,7 +492,7 @@ entity gs4510 is
     slow_access_request_toggle : out std_logic := '0';
     slow_access_ready_toggle : in std_logic;
 
-    slow_access_address : out unsigned(27 downto 0) := (others => '1');
+    slow_access_address : out unsigned(23 downto 0) := (others => '1');
     slow_access_write : out std_logic := '0';
     slow_access_wdata : out unsigned(7 downto 0);
     slow_access_rdata : in unsigned(7 downto 0);
@@ -226,6 +512,39 @@ entity gs4510 is
 end entity gs4510;
 
 architecture Behavioural of gs4510 is
+  
+  component address_resolver is
+    port (
+      short_address : in unsigned(15 downto 0);
+      writeP : in boolean;
+      gated_exrom : in std_logic; 
+      gated_game : in std_logic;
+      cpuport_ddr : in unsigned(7 downto 0);
+      cpuport_value : in unsigned(7 downto 0);
+      viciii_iomode : in std_logic_vector(1 downto 0);
+      hyper_iomode : in unsigned(7 downto 0);
+      sector_buffer_mapped : in std_logic;
+      colourram_at_dc00 : in std_logic;
+      hypervisor_mode : in std_logic;
+      reg_mb_low : in unsigned(7 downto 0);
+      reg_mb_high : in unsigned(7 downto 0);
+      reg_map_low : in std_logic_vector(3 downto 0);
+      reg_map_high : in std_logic_vector(3 downto 0);
+      reg_offset_low : in unsigned(11 downto 0);
+      reg_offset_high : in unsigned(11 downto 0);
+      rom_at_e000 : in std_logic;
+      rom_at_c000 : in std_logic;
+      rom_at_a000 : in std_logic;
+      rom_at_8000 : in std_logic;
+      dat_bitplane_addresses : in sprite_vector_eight;
+      dat_offset_drive : in unsigned(15 downto 0);
+      resolved_address : out unsigned(23 downto 0)
+      );
+    
+  end component address_resolver;
+
+attribute keep_hierarchy : string;
+attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   -- DMAgic settings
   signal support_f018b : std_logic := '0';
@@ -261,7 +580,7 @@ architecture Behavioural of gs4510 is
   signal last_byte3 : unsigned(7 downto 0)  := (others => '0');
   signal last_bytecount : integer range 0 to 3 := 0;
   signal last_action : character := ' ';
-  signal last_address : unsigned(27 downto 0)  := (others => '0');
+  signal last_address : unsigned(23 downto 0)  := (others => '0');
   signal last_value : unsigned(7 downto 0)  := (others => '0');
 
   -- Shadow RAM control
@@ -287,8 +606,8 @@ architecture Behavioural of gs4510 is
   
   signal read_data : unsigned(7 downto 0)  := (others => '0');
   
-  signal long_address_read : unsigned(27 downto 0)  := (others => '0');
-  signal long_address_write : unsigned(27 downto 0)  := (others => '0');
+  signal long_address_read : unsigned(23 downto 0)  := (others => '0');
+  signal long_address_write : unsigned(23 downto 0)  := (others => '0');
 
   -- C65 RAM Expansion Controller
   -- bit 7 = indicate error status?
@@ -319,7 +638,7 @@ architecture Behavioural of gs4510 is
   signal reu_ff00_pending : std_logic := '0';
 
   signal last_fastio_addr : std_logic_vector(19 downto 0)  := (others => '0');
-  signal last_write_address : unsigned(27 downto 0)  := (others => '0');
+  signal last_write_address : unsigned(23 downto 0)  := (others => '0');
   signal shadow_write_flags : unsigned(3 downto 0) := "0000";
   -- Registers to hold delayed write to hypervisor and related CPU registers
   -- to improve CPU timing closure.
@@ -368,7 +687,7 @@ architecture Behavioural of gs4510 is
   -- Interface to slow device address space
   signal slow_access_request_toggle_drive : std_logic := '0';
   signal slow_access_write_drive : std_logic := '0';
-  signal slow_access_address_drive : unsigned(27 downto 0) := (others => '1');
+  signal slow_access_address_drive : unsigned(23 downto 0) := (others => '1');
   signal slow_access_wdata_drive : unsigned(7 downto 0) := (others => '1');
   signal slow_access_desired_ready_toggle : std_logic := '0';
   signal slow_access_ready_toggle_buffer : std_logic := '0';
@@ -384,7 +703,7 @@ architecture Behavioural of gs4510 is
   -- DMAgic registers
   signal dmagic_list_counter : integer range 0 to 12;
   signal dmagic_first_read : std_logic := '0';
-  signal reg_dmagic_addr : unsigned(27 downto 0) := x"0000000";
+  signal reg_dmagic_addr : unsigned(23 downto 0) := x"000000";
   signal reg_dmagic_withio : std_logic := '0';
   signal reg_dmagic_status : unsigned(7 downto 0) := x"00";
   signal reg_dmacount : unsigned(7 downto 0) := x"00";  -- number of DMA jobs done
@@ -464,7 +783,7 @@ architecture Behavioural of gs4510 is
   signal hyper_iomode : unsigned(7 downto 0)  := (others => '0');
   signal hyper_dmagic_src_mb : unsigned(7 downto 0)  := (others => '0');
   signal hyper_dmagic_dst_mb : unsigned(7 downto 0)  := (others => '0');
-  signal hyper_dmagic_list_addr : unsigned(27 downto 0)  := (others => '0');
+  signal hyper_dmagic_list_addr : unsigned(23 downto 0)  := (others => '0');
   signal hyper_p : unsigned(7 downto 0)  := (others => '0');
   signal hyper_a : unsigned(7 downto 0)  := (others => '0');
   signal hyper_b : unsigned(7 downto 0)  := (others => '0');
@@ -581,7 +900,7 @@ architecture Behavioural of gs4510 is
   signal hyperport_num : unsigned(5 downto 0);
   signal cpuport_ddr : unsigned(7 downto 0) := x"FF";
   signal cpuport_value : unsigned(7 downto 0) := x"3F";
-  signal the_read_address : unsigned(27 downto 0);
+  signal the_read_address : unsigned(23 downto 0);
   
   signal monitor_mem_trace_toggle_last : std_logic := '0';
 
@@ -947,7 +1266,7 @@ architecture Behavioural of gs4510 is
   signal monitor_mem_read_drive : std_logic;
   signal monitor_mem_write_drive : std_logic;
   signal monitor_mem_setpc_drive : std_logic;
-  signal monitor_mem_address_drive : unsigned(27 downto 0);
+  signal monitor_mem_address_drive : unsigned(23 downto 0);
   signal monitor_mem_wdata_drive : unsigned(7 downto 0);
 
   signal debugging_single_stepping : std_logic := '0';
@@ -980,7 +1299,11 @@ architecture Behavioural of gs4510 is
   signal cache_flushing : std_logic := '1';
   signal cache_flush_counter : unsigned(9 downto 0) := (others => '0');
 
-  signal memory_access_address_next : unsigned(27 downto 0);
+  signal pre_resolve_memory_access_address : unsigned(15 downto 0);
+  signal pre_resolve_memory_access_write : boolean;
+  signal post_resolve_memory_access_address : unsigned(23 downto 0);
+  
+  signal memory_access_address_next : unsigned(23 downto 0);
   signal memory_access_read_next : std_logic;
   signal memory_access_write_next : std_logic;
   signal memory_access_resolve_address_next : std_logic;
@@ -1149,107 +1472,7 @@ architecture Behavioural of gs4510 is
     
     others => ( mcInstructionFetch => '1', others => '0'));
 
--- Each math unit takes two inputs and gives one output.
--- The second input may be ignored for some math units.
--- Also, each math unit has the ability to be a 32 bit
-  -- adder instead of its special function.
-  -- Finally, each unit can be made to latch, and only output
-  -- its value periodically, so that iterative functions can
-  -- be executed.
-  -- XXX Eventually we will add ability to trigger interrupts
-  -- and suspend calculation based on the contents of at least
-  -- one of the math registers
-  type math_unit_config is record
-    source_a : integer range 0 to 15;
-    source_b : integer range 0 to 15;
-    output : integer range 0 to 15;
-    output_low : std_logic;
-    output_high : std_logic;
-    latched : std_logic;
-    do_add : std_logic;
-  end record;
-
-  constant math_unit_count : integer := 16;  
-  type math_reg_array is array(0 to 15) of unsigned(31 downto 0);   
-  type math_config_array is array(0 to math_unit_count - 1) of math_unit_config;
-  signal reg_math_regs : math_reg_array;
-  signal reg_math_config : math_config_array;
-  signal reg_math_latch_counter : unsigned(7 downto 0) := x"00";
-  signal reg_math_latch_interval : unsigned(7 downto 0) := x"00";
-
-  -- We have the output counter out of phase with the input counter, so that we
-  -- have time to catch an output, and store it, ready for presenting as an input
-  -- very soon after.
-  signal math_input_counter : integer range 0 to 15 := 0;
-  signal math_output_counter : integer range 0 to 15 := 3;
-  signal prev_math_output_counter : integer range 0 to 15 := 2;
-
-  signal math_input_number : integer range 0 to 15 := 0;
-  signal math_input_value : unsigned(31 downto 0) := (others => '0');
-  signal math_output_value_low : unsigned(31 downto 0) := (others => '0');
-  signal math_output_value_high : unsigned(31 downto 0) := (others => '0');
-
-  -- Start with input and outputting enabled
-  signal math_unit_flags : unsigned(7 downto 0) := x"03";
-  -- Each write to the math registers is passed to the math unit to handle
-  -- (this is to avoid ISE doing really weird things in synthesis, thinking
-  -- that each bit of each register was a clock or something similarly odd.)
-  signal reg_math_write : std_logic := '0';
-  signal reg_math_regnum : integer range 0 to 15 := 0;
-  signal reg_math_regbyte : integer range 0 to 3 := 0;
-  signal reg_math_write_value : unsigned(7 downto 0) := x"00";
-  -- Count # of math cycles since cycle latch last written to
-  signal reg_math_cycle_counter : unsigned(31 downto 0) := to_unsigned(0,32);
-  signal reg_math_cycle_counter_plus_one : unsigned(31 downto 0) := to_unsigned(0,32);
-  -- # of math cycles to trigger end of job / math interrupt
-  signal reg_math_cycle_compare : unsigned(31 downto 0) := to_unsigned(0,32);
-
 begin
-
-  multipliers: for unit in 0 to 7 generate
-    mult_unit : entity work.multiply32 port map (
-      clock => mathclock,
-      unit => unit,
-      do_add => reg_math_config(unit).do_add,
-      input_a => reg_math_config(unit).source_a,
-      input_b => reg_math_config(unit).source_b,
-      input_value_number => math_input_number,
-      input_value => math_input_value,
-      output_select => math_output_counter,
-      output_value(31 downto 0) => math_output_value_low,
-      output_value(63 downto 32) => math_output_value_high
-      );
-  end generate;
-
-  shifters: for unit in 8 to 11 generate
-    mult_unit : entity work.shifter32 port map (
-      clock => mathclock,
-      unit => unit,
-      do_add => reg_math_config(unit).do_add,
-      input_a => reg_math_config(unit).source_a,
-      input_b => reg_math_config(unit).source_b,
-      input_value_number => math_input_number,
-      input_value => math_input_value,
-      output_select => math_output_counter,
-      output_value(31 downto 0) => math_output_value_low,
-      output_value(63 downto 32) => math_output_value_high
-      );
-  end generate;
-
-  dividerrs: for unit in 12 to 15 generate
-    mult_unit : entity work.divider32 port map (
-      clock => mathclock,
-      unit => unit,
-      do_add => reg_math_config(unit).do_add,
-      input_a => reg_math_config(unit).source_a,
-      input_b => reg_math_config(unit).source_b,
-      input_value_number => math_input_number,
-      input_value => math_input_value,
-      output_select => math_output_counter,
-      output_value(31 downto 0) => math_output_value_low,
-      output_value(63 downto 32) => math_output_value_high
-      );
-  end generate;
     
   shadowram0 : entity work.shadowram port map (
     clkA      => clock,
@@ -1556,8 +1779,8 @@ begin
     end procedure check_for_interrupts;
 
     procedure read_long_address(
-      real_long_address : in unsigned(27 downto 0)) is
-      variable long_address : unsigned(27 downto 0);
+      real_long_address : in unsigned(23 downto 0)) is
+      variable long_address : unsigned(23 downto 0);
     begin
 
       last_action <= 'R'; last_address <= real_long_address;
@@ -1599,7 +1822,7 @@ begin
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if long_address(27 downto 6)&"00" = x"FFD364" and hypervisor_mode='1' then
+      if long_address(23 downto 6)&"00" = x"FD364" and hypervisor_mode='1' then
         report "Preparing for reading hypervisor register";
         read_source <= HypervisorRegister;
         accessing_hypervisor <= '1';
@@ -1609,7 +1832,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         hyperport_num <= real_long_address(5 downto 0);
-      elsif (long_address = x"0000000") or (long_address = x"0000001") then
+      elsif (long_address = x"000000") or (long_address = x"000001") then
         accessing_cpuport <= '1';
         report "Preparing to read from a CPUPort";
         read_source <= CPUPort;
@@ -1619,7 +1842,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= real_long_address(3 downto 0);
-      elsif (long_address = x"ffd30a0") or (long_address = x"ffd10a0") then
+      elsif (long_address = x"fd30a0") or (long_address = x"fd10a0") then
         accessing_cpuport <= '1';
         report "Preparing to read from CPU memory expansion controller port";
         read_source <= CPUPort;
@@ -1629,7 +1852,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= "0010";        
-      elsif long_address(27 downto 4) = x"400000" then
+      elsif long_address(23 downto 4) = x"400000" then
         -- More CPU ports for debugging.
         -- (this was added to debug CIA IRQ bugs where reading/writing from
         -- fastio space would prevent the bug from manifesting)
@@ -1642,7 +1865,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= real_long_address(3 downto 0);
-      elsif long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+      elsif long_address(23 downto 20)=x"0" and ((not long_address(19)) or chipram_1mb)='1' then
         -- Reading from chipram
         -- @ IO:C64 $0000002-$000FFFF - 64KB RAM
         -- @ IO:C65 $0010000-$001FFFF - 64KB RAM
@@ -1672,7 +1895,7 @@ begin
         report "Reading from shadowed chipram address $"
           & to_hstring(long_address(19 downto 0)) severity note;
                                         --Also mapped to 7F2 0000 - 7F3 FFFF
-      elsif long_address(27 downto 20) = x"FF" then
+      elsif long_address(23 downto 20) = x"F" then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
         accessing_shadow <= '0';
@@ -1763,7 +1986,7 @@ begin
             end if;
           end if;                         -- $D{0,1,2,3}XXX
         end if;                           -- $DXXXX
-      elsif long_address(27) = '1' or long_address(26)='1' then
+      elsif long_address(23) = '1' or long_address(22)='1' then
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF Slow Device memory (127MB)
         report "Preparing to read from SlowRAM";
@@ -1772,7 +1995,7 @@ begin
         accessing_rom <= '0';
         accessing_slowram <= '1';
         slow_access_data_ready <= '0';
-        slow_access_address_drive <= long_address(27 downto 0);
+        slow_access_address_drive <= long_address(23 downto 0);
         slow_access_write_drive <= '0';
         slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
         slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
@@ -1794,7 +2017,7 @@ begin
         end if;
         proceed <= '1';
       end if;
-      if (long_address(27 downto 8) = x"FFD17") or (long_address(27 downto 8) = x"FFD37") then
+      if (long_address(23 downto 8) = x"FD17") or (long_address(23 downto 8) = x"FD37") then
         report "Preparing to read from a DMAgicRegister";
         read_source <= DMAgicRegister;
       end if;      
@@ -1818,82 +2041,7 @@ begin
             when x"02" => return reg_dmagic_withio
                             & reg_dmagic_addr(22 downto 16);
             when x"03" => return reg_dmagic_status(7 downto 1) & support_f018b;
-            when x"04" => return reg_dmagic_addr(27 downto 20);
-
-            -- $D770-$D7DF reserved for math unit functions
-            when x"70" => return reg_mult_a(7 downto 0);
-            when x"71" => return reg_mult_a(15 downto 8);
-            when x"72" => return reg_mult_a(23 downto 16);
-            when x"73" => return to_unsigned(to_integer(reg_mult_a(24 downto 24)),8);
-            when x"74" => return reg_mult_b(7 downto 0);
-            when x"75" => return reg_mult_b(15 downto 8);
-            when x"76" => return to_unsigned(to_integer(reg_mult_b(17 downto 16)),8);
-            when x"77" => return x"00";
-            -- @IO:GS $D778-$D77F - 48-bit multiplication output
-            when x"78" => return reg_mult_p(7 downto 0);
-            when x"79" => return reg_mult_p(15 downto 8);
-            when x"7a" => return reg_mult_p(23 downto 16);
-            when x"7b" => return reg_mult_p(31 downto 24);
-            when x"7c" => return reg_mult_p(39 downto 32);
-            when x"7d" => return reg_mult_p(47 downto 40);
-            when x"7e" => return x"00";
-            when x"7f" => return x"00";
-            --@IO:GS $D780-$D7BF - 16 x 32 bit Math Unit values
-            when
-              x"80"|x"81"|x"82"|x"83"|x"84"|x"85"|x"86"|x"87"|
-              x"88"|x"89"|x"8A"|x"8B"|x"8C"|x"8D"|x"8E"|x"8F"|
-              x"90"|x"91"|x"92"|x"93"|x"94"|x"95"|x"96"|x"97"|
-              x"98"|x"99"|x"9A"|x"9B"|x"9C"|x"9D"|x"9E"|x"9F"|
-              x"A0"|x"A1"|x"A2"|x"A3"|x"A4"|x"A5"|x"A6"|x"A7"|
-              x"A8"|x"A9"|x"AA"|x"AB"|x"AC"|x"AD"|x"AE"|x"AF"|
-              x"B0"|x"B1"|x"B2"|x"B3"|x"B4"|x"B5"|x"B6"|x"B7"|
-              x"B8"|x"B9"|x"BA"|x"BB"|x"BC"|x"BD"|x"BE"|x"BF" =>
-              case the_read_address(1 downto 0) is
-                when "00" => return reg_math_regs(to_integer(the_read_address(5 downto 2)))(7 downto 0);              
-                when "01" => return reg_math_regs(to_integer(the_read_address(5 downto 2)))(15 downto 8);
-                when "10" => return reg_math_regs(to_integer(the_read_address(5 downto 2)))(23 downto 16);
-                when "11" => return reg_math_regs(to_integer(the_read_address(5 downto 2)))(31 downto 24);
-                when others => return x"59";
-              end case;
-            when
-              --@IO:GS $D7C0-$D7CF - 16 Math function unit input A (3-0) and input B (7-4) selects
-              x"C0"|x"C1"|x"C2"|x"C3"|x"C4"|x"C5"|x"C6"|x"C7"|
-              x"C8"|x"C9"|x"CA"|x"CB"|x"CC"|x"CD"|x"CE"|x"CF" =>
-              return
-                to_unsigned(reg_math_config(to_integer(the_read_address(3 downto 0))).source_b,4)
-                &to_unsigned(reg_math_config(to_integer(the_read_address(3 downto 0))).source_a,4);
-            when
-              --@IO:GS $D7D0-$D7DF.0-3 - 16 Math function unit output selects
-              --@IO:GS $D7D0-$D7DF.4 - 16 Math function unit output low half of result
-              --@IO:GS $D7D0-$D7DF.5 - 16 Math function unit output high half of result
-              --@IO:GS $D7D0-$D7DF.6 - 16 Math function unit select adder mode instead of special function
-              --@IO:GS $D7D0-$D7DF.7 - 16 Math function unit latch output
-              x"D0"|x"D1"|x"D2"|x"D3"|x"D4"|x"D5"|x"D6"|x"D7"|
-              x"D8"|x"D9"|x"DA"|x"DB"|x"DC"|x"DD"|x"DE"|x"DF" =>
-              return
-                reg_math_config(to_integer(the_read_address(3 downto 0))).latched
-                &reg_math_config(to_integer(the_read_address(3 downto 0))).do_add
-                &reg_math_config(to_integer(the_read_address(3 downto 0))).output_high
-                &reg_math_config(to_integer(the_read_address(3 downto 0))).output_low
-                &to_unsigned(reg_math_config(to_integer(the_read_address(3 downto 0))).output,4);
-            when x"E0" => return reg_math_latch_interval;
-            when x"E1" => return math_unit_flags;
-            --@IO:GS $D7E4 - Math iteration counter (bits 0 - 7)
-            --@IO:GS $D7E5 - Math iteration counter (bits 8 - 15)
-            --@IO:GS $D7E6 - Math iteration counter (bits 16 - 23)
-            --@IO:GS $D7E7 - Math iteration counter (bits 24 - 31)
-            when x"e4" => return reg_math_cycle_counter(7 downto 0);
-            when x"e5" => return reg_math_cycle_counter(15 downto 8);
-            when x"e6" => return reg_math_cycle_counter(23 downto 16);
-            when x"e7" => return reg_math_cycle_counter(31 downto 24);
-            --@IO:GS $D7E8 - Math iteration comparison (bits 0 - 7)
-            --@IO:GS $D7E9 - Math iteration comparison (bits 8 - 15)
-            --@IO:GS $D7EA - Math iteration comparison (bits 16 - 23)
-            --@IO:GS $D7EB - Math iteration comparison (bits 24 - 31)
-            when x"e8" => return reg_math_cycle_compare(7 downto 0);
-            when x"e9" => return reg_math_cycle_compare(15 downto 8);
-            when x"ea" => return reg_math_cycle_compare(23 downto 16);
-            when x"eb" => return reg_math_cycle_compare(31 downto 24);
+            when x"04" => return x"0" & reg_dmagic_addr(23 downto 20);
 
             when x"fc" => return unsigned(chipselect_enables);
             when x"fd" =>
@@ -1941,7 +2089,7 @@ begin
             when "010110" => return hyper_dmagic_list_addr(15 downto 8);
             when "010111" => return hyper_dmagic_list_addr(23 downto 16);
             when "011000" =>
-              return to_unsigned(0,4)&hyper_dmagic_list_addr(27 downto 24);
+              return x"00"; --to_unsigned(0,4)&hyper_dmagic_list_addr(27 downto 24);
             when "011001" =>
               return "0000000"&virtualise_sd;
               
@@ -2036,9 +2184,9 @@ begin
     end read_data_complex; 
 
     procedure write_long_byte(
-      real_long_address       : in unsigned(27 downto 0);
+      real_long_address       : in unsigned(23 downto 0);
       value              : in unsigned(7 downto 0)) is
-      variable long_address : unsigned(27 downto 0);
+      variable long_address : unsigned(23 downto 0);
     begin
       -- Schedule the memory write to the appropriate destination.
 
@@ -2068,7 +2216,7 @@ begin
 
       -- Set GeoRAM page (gets munged later with GeoRAM base and mask values
       -- provided by the hypervisor)
-      if real_long_address(27 downto 16) = x"ffd" then
+      if real_long_address(23 downto 16) = x"fd" then
         if real_long_address(11 downto 0) = x"fff" then
           georam_block <= value;
         elsif real_long_address(11 downto 0) = x"ffe" then
@@ -2082,7 +2230,7 @@ begin
         -- XXX Start REU job
         end if;
       end if;
-      if real_long_address(27 downto 16) = x"ffd" then
+      if real_long_address(23 downto 16) = x"fd" then
         if real_long_address(11 downto 0) = x"f01" then
           reu_cmd_autoload <= value(5);
           reu_cmd_ff00decode <= value(4);
@@ -2121,7 +2269,7 @@ begin
       last_write_address <= real_long_address;
 
       -- Write to CPU port
-      if (long_address = x"0000000") then
+      if (long_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
         if value = x"40" then
           force_fast <= '0';
@@ -2133,14 +2281,14 @@ begin
         report "ZPCACHE: Flushing cache due to write to $01";
         cache_flushing <= '1';
         cache_flush_counter <= (others => '0');
-      elsif (long_address = x"0000001") then
+      elsif (long_address = x"000001") then
         report "MEMORY: Writing to CPU PORT register" severity note;
         cpuport_value <= value;
         report "ZPCACHE: Flushing cache due to write to $01";
         cache_flushing <= '1';
         cache_flush_counter <= (others => '0');
       -- Write to DMAgic registers if required
-      elsif (long_address = x"FFD30A0") or (long_address = x"FFD10A0") then
+      elsif (long_address = x"FD30A0") or (long_address = x"FD10A0") then
         -- @ IO:65 $D0A0 - C65 RAM Expansion controller
         -- The specifications of this interface is VERY under-documented.
         -- There are two versions: 512KB and 1MB - 8MB
@@ -2167,7 +2315,7 @@ begin
 
         -- For now, just always report an error condition.
         rec_status <= x"80";
-      elsif (long_address = x"FFD3700") or (long_address = x"FFD1700") then        
+      elsif (long_address = x"FD3700") or (long_address = x"FD1700") then        
         -- Set low order bits of DMA list address
         reg_dmagic_addr(7 downto 0) <= value;
         -- @ IO:GS $D700 - DMAgic DMA list address LSB, and trigger DMA (when written)
@@ -2175,94 +2323,59 @@ begin
         -- memory_access_write.
         -- We also clear out the upper address bits in case an enhanced job had
         -- set them.
-        reg_dmagic_addr(27 downto 23) <= (others => '0');        
-      elsif (long_address = x"FFD370E") or (long_address = x"FFD170E") then
+        --reg_dmagic_addr(27 downto 23) <= (others => '0');        
+      elsif (long_address = x"FD370E") or (long_address = x"FD170E") then
         -- Set low order bits of DMA list address, without starting
         -- @IO:GS $D70E DMA list address low byte (address bits 0 -- 7) WITHOUT STARTING A DMA JOB (used by Hypervisor for unfreezing DMA-using tasks)
         reg_dmagic_addr(7 downto 0) <= value;
-      elsif (long_address = x"FFD3701") or (long_address = x"FFD1701") then
+      elsif (long_address = x"FD3701") or (long_address = x"FD1701") then
         -- @IO:GS $D701 DMA list address high byte (address bits 8 -- 15).
         reg_dmagic_addr(15 downto 8) <= value;
-      elsif (long_address = x"FFD3702") or (long_address = x"FFD1702") then
+      elsif (long_address = x"FD3702") or (long_address = x"FD1702") then
         -- @IO:GS $D702 DMA list address bank (address bits 16 -- 22). Writing clears $D704.
         reg_dmagic_addr(22 downto 16) <= value(6 downto 0);
-        reg_dmagic_addr(27 downto 23) <= (others => '0');
+        reg_dmagic_addr(23 downto 23) <= (others => '0');
         reg_dmagic_withio <= value(7);
-      elsif (long_address = x"FFD3703") or (long_address = x"FFD1703") then
+      elsif (long_address = x"FD3703") or (long_address = x"FD1703") then
         -- @IO:GS $D703.0 DMA enable F018B mode (adds sub-command byte)
         support_f018b <= value(0);	-- setable dmagic mode
-      elsif (long_address = x"FFD3704") or (long_address = x"FFD1704") then
+      elsif (long_address = x"FD3704") or (long_address = x"FD1704") then
         -- @IO:GS $D704 DMA list address mega-byte
-        reg_dmagic_addr(27 downto 20) <= value;
-      elsif (long_address = x"FFD3705") or (long_address = x"FFD1705") then
+        reg_dmagic_addr(23 downto 20) <= value(3 downto 0);
+      elsif (long_address = x"FD3705") or (long_address = x"FD1705") then
         -- @IO:GS $D705 Set low-order byte of DMA list address, and trigger Enhanced DMA job (uses DMA option list)
         reg_dmagic_addr(7 downto 0) <= value;
       -- @IO:GS $D770-3 25-bit multiplier input A
-      elsif (long_address = x"FFD3770") or (long_address = x"FFD1770") then
+      elsif (long_address = x"FD3770") or (long_address = x"FD1770") then
         reg_mult_a(7 downto 0) <= value;
-      elsif (long_address = x"FFD3771") or (long_address = x"FFD1771") then
+      elsif (long_address = x"FD3771") or (long_address = x"FD1771") then
         reg_mult_a(15 downto 8) <= value;
-      elsif (long_address = x"FFD3772") or (long_address = x"FFD1772") then
+      elsif (long_address = x"FD3772") or (long_address = x"FD1772") then
         reg_mult_a(23 downto 16) <= value;
-      elsif (long_address = x"FFD3773") or (long_address = x"FFD1773") then
+      elsif (long_address = x"FD3773") or (long_address = x"FD1773") then
         reg_mult_a(24) <= value(0);
       -- @IO:GS $D774-7 18-bit multiplier input B
-      elsif (long_address = x"FFD3774") or (long_address = x"FFD1774") then
+      elsif (long_address = x"FD3774") or (long_address = x"FD1774") then
         reg_mult_b(7 downto 0) <= value;
-      elsif (long_address = x"FFD3775") or (long_address = x"FFD1775") then
+      elsif (long_address = x"FD3775") or (long_address = x"FD1775") then
         reg_mult_b(15 downto 8) <= value;
-      elsif (long_address = x"FFD3776") or (long_address = x"FFD1776") then
+      elsif (long_address = x"FD3776") or (long_address = x"FD1776") then
         reg_mult_b(17 downto 16) <= value(1 downto 0);
-      elsif (long_address(27 downto 6)&"00"=x"FFD378")
-        or  (long_address(27 downto 6)&"00"=x"FFD178") then
-        -- Math unit register writing
-        reg_math_write <= '1';
-        reg_math_regnum <= to_integer(long_address(5 downto 2));
-        reg_math_regbyte <= to_integer(long_address(1 downto 0));
-        reg_math_write_value <= value;
-      elsif (long_address(27 downto 4)=x"FFD37C") or  (long_address(27 downto 4)=x"FFD17C") then
-        -- Math unit input select registers
-        reg_math_config(to_integer(long_address(3 downto 0))).source_a <= to_integer(value(3 downto 0));
-        reg_math_config(to_integer(long_address(3 downto 0))).source_b <= to_integer(value(7 downto 4));
-      elsif (long_address(27 downto 4)=x"FFD37D") or  (long_address(27 downto 4)=x"FFD17D") then
-        -- Math unit input select registers
-        reg_math_config(to_integer(long_address(3 downto 0))).latched <= value(7);
-        reg_math_config(to_integer(long_address(3 downto 0))).do_add <= value(6);
-        reg_math_config(to_integer(long_address(3 downto 0))).output_high <= value(5);
-        reg_math_config(to_integer(long_address(3 downto 0))).output_low <= value(4);
-        reg_math_config(to_integer(long_address(3 downto 0))).output <= to_integer(value(3 downto 0));
-      elsif (long_address = x"FFD37E0") or (long_address = x"FFD17E0") then
-        -- @IO:GS $D7E0 - Math unit latch interval (only update output of math function units every this many cycles, if they have the latch output flag set)
-        reg_math_latch_interval <= value;
-      elsif (long_address = x"FFD37E1") or (long_address = x"FFD17E1") then
-        -- @IO:GS $D7E1 - Math unit general settings (writing also clears math cycle counter)
-        -- @IO:GS $D7E1.0 - Enable setting of math registers (must normally be set)
-        -- @IO:GS $D7E1.1 - Enable committing of output values from math units back to math registers (clearing effectively pauses iterative formulae)
-        math_unit_flags <= value;
-        reg_math_cycle_counter <= to_unsigned(0,32);        
-      elsif (long_address = x"FFD37E8") or (long_address = x"FFD17E8") then
-        reg_math_cycle_compare(7 downto 0) <= value;
-      elsif (long_address = x"FFD37E9") or (long_address = x"FFD17E9") then
-        reg_math_cycle_compare(15 downto 8) <= value;
-      elsif (long_address = x"FFD37EA") or (long_address = x"FFD17EA") then
-        reg_math_cycle_compare(23 downto 16) <= value;
-      elsif (long_address = x"FFD37EB") or (long_address = x"FFD17EB") then
-        reg_math_cycle_compare(31 downto 24) <= value;
-      elsif (long_address = x"FFD37FA") then
+      elsif (long_address = x"FD37FA") then
         -- @IO:GS $D7FA.0 DEBUG 1/2/3.5MHz CPU speed fine adjustment
         cpu_speed_bias <= to_integer(value);
-      elsif (long_address = x"FFD37FB") then
+      elsif (long_address = x"FD37FB") then
         -- @IO:GS $D7FB.0 DEBUG 1=charge extra cycle(s) for branches taken
         charge_for_branches_taken <= value(0);
-      elsif (long_address = x"FFD37FC") then
+      elsif (long_address = x"FD37FC") then
         -- @IO:GS $D7FC DEBUG chip-select enables for various devices
         chipselect_enables <= std_logic_vector(value);
-      elsif (long_address = x"FFD37FD") then
+      elsif (long_address = x"FD37FD") then
         -- @IO:GS $D7FD.7 Override for /EXROM : set to 0 to enable
         -- @IO:GS $D7FD.6 Override for /GAME : set to 0 to enable
         force_exrom <= value(7);
         force_game <= value(6);
-      elsif (long_address = x"FFD37ff") or (long_address = x"FFD17ff") then
+      elsif (long_address = x"FD37ff") or (long_address = x"FD17ff") then
         -- re-enable kickstart ROM.  This is only to allow for easier development
         -- of kickstart ROMs.
         if value = x"4B" then
@@ -2281,7 +2394,7 @@ begin
       -- Get the shadow RAM address on the bus fast to improve timing.
       shadow_wdata <= value;
       
-      if long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+      if long_address(23 downto 20)=x"0" and ((not long_address(19)) or chipram_1mb)='1' then
         report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
         shadow_address <= shadow_address_next;
         -- Enforce write protect of 2nd 128KB of memory, if being used as ROM
@@ -2306,7 +2419,7 @@ begin
 
         -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
         -- when writing here.
-        if long_address(27 downto 12) = x"001F" and long_address(11) = '1' then
+        if long_address(23 downto 12) = x"01F" and long_address(11) = '1' then
           report "writing to colour RAM via $001F8xx" severity note;
 
           -- And also to colour RAM
@@ -2317,7 +2430,7 @@ begin
           fastio_addr(15 downto 11) <= (others => '0');
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
-      elsif long_address(27 downto 24) = x"F" then --
+      elsif long_address(23 downto 20) = x"F" then --
         accessing_fastio <= '1';
         shadow_write <= '0';
         shadow_write_flags(2) <= '1';
@@ -2371,7 +2484,7 @@ begin
         else
           wait_states_non_zero <= '0';
         end if;
-      elsif long_address(27) = '1' or long_address(26)='1' then
+      elsif long_address(23) = '1' or long_address(22)='1' then
         report "writing to slow device memory..." severity note;
         accessing_slowram <= '1';
         shadow_write <= '0';
@@ -2383,7 +2496,7 @@ begin
         -- about there here, as it only changes the latency for receiving the
         -- write acknowledgement (a similar process can be used for caching reads
         -- from appropriate slow devices, e.g., for expansion memory).
-        slow_access_address_drive <= long_address(27 downto 0);
+        slow_access_address_drive <= long_address(23 downto 0);
         slow_access_write_drive <= '1';
         slow_access_wdata_drive <= value;
         slow_access_pending_write <= '1';
@@ -2622,7 +2735,7 @@ begin
 
     variable memory_read_value : unsigned(7 downto 0);
 
-    variable memory_access_address : unsigned(27 downto 0) := x"FFFFFFF";
+    variable memory_access_address : unsigned(23 downto 0) := x"FFFFFF";
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
@@ -2642,11 +2755,6 @@ begin
 
     variable cpu_speed : std_logic_vector(2 downto 0);
 
-    variable math_input_a_source : integer := 0;
-    variable math_input_b_source : integer := 0;
-    variable math_output_low : integer := 0;
-    variable math_output_high : integer := 0;
-    variable math_result : unsigned(63 downto 0) := to_unsigned(0,64);
     variable vreg33 : unsigned(32 downto 0) := to_unsigned(0,33);
     
   begin    
@@ -2682,164 +2790,6 @@ begin
     z_decremented <= reg_z - 1;
 
 
-    -- Formula Plumbing Unit (FPU), the MEGA65's answer to a traditional
-    -- Floating Point Unit (FPU).
-    -- The idea is simple: We have a bunch of math units, and a bunch of
-    -- inputs and outputs, and a bunch of multiplexors that let you select what
-    -- joins where: In short, you can plumb your own formulae directly.
-    -- For each unit we have to pick one or more inputs, and set at least one
-    -- output.  We will map these all onto the same 64 bytes of registers.
-
-    if rising_edge(clock) then
-      -- We also have one direct 18x25 multiplier for use by the hypervisor.
-      -- This multiplier fits a single DSP48E unit, and does not use the plumbing
-      -- facility.
-      reg_mult_p <= to_unsigned(to_integer(reg_mult_a) * to_integer(reg_mult_b),48);
-
-      if math_unit_enable then
-      -- We also provide some flags (which will later trigger interrupts) based
-      -- on the equality of math registers 14 and 15
-      if reg_math_regs(14) = reg_math_regs(15) then
-        math_unit_flags(6) <= '1';
-        if math_unit_flags(3 downto 2) = "00" then
-          math_unit_flags(7) <= '1' ;
-        end if;
-      else
-        math_unit_flags(6) <= '0';
-        if math_unit_flags(3 downto 2) = "11" then
-          math_unit_flags(7) <= '1' ;
-        end if;
-      end if;
-      if reg_math_regs(14) < reg_math_regs(15) then
-        math_unit_flags(5) <= '1';
-        if math_unit_flags(3 downto 2) = "10" then
-          math_unit_flags(7) <= '1' ;
-        end if;
-      else
-        math_unit_flags(5) <= '0';
-      end if;
-      if reg_math_regs(14) > reg_math_regs(15) then
-        math_unit_flags(4) <= '1';
-        if math_unit_flags(3 downto 2) = "01" then
-          math_unit_flags(7) <= '1' ;
-        end if;
-      else
-        math_unit_flags(4) <= '0';
-      end if;
-      end if;
-      
-    end if;
-
-    if rising_edge(mathclock) and math_unit_enable then
-      -- For the plumbed math units, we want to avoid having two huge 16x32x32
-      -- MUXes to pick the inputs and outputs to and from the register file.
-      -- The interim solution is to have counters that present each of the
-      -- inputs and outputs in turn, and based on the configuration of the plumbing,
-      -- latch or store the appropriate results in the appropriate places.
-      -- This does mean that there can be 16 cycles of latency on the input and
-      -- output of the plumbing, depending on the phase of the counters.
-      -- Later we can try to reduce this latency, by clocking this piece of
-      -- logic at 2x or 4x CPU speed (as it is really a simple set of latches and
-      -- interconnect), and possibly widening it to present 2 of the 16 values
-      -- at a time, instead of just one.  On both input and output sides, it could
-      -- be possible to set the range over which it iterates the counters, to further
-      -- reduce the latency.  But for now, it will simply have the 16 phase
-      -- counters at the CPU speed.
-
-      -- Present input value to all math units
-      if math_input_counter /= 15 then
-        math_input_counter <= math_input_counter + 1;
-      else
-        math_input_counter <= 0;
-      end if;
-      math_input_number <= math_input_counter;
-      math_input_value <= reg_math_regs(math_input_counter);
-      report "MATH: Presenting math reg #" & integer'image(math_input_counter)
-        &" = $" & to_hstring(reg_math_regs(math_input_counter));
-
-      -- Update output counter being shown to math units
-      if math_output_counter /= 15 then
-        math_output_counter <= math_output_counter + 1;
-      else
-        math_output_counter <= 0;
-      end if;
-      prev_math_output_counter <= math_output_counter;
-      -- Based on the configuration for the previously selected unit,
-      -- stash the results in the appropriate place
-      if true then
-        report "MATH: output flags for unit #" & integer'image(prev_math_output_counter)
-          & " = "
-          & std_logic'image(reg_math_config(prev_math_output_counter).output_low) & ", "
-          & std_logic'image(reg_math_config(prev_math_output_counter).output_high) & ", "
-          & integer'image(reg_math_config(prev_math_output_counter).output) & ", "
-          & std_logic'image(reg_math_config(prev_math_output_counter).latched) & ".";
-      end if;
-
-      if math_unit_flags(1) = '1' then
-        if (reg_math_config(prev_math_output_counter).latched='0') or (reg_math_latch_counter = x"00") then
-          if reg_math_config(prev_math_output_counter).output_high = '0' then
-            if reg_math_config(prev_math_output_counter).output_low = '0' then
-              -- No output being kept, so nothing to do.
-              null;
-            else
-              -- Only low output being kept
-              report "MATH: Setting reg_math_regs(" & integer'image(reg_math_config(prev_math_output_counter).output)
-                & ") from output of math unit #" & integer'image(prev_math_output_counter)
-                & " ( = $" & to_hstring(math_output_value_low) & ")";
-              reg_math_regs(reg_math_config(prev_math_output_counter).output) <= math_output_value_low;
-            end if;
-          else
-            if reg_math_config(prev_math_output_counter).output_low = '0' then          
-              -- Only high half of output is being kept, so stash it
-              report "MATH: Setting reg_math_regs(" & integer'image(reg_math_config(prev_math_output_counter).output)
-                & ") from output of math unit #" & integer'image(prev_math_output_counter);
-              reg_math_regs(reg_math_config(prev_math_output_counter).output) <= math_output_value_high;
-            else
-              -- Both are being stashed, so store in consecutive slots
-              report "MATH: Setting reg_math_regs(" & integer'image(reg_math_config(prev_math_output_counter).output)
-                & ") (and next) from output of math unit #" & integer'image(prev_math_output_counter);
-              reg_math_regs(reg_math_config(prev_math_output_counter).output) <= math_output_value_low;
-              if reg_math_config(prev_math_output_counter).output /= 15 then
-                reg_math_regs(reg_math_config(prev_math_output_counter).output + 1) <= math_output_value_high;
-              else
-                reg_math_regs(0) <= math_output_value_high;
-              end if;
-            end if;
-          end if;
-        end if;
-      end if;
-
-      -- Implement writing to math registers
-      reg_math_write <= '0';
-      if math_unit_flags(0) = '1' then
-        if reg_math_write = '1' then
-          case reg_math_regbyte is
-            when 0 => reg_math_regs(reg_math_regnum)(7 downto 0) <= reg_math_write_value;
-            when 1 => reg_math_regs(reg_math_regnum)(15 downto 8) <= reg_math_write_value;
-            when 2 => reg_math_regs(reg_math_regnum)(23 downto 16) <= reg_math_write_value;
-            when 3 => reg_math_regs(reg_math_regnum)(31 downto 24) <= reg_math_write_value;
-            when others =>
-          end case;
-        end if;
-      end if;
-
-      -- Latch counter counts "math cycles", which is the time it takes for an
-      -- output to appear on the inputs again, i.e., once per lap of the input
-      -- and output propagation.
-      reg_math_cycle_counter_plus_one <= reg_math_cycle_counter + 1;
-      if math_output_counter = 1 then
-        -- Decrement latch counter
-        if reg_math_latch_counter = x"00" then
-          reg_math_latch_counter <= reg_math_latch_interval;
-          -- And update math cycle counter, if math unit is active
-          if math_unit_flags(1) = '1' then
-            reg_math_cycle_counter <= reg_math_cycle_counter_plus_one;
-          end if;
-        else
-          reg_math_latch_counter <= reg_math_latch_counter - 1;
-        end if;
-      end if;
-    end if;    
                                         -- BEGINNING OF MAIN PROCESS FOR CPU
     if rising_edge(clock) and all_pause='0' then
       
@@ -3010,158 +2960,158 @@ begin
         last_write_pending <= '0';
         
                                         -- @IO:GS $D640 - Hypervisor A register storage
-        if last_write_address = x"FFD3640" and hypervisor_mode='1' then
+        if last_write_address = x"FD3640" and hypervisor_mode='1' then
           hyper_a <= last_value;
         end if;
                                         -- @IO:GS $D641 - Hypervisor X register storage
-        if last_write_address = x"FFD3641" and hypervisor_mode='1' then
+        if last_write_address = x"FD3641" and hypervisor_mode='1' then
           hyper_x <= last_value;
         end if;
                                         -- @IO:GS $D642 - Hypervisor Y register storage
-        if last_write_address = x"FFD3642" and hypervisor_mode='1' then
+        if last_write_address = x"FD3642" and hypervisor_mode='1' then
           hyper_y <= last_value;
         end if;
                                         -- @IO:GS $D643 - Hypervisor Z register storage
-        if last_write_address = x"FFD3643" and hypervisor_mode='1' then
+        if last_write_address = x"FD3643" and hypervisor_mode='1' then
           hyper_z <= last_value;
         end if;
                                         -- @IO:GS $D644 - Hypervisor B register storage
-        if last_write_address = x"FFD3644" and hypervisor_mode='1' then
+        if last_write_address = x"FD3644" and hypervisor_mode='1' then
           hyper_b <= last_value;
         end if;
                                         -- @IO:GS $D645 - Hypervisor SPL register storage
-        if last_write_address = x"FFD3645" and hypervisor_mode='1' then
+        if last_write_address = x"FD3645" and hypervisor_mode='1' then
           hyper_sp <= last_value;
         end if;
                                         -- @IO:GS $D646 - Hypervisor SPH register storage
-        if last_write_address = x"FFD3646" and hypervisor_mode='1' then
+        if last_write_address = x"FD3646" and hypervisor_mode='1' then
           hyper_sph <= last_value;
         end if;
                                         -- @IO:GS $D647 - Hypervisor P register storage
-        if last_write_address = x"FFD3647" and hypervisor_mode='1' then
+        if last_write_address = x"FD3647" and hypervisor_mode='1' then
           hyper_p <= last_value;
         end if;
                                         -- @IO:GS $D648 - Hypervisor PC-low register storage
-        if last_write_address = x"FFD3648" and hypervisor_mode='1' then
+        if last_write_address = x"FD3648" and hypervisor_mode='1' then
           hyper_pc(7 downto 0) <= last_value;
         end if;
                                         -- @IO:GS $D649 - Hypervisor PC-high register storage
-        if last_write_address = x"FFD3649" and hypervisor_mode='1' then
+        if last_write_address = x"FD3649" and hypervisor_mode='1' then
           hyper_pc(15 downto 8) <= last_value;
         end if;
                                         -- @IO:GS $D64A - Hypervisor MAPLO register storage (high bits)
-        if last_write_address = x"FFD364A" and hypervisor_mode='1' then
+        if last_write_address = x"FD364A" and hypervisor_mode='1' then
           hyper_map_low <= std_logic_vector(last_value(7 downto 4));
           hyper_map_offset_low(11 downto 8) <= last_value(3 downto 0);
         end if;
                                         -- @IO:GS $D64B - Hypervisor MAPLO register storage (low bits)
-        if last_write_address = x"FFD364B" and hypervisor_mode='1' then
+        if last_write_address = x"FD364B" and hypervisor_mode='1' then
           hyper_map_offset_low(7 downto 0) <= last_value;
         end if;
                                         -- @IO:GS $D64C - Hypervisor MAPHI register storage (high bits)
-        if last_write_address = x"FFD364C" and hypervisor_mode='1' then
+        if last_write_address = x"FD364C" and hypervisor_mode='1' then
           hyper_map_high <= std_logic_vector(last_value(7 downto 4));
           hyper_map_offset_high(11 downto 8) <= last_value(3 downto 0);
         end if;
                                         -- @IO:GS $D64D - Hypervisor MAPHI register storage (low bits)
-        if last_write_address = x"FFD364D" and hypervisor_mode='1' then
+        if last_write_address = x"FD364D" and hypervisor_mode='1' then
           hyper_map_offset_high(7 downto 0) <= last_value;
         end if;
                                         -- @IO:GS $D64E - Hypervisor MAPLO mega-byte number register storage
-        if last_write_address = x"FFD364E" and hypervisor_mode='1' then
+        if last_write_address = x"FD364E" and hypervisor_mode='1' then
           hyper_mb_low <= last_value;
         end if;
                                         -- @IO:GS $D64F - Hypervisor MAPHI mega-byte number register storage
-        if last_write_address = x"FFD364F" and hypervisor_mode='1' then
+        if last_write_address = x"FD364F" and hypervisor_mode='1' then
           hyper_mb_high <= last_value;
         end if;
                                         -- @IO:GS $D650 - Hypervisor CPU port $00 value
-        if last_write_address = x"FFD3650" and hypervisor_mode='1' then
+        if last_write_address = x"FD3650" and hypervisor_mode='1' then
           hyper_port_00 <= last_value;
         end if;
                                         -- @IO:GS $D651 - Hypervisor CPU port $01 value
-        if last_write_address = x"FFD3651" and hypervisor_mode='1' then
+        if last_write_address = x"FD3651" and hypervisor_mode='1' then
           hyper_port_01 <= last_value;
         end if;
                                         -- @IO:GS $D652 - Hypervisor VIC-IV IO mode
                                         -- @IO:GS $D652.0-1 - VIC-II/VIC-III/VIC-IV mode select
                                         -- @IO:GS $D652.2 - Use internal(0) or external(1) SIDs
-        if last_write_address = x"FFD3652" and hypervisor_mode='1' then
+        if last_write_address = x"FD3652" and hypervisor_mode='1' then
           hyper_iomode <= last_value;
         end if;
                                         -- @IO:GS $D653 - Hypervisor DMAgic source MB
-        if last_write_address = x"FFD3653" and hypervisor_mode='1' then
+        if last_write_address = x"FD3653" and hypervisor_mode='1' then
           hyper_dmagic_src_mb <= last_value;
         end if;
                                         -- @IO:GS $D654 - Hypervisor DMAgic destination MB
-        if last_write_address = x"FFD3654" and hypervisor_mode='1' then
+        if last_write_address = x"FD3654" and hypervisor_mode='1' then
           hyper_dmagic_dst_mb <= last_value;
         end if;
                                         -- @IO:GS $D655 - Hypervisor DMAGic list address bits 0-7
-        if last_write_address = x"FFD3655" and hypervisor_mode='1' then
+        if last_write_address = x"FD3655" and hypervisor_mode='1' then
           hyper_dmagic_list_addr(7 downto 0) <= last_value;
         end if;
                                         -- @IO:GS $D656 - Hypervisor DMAGic list address bits 15-8
-        if last_write_address = x"FFD3656" and hypervisor_mode='1' then
+        if last_write_address = x"FD3656" and hypervisor_mode='1' then
           hyper_dmagic_list_addr(15 downto 8) <= last_value;
         end if;
                                         -- @IO:GS $D657 - Hypervisor DMAGic list address bits 23-16
-        if last_write_address = x"FFD3657" and hypervisor_mode='1' then
+        if last_write_address = x"FD3657" and hypervisor_mode='1' then
           hyper_dmagic_list_addr(23 downto 16) <= last_value;
         end if;
                                         -- @IO:GS $D658 - Hypervisor DMAGic list address bits 27-24
-        if last_write_address = x"FFD3658" and hypervisor_mode='1' then
-          hyper_dmagic_list_addr(27 downto 24) <= last_value(3 downto 0);
-        end if;
+        --if last_write_address = x"FFD3658" and hypervisor_mode='1' then
+        --  hyper_dmagic_list_addr(23 downto 20) <= last_value(3 downto 0);
+        --end if;
                                         -- @IO:GS $D659 - Hypervisor virtualise hardware flags
                                         -- @IO:GS $D659.0 - Virtualise SD/Floppy access
-        if last_write_address = x"FFD3659" and hypervisor_mode='1' then
+        if last_write_address = x"FD3659" and hypervisor_mode='1' then
           virtualise_sd <= last_value(0);
         end if;
                                         -- @IO:GS $D65D - Hypervisor current virtual page number (low byte)
-        if last_write_address = x"FFD365D" and hypervisor_mode='1' then
+        if last_write_address = x"FD365D" and hypervisor_mode='1' then
           reg_pagenumber(1 downto 0) <= last_value(7 downto 6);
           reg_pageactive <= last_value(4);
           reg_pages_dirty <= std_logic_vector(last_value(3 downto 0));
         end if;
                                         -- @IO:GS $D65E - Hypervisor current virtual page number (mid byte)
-        if last_write_address = x"FFD365E" and hypervisor_mode='1' then
+        if last_write_address = x"FD365E" and hypervisor_mode='1' then
           reg_pagenumber(9 downto 2) <= last_value;
         end if;
                                         -- @IO:GS $D65F - Hypervisor current virtual page number (high byte)
-        if last_write_address = x"FFD365F" and hypervisor_mode='1' then
+        if last_write_address = x"FD365F" and hypervisor_mode='1' then
           reg_pagenumber(17 downto 10) <= last_value;
         end if;
                                         -- @IO:GS $D660 - Hypervisor virtual memory page 0 logical page low byte
                                         -- @IO:GS $D661 - Hypervisor virtual memory page 0 logical page high byte
                                         -- @IO:GS $D662 - Hypervisor virtual memory page 0 physical page low byte
                                         -- @IO:GS $D663 - Hypervisor virtual memory page 0 physical page high byte
-        if last_write_address = x"FFD3660" and hypervisor_mode='1' then
+        if last_write_address = x"FD3660" and hypervisor_mode='1' then
           reg_page0_logical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD3661" and hypervisor_mode='1' then
+        if last_write_address = x"FD3661" and hypervisor_mode='1' then
           reg_page0_logical(15 downto 8) <= last_value;
         end if;
-        if last_write_address = x"FFD3662" and hypervisor_mode='1' then
+        if last_write_address = x"FD3662" and hypervisor_mode='1' then
           reg_page0_physical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD3663" and hypervisor_mode='1' then
+        if last_write_address = x"FD3663" and hypervisor_mode='1' then
           reg_page0_physical(15 downto 8) <= last_value;
         end if;
                                         -- @IO:GS $D664 - Hypervisor virtual memory page 1 logical page low byte
                                         -- @IO:GS $D665 - Hypervisor virtual memory page 1 logical page high byte
                                         -- @IO:GS $D666 - Hypervisor virtual memory page 1 physical page low byte
                                         -- @IO:GS $D667 - Hypervisor virtual memory page 1 physical page high byte
-        if last_write_address = x"FFD3664" and hypervisor_mode='1' then
+        if last_write_address = x"FD3664" and hypervisor_mode='1' then
           reg_page1_logical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD3665" and hypervisor_mode='1' then
+        if last_write_address = x"FD3665" and hypervisor_mode='1' then
           reg_page1_logical(15 downto 8) <= last_value;
         end if;
-        if last_write_address = x"FFD3666" and hypervisor_mode='1' then
+        if last_write_address = x"FD3666" and hypervisor_mode='1' then
           reg_page1_physical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD3667" and hypervisor_mode='1' then
+        if last_write_address = x"FD3667" and hypervisor_mode='1' then
           reg_page1_physical(15 downto 8) <= last_value;
         end if;
 
@@ -3169,47 +3119,47 @@ begin
                                         -- @IO:GS $D669 - Hypervisor virtual memory page 2 logical page high byte
                                         -- @IO:GS $D66A - Hypervisor virtual memory page 2 physical page low byte
                                         -- @IO:GS $D66B - Hypervisor virtual memory page 2 physical page high byte
-        if last_write_address = x"FFD3668" and hypervisor_mode='1' then
+        if last_write_address = x"FD3668" and hypervisor_mode='1' then
           reg_page2_logical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD3669" and hypervisor_mode='1' then
+        if last_write_address = x"FD3669" and hypervisor_mode='1' then
           reg_page2_logical(15 downto 8) <= last_value;
         end if;
-        if last_write_address = x"FFD366A" and hypervisor_mode='1' then
+        if last_write_address = x"FD366A" and hypervisor_mode='1' then
           reg_page2_physical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD366B" and hypervisor_mode='1' then
+        if last_write_address = x"FD366B" and hypervisor_mode='1' then
           reg_page2_physical(15 downto 8) <= last_value;
         end if;
                                         -- @IO:GS $D66C - Hypervisor virtual memory page 3 logical page low byte
                                         -- @IO:GS $D66D - Hypervisor virtual memory page 3 logical page high byte
                                         -- @IO:GS $D66E - Hypervisor virtual memory page 3 physical page low byte
                                         -- @IO:GS $D66F - Hypervisor virtual memory page 3 physical page high byte
-        if last_write_address = x"FFD366C" and hypervisor_mode='1' then
+        if last_write_address = x"FD366C" and hypervisor_mode='1' then
           reg_page3_logical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD366D" and hypervisor_mode='1' then
+        if last_write_address = x"FD366D" and hypervisor_mode='1' then
           reg_page3_logical(15 downto 8) <= last_value;
         end if;
-        if last_write_address = x"FFD366E" and hypervisor_mode='1' then
+        if last_write_address = x"FD366E" and hypervisor_mode='1' then
           reg_page3_physical(7 downto 0) <= last_value;
         end if;
-        if last_write_address = x"FFD366F" and hypervisor_mode='1' then
+        if last_write_address = x"FD366F" and hypervisor_mode='1' then
           reg_page3_physical(15 downto 8) <= last_value;
         end if;
 
                                         -- @IO:GS $D670 - Hypervisor GeoRAM base address (x MB)
-        if last_write_address = x"FFD3670" and hypervisor_mode='1' then
+        if last_write_address = x"FD3670" and hypervisor_mode='1' then
           georam_page(19 downto 12) <= last_value;
         end if;
                                         -- @IO:GS $D671 - Hypervisor GeoRAM address mask (applied to GeoRAM block register)
-        if last_write_address = x"FFD3671" and hypervisor_mode='1' then
+        if last_write_address = x"FD3671" and hypervisor_mode='1' then
           georam_blockmask <= last_value;
         end if;   
         
                                         -- @IO:GS $D672 - Protected Hardware configuration
                                         -- @IO:GS $D672.6 - Enable composited Matrix Mode, and disable UART access to serial monitor.
-        if last_write_address = x"FFD3672" and hypervisor_mode='1' then
+        if last_write_address = x"FD3672" and hypervisor_mode='1' then
           hyper_protected_hardware(7 downto 0) <= last_value;
           if last_value(6)='1' then
             matrix_rain_seed <= cycle_counter(15 downto 0);
@@ -3217,7 +3167,7 @@ begin
         end if; 
 
                                         -- @IO:GS $D67C.0-7 - (write) Hypervisor write serial output to UART monitor
-        if last_write_address = x"FFD367C" and hypervisor_mode='1' then
+        if last_write_address = x"FD367C" and hypervisor_mode='1' then
           monitor_char <= last_value;
           monitor_char_toggle <= monitor_char_toggle_internal;
           monitor_char_toggle_internal <= not monitor_char_toggle_internal;
@@ -3237,7 +3187,7 @@ begin
                                         -- @IO:GS $D67D.7 - Hypervisor flag to indicate if an NMI is pending on exit from the hypervisor.
         
                                         -- @IO:GS $D67D - Hypervisor watchdog register: writing any value clears the watch dog
-        if last_write_address = x"FFD367D" and hypervisor_mode='1' then
+        if last_write_address = x"FD367D" and hypervisor_mode='1' then
           cartridge_enable <= last_value(0);
           flat32_enabled <= last_value(1);
           rom_writeprotect <= last_value(2);
@@ -3252,7 +3202,7 @@ begin
           watchdog_fed <= '1';
         end if;
                                         -- @IO:GS $D67E - Hypervisor already-upgraded bit (sets permanently)
-        if last_write_address = x"FFD367E" and hypervisor_mode='1' then
+        if last_write_address = x"FD367E" and hypervisor_mode='1' then
           hypervisor_upgraded <= '1';
         end if;
 
@@ -4744,48 +4694,6 @@ begin
               
               pc_inc := '0';
               state <= Flat32Dispatch;
-              if (reg_addr32(31)='0') then
-                                        -- Not virtal address, so map and jump
-                report "Far-JMP/JSR: Long address is physical, so not translating.";
-                null;
-              else
-                                        -- Is virtual address, so see if it is in the page table.
-                report "Far JMP/JSR: Long address is virtual, so translate it";
-                state <= Flat32Dispatch;
-                if reg_addr32(29 downto 14) = reg_page0_logical then
-                  report "Far JMP/JSR: $" & to_hstring(reg_addr32)
-                    & " matches reg_page0_logical ( = page $"
-                    & to_hstring(reg_page0_logical)
-                    & "), so translating to physical page $"
-                    & to_hstring(reg_page0_physical);
-                  reg_addr32(29 downto 14) <= reg_page0_physical;
-                  reg_addr32(31 downto 30) <= "00";
-                  reg_pageactive <= '1';
-                  reg_pageid <= "00";
-                elsif reg_addr32(29 downto 14) = reg_page1_logical then
-                  reg_addr32(29 downto 14) <= reg_page1_physical;
-                  reg_addr32(31 downto 30) <= "00";
-                  reg_pageactive <= '1';
-                  reg_pageid <= "01";
-                elsif reg_addr32(29 downto 14) = reg_page2_logical then
-                  reg_addr32(29 downto 14) <= reg_page2_physical;
-                  reg_addr32(31 downto 30) <= "00";
-                  reg_pageactive <= '1';
-                  reg_pageid <= "10";
-                elsif reg_addr32(29 downto 14) = reg_page3_logical then
-                  reg_addr32(29 downto 14) <= reg_page3_physical;
-                  reg_addr32(31 downto 30) <= "00";
-                  reg_pageactive <= '1';
-                  reg_pageid <= "11";
-                else
-                                        -- Page fault!
-                  report "Far-JMP/JSR/RTS: Page fault! Trapping to hypervisor";
-                  report "Request is for virtual address $" & to_hstring(reg_addr32);
-                  state <= TrapToHypervisor;
-                                        -- Trap #65 ($41) = Page fault.
-                  hypervisor_trap_port <= "1000001";
-                end if;
-              end if;
             when Flat32Dispatch =>
               report "Far dispatch: physical address is $" & to_hstring(reg_addr32)
                 & " + $4000";
@@ -4804,7 +4712,7 @@ begin
               reg_offset_low(11 downto 6) <= reg_addr32(19 downto 14);
                                         -- Finally, set the upper address bits into the MB register for
                                         -- the lower map.
-              reg_mb_low <= reg_addr32(27 downto 20);
+              reg_mb_low <= x"0" & reg_addr32(23 downto 20);
                                         -- MAP upper 16KB of lower 32KB of address space
               reg_map_low <= "1100";
                                         -- Now we can start fetching the instruction.
@@ -5909,7 +5817,7 @@ begin
           end if;
 
                                         -- @IO:GS $D67F - Trigger trap to hypervisor
-          if memory_access_address(27 downto 6)&"111111" = x"FFD367F" then
+          if memory_access_address(23 downto 6)&"111111" = x"FD367F" then
             hypervisor_trap_port(5 downto 0) <= memory_access_address(5 downto 0);
             hypervisor_trap_port(6) <= '0';
             if hypervisor_mode = '0' then
@@ -5938,7 +5846,7 @@ begin
   end process;
   
   -- output all monitor values based on current state, not one clock delayed.
-  monitor_memory_access_address <= x"0"&memory_access_address_next;
+  monitor_memory_access_address <= x"00" & memory_access_address_next;
   monitor_watch_match <= '0';       -- set if writing to watched address
   monitor_state <= to_unsigned(processor_state'pos(state),8)&read_data;
   monitor_hypervisor_mode <= hypervisor_mode;
@@ -5955,6 +5863,33 @@ begin
   monitor_map_enables_low <= std_logic_vector(reg_map_low); 
   monitor_map_enables_high <= std_logic_vector(reg_map_high); 
   
+  address_resolver0 : entity work.address_resolver port map(
+    short_address => pre_resolve_memory_access_address,
+    writeP => pre_resolve_memory_access_write,
+    gated_exrom => gated_exrom,
+    gated_game => gated_game,
+    cpuport_value => cpuport_value,
+    cpuport_ddr => cpuport_ddr,
+    viciii_iomode => viciii_iomode,
+    hyper_iomode => hyper_iomode,
+    sector_buffer_mapped => sector_buffer_mapped,
+    colourram_at_dc00 => colourram_at_dc00,
+    hypervisor_mode => hypervisor_mode,
+    reg_mb_low => reg_mb_low,
+    reg_mb_high => reg_mb_high,
+    reg_map_low => reg_map_low,
+    reg_map_high => reg_map_high,
+    reg_offset_low => reg_offset_low,
+    reg_offset_high => reg_offset_high,
+    rom_at_e000 => rom_at_e000,
+    rom_at_c000 => rom_at_c000,
+    rom_at_a000 => rom_at_a000,
+    rom_at_8000 => rom_at_8000,
+    dat_bitplane_addresses => dat_bitplane_addresses,
+    dat_offset_drive => dat_offset_drive,
+    resolved_address => post_resolve_memory_access_address
+  );
+          
   -- alternate (new) combinatorial core memory address generation.
   process (state,reg_pc,vector,reg_t,hypervisor_mode,monitor_mem_attention_request_drive,monitor_mem_address_drive,
     reg_dmagic_addr,mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,monitor_mem_write_drive,monitor_mem_wdata_drive,
@@ -5963,10 +5898,11 @@ begin
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
     dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,reg_pageactive,shadow_rdata,proceed,
     reg_mult_a,read_data,shadow_wdata,shadow_address,kickstart_address,
-    reg_pageid,rom_writeprotect,georam_page,
-    kickstart_address_next
+    reg_pageid,rom_writeprotect,georam_page, fastio_addr, axyz_phase, reg_val32,
+    kickstart_address_next, post_resolve_memory_access_address, georam_blockmask,
+    shadow_address_next, read_source, fastio_addr_next
     )
-    variable memory_access_address : unsigned(27 downto 0) := x"FFFFFFF";
+    variable memory_access_address : unsigned(23 downto 0) := x"FFFFFF";
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
@@ -5980,8 +5916,8 @@ begin
     variable kickstart_address_var : std_logic_vector(13 downto 0);
     variable fastio_addr_var : std_logic_vector(19 downto 0);
 
-    variable long_address_read_var : unsigned(27 downto 0) := x"FFFFFFF";
-    variable long_address_write_var : unsigned(27 downto 0) := x"FFFFFFF";
+    variable long_address_read_var : unsigned(23 downto 0) := x"FFFFFF";
+    variable long_address_write_var : unsigned(23 downto 0) := x"FFFFFF";
 
     variable temp_addr : unsigned(15 downto 0);    
     variable stack_pop : std_logic;
@@ -5990,239 +5926,9 @@ begin
     variable reg_pages_dirty_var : std_logic_vector(3 downto 0)  := (others => '0');
   
     -- temp hack as I work to move this code around...
-    variable real_long_address : unsigned(27 downto 0);
-    variable long_address : unsigned(27 downto 0);
-    
-    -- purpose: Convert a 16-bit C64 address to native RAM (or I/O or ROM) address
-    impure function resolve_address_to_long(short_address : unsigned(15 downto 0);
-                                            writeP : boolean)
-      return unsigned is 
-      variable temp_address : unsigned(27 downto 0);
-      variable blocknum : integer;
-      variable lhc : std_logic_vector(4 downto 0);
-      variable char_access_addr : unsigned(15 downto 0);
+    variable real_long_address : unsigned(23 downto 0);
+    variable long_address : unsigned(23 downto 0);
       
-    begin  -- resolve_long_address
-
-      -- Now apply C64-style $01 lines first, because MAP and $D030 take precedence
-      blocknum := to_integer(short_address(15 downto 12));
-
-      lhc(4) := gated_exrom;
-      lhc(3) := gated_game;
-      lhc(2 downto 0) := std_logic_vector(cpuport_value(2 downto 0));
-      lhc(2) := lhc(2) or (not cpuport_ddr(2));
-      lhc(1) := lhc(1) or (not cpuport_ddr(1));
-      lhc(0) := lhc(0) or (not cpuport_ddr(0));
-      
-      if(writeP) then
-        char_access_addr := x"000D";
-      else
-        char_access_addr := x"002D";
-      end if;
-      
-      -- Examination of the C65 interface ROM reveals that MAP instruction
-      -- takes precedence over $01 CPU port when MAP bit is set for a block of RAM.
-
-      -- From https://groups.google.com/forum/#!topic/comp.sys.cbm/C9uWjgleTgc
-      -- Port pin (bit)    $A000 to $BFFF       $D000 to $DFFF       $E000 to $FFFF
-      -- 2 1 0             Read       Write     Read       Write     Read       Write
-      -- --------------    ----------------     ----------------     ----------------
-      -- 0 0 0             RAM        RAM       RAM        RAM       RAM        RAM
-      -- 0 0 1             RAM        RAM       CHAR-ROM   RAM       RAM        RAM
-      -- 0 1 0             RAM        RAM       CHAR-ROM   RAM       KERNAL-ROM RAM
-      -- 0 1 1             BASIC-ROM  RAM       CHAR-ROM   RAM       KERNAL-ROM RAM
-      -- 1 0 0             RAM        RAM       RAM        RAM       RAM        RAM
-      -- 1 0 1             RAM        RAM       I/O        I/O       RAM        RAM
-      -- 1 1 0             RAM        RAM       I/O        I/O       KERNAL-ROM RAM
-      -- 1 1 1             BASIC-ROM  RAM       I/O        I/O       KERNAL-ROM RAM
-      
-      -- default is address in = address out
-      temp_address(27 downto 16) := (others => '0');
-      temp_address(15 downto 0) := short_address;
-
-      -- IO
-      if (blocknum=13) then
-        temp_address(11 downto 0) := short_address(11 downto 0);
-        -- IO is always visible in ultimax mode
-        if gated_exrom/='1' or gated_game/='0' or hypervisor_mode='1' then
-          case lhc(2 downto 0) is
-            when "000" => temp_address(27 downto 12) := x"000D";  -- WRITE RAM
-            when "001" => temp_address(27 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
-            when "010" => temp_address(27 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
-            when "011" => temp_address(27 downto 12) := char_access_addr;  -- WRITE RAM / READ CHARROM
-            when "100" => temp_address(27 downto 12) := x"000D";  -- WRITE RAM
-            when others =>
-              -- All else accesses IO
-              -- C64/C65/C65GS I/O is based on which secret knock has been applied
-              -- to $D02F
-              temp_address(27 downto 12) := x"FFD3";
-              temp_address(13 downto 12) := unsigned(viciii_iomode);          
-              -- Optionally map SIDs to expansion port
-              if (short_address(11 downto 8) = x"4") and hyper_iomode(2)='1' then
-                temp_address(27 downto 12) := x"7FFD";
-              end if;
-              if sector_buffer_mapped='0' and colourram_at_dc00='0' then
-                -- Map $DE00-$DFFF IO expansion areas to expansion port
-                -- (but only if SD card sector buffer is not mapped, and
-                -- 2nd KB of colour RAM is not mapped).
-                if (short_address(11 downto 8) = x"E")
-                  or (short_address(11 downto 8) = x"F") then
-                  temp_address(27 downto 12) := x"7FFD";
-                end if;
-              end if;
-          end case;
-        else
-          temp_address(27 downto 12) := x"FFD3";
-          temp_address(13 downto 12) := unsigned(viciii_iomode);          
-          if sector_buffer_mapped='0' and colourram_at_dc00='0' then
-            -- Map $DE00-$DFFF IO expansion areas to expansion port
-            -- (but only if SD card sector buffer is not mapped, and
-            -- 2nd KB of colour RAM is not mapped).
-            if (short_address(11 downto 8) = x"E")
-              or (short_address(11 downto 8) = x"F") then
-              temp_address(27 downto 12) := x"7FFD";
-            end if;
-          end if;
-        end if;
-      end if;
-
-      -- C64 KERNEL
-      if reg_map_high(3)='0' then
-        if ((blocknum=14) or (blocknum=15)) and ((gated_exrom='1') and (gated_game='0')) then
-          -- ULTIMAX mode external ROM
-          temp_address(27 downto 16) := x"7FF";
-        else
-          if (blocknum=14) and (lhc(1)='1') and (writeP=false) then
-            temp_address(27 downto 12) := x"002E";
-          end if;        
-          if (blocknum=15) and (lhc(1)='1') and (writeP=false) then
-            temp_address(27 downto 12) := x"002F";      
-          end if;
-        end if;        
-      end if;      
-      -- C64 BASIC or cartridge ROM LO
-      if reg_map_high(0)='0' then
-        if ((blocknum=8) or (blocknum=9)) and
-          (
-            (
-              ((gated_exrom='1') and (gated_game='0'))
-              or
-              ((gated_exrom='0') and (lhc(1 downto 0)="11"))
-            )
-            and
-            (writeP=false)
-          )
-        then
-          -- ULTIMAX mode or cartridge external ROM
-          temp_address(27 downto 16) := x"7FF";
-        end if;
-        if (blocknum=10) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
-          
-          temp_address(27 downto 12) := x"002A";
-        end if;
-        if (blocknum=11) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
-          temp_address(27 downto 12) := x"002B";      
-        end if;
-      end if;
-      if reg_map_high(1)='0' then
-        if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
-          and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
-        then
-          -- ULTIMAX mode or cartridge external ROM
-          temp_address(27 downto 16) := x"7FF";          
-        end if;
-      end if;
-
-      -- Expose remaining address space to cartridge port in ultimax mode
-      if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
-        if (reg_map_low(0)='0') and  (blocknum=1) then
-          -- $1000 - $1FFF Ultimax mode
-          temp_address(27 downto 16) := x"7FF";
-        end if;
-        if (reg_map_low(1)='0') and (blocknum=2 ) then
-          -- $2000 - $2FFF Ultimax mode
-          -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
-          -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
-          -- it down. Not yet implemented, and won't be perfectly compatible.
-          temp_address(27 downto 16) := x"7FF";
-        end if;
-        if (reg_map_low(2)='0') and ((blocknum=4) or (blocknum=5)) then
-          -- $4000 - $5FFF Ultimax mode
-        temp_address(27 downto 16) := x"7FF";
-        end if;
-        if (reg_map_low(3)='0') and ((blocknum=6) or (blocknum=7)) then
-          -- $6000 - $7FFF Ultimax mode
-          temp_address(27 downto 16) := x"7FF";
-        end if;
-        if (reg_map_high(2)='0') and (blocknum=12) then
-          -- $C000 - $CFFF Ultimax mode
-          temp_address(27 downto 16) := x"7FF";
-        end if;
-      end if;
-
-      -- Lower 8 address bits are never changed
-      temp_address(7 downto 0):=short_address(7 downto 0);
-
-      -- Add the map offset if required
-      blocknum := to_integer(short_address(14 downto 13));
-      if short_address(15)='1' then
-        if reg_map_high(blocknum)='1' then
-          temp_address(27 downto 20) := reg_mb_high;
-          temp_address(19 downto 8) := reg_offset_high+to_integer(short_address(15 downto 8));
-          temp_address(7 downto 0) := short_address(7 downto 0);       
-        end if;
-      else
-        if reg_map_low(blocknum)='1' then
-          temp_address(27 downto 20) := reg_mb_low;
-          temp_address(19 downto 8) := reg_offset_low+to_integer(short_address(15 downto 8));
-          temp_address(7 downto 0) := short_address(7 downto 0);
-          report "mapped memory address is $" & to_hstring(temp_address) severity note;
-        end if;
-      end if;
-      
-      -- $D030 ROM select lines:
-      if hypervisor_mode = '0' then
-        blocknum := to_integer(short_address(15 downto 12));
-        if (blocknum=14 or blocknum=15) and (rom_at_e000='1')
-          and (hypervisor_mode='0') then
-          temp_address(27 downto 12) := x"003E";
-          if blocknum=15 then temp_address(12):='1'; end if;
-        end if;
-        if (blocknum=12) and rom_at_c000='1' and (hypervisor_mode='0') then
-          temp_address(27 downto 12) := x"002C";
-        end if;
-        if (blocknum=10 or blocknum=11) and (rom_at_a000='1')
-          and (hypervisor_mode='0') then
-          temp_address(27 downto 12) := x"003A";
-          if blocknum=11 then temp_address(12):='1'; end if;
-        end if;
-        if (blocknum=9) and (rom_at_8000='1') and (hypervisor_mode='0') then
-          temp_address(27 downto 12) := x"0039";
-        end if;
-        if (blocknum=8) and (rom_at_8000='1') and (hypervisor_mode='0') then
-          temp_address(27 downto 12) := x"0038";
-        end if;
-      end if;
-
-      -- C65 DAT
-      report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
-      if temp_address(27 downto 3) & "000" = x"FFD1040"
-        or temp_address(27 downto 3) & "000" = x"FFD3040" then
-        temp_address(27 downto 17) := (others => '0');
-        temp_address(16) := temp_address(0); -- odd/even bitplane bank select
-        -- Bit plane address
-        -- XXX only uses the address from upper nybl -- doesn't pick based on
-        -- odd/even line/frame.
-        temp_address(15 downto 13) :=
-          dat_bitplane_addresses(to_integer(temp_address(2 downto 0)))(7 downto 5);
-        -- Bitplane offset
-        temp_address(12 downto 0) := dat_offset_drive(12 downto 0);
-        report "C65 VIC-III DAT: Address translated to $" & to_hstring(temp_address);
-      end if;
-      
-      return temp_address;
-    end resolve_address_to_long;
-  
   begin
 
     stack_pop := '0'; stack_push := '0';
@@ -6259,12 +5965,12 @@ begin
 
     shadow_address_var := shadow_address;
 
-    long_address_write_var := x"FFFFFFF";
-    long_address_read_var := x"FFFFFFF";
+    long_address_write_var := x"FFFFFF";
+    long_address_read_var := x"FFFFFF";
 
     kickstart_address_var := kickstart_address;
 
-    memory_access_address := x"0000000";
+    memory_access_address := x"000000";
     memory_access_wdata := x"00";
 
 		reg_pages_dirty_var(0) := '0';
@@ -6272,12 +5978,15 @@ begin
 		reg_pages_dirty_var(2) := '0';
 		reg_pages_dirty_var(3) := '0';
 
+    pre_resolve_memory_access_address <= x"0000";
+    pre_resolve_memory_access_write <= false;
+
     if proceed = '1' then
     
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
       memory_access_write := '0';
-      memory_access_address := x"000"&reg_pc;
+      memory_access_address := x"00"&reg_pc;
       memory_access_resolve_address := '1';
 
       fastio_addr_var := x"FFFFF";
@@ -6287,9 +5996,9 @@ begin
   		    if hypervisor_mode='1' then
   		      -- Vectors move in hypervisor mode to be inside the hypervisor
   		      -- ROM at $81Fx
-  		      memory_access_address := x"FF801F"&vector;
+  		      memory_access_address := x"F801F"&vector;
   		    else
-  		      memory_access_address := x"000FFF"&vector;
+  		      memory_access_address := x"00FFF"&vector;
   		    end if;
   		  when Interrupt =>
   		    stack_push := '1';
@@ -6310,14 +6019,14 @@ begin
   		    stack_pop := '1';
   		  when RTS3 =>
   		    -- Read the instruction byte following
-  		    memory_access_address := x"000"&reg_pc;
+  		    memory_access_address := x"00"&reg_pc;
   		    memory_access_read := '1';
   		  when ProcessorHold =>
   		    -- Hold CPU while blocked by monitor
 
   		    if monitor_mem_attention_request_drive='1' then
   		      -- Memory access by serial monitor.
-  		      if monitor_mem_address_drive(27 downto 16) = x"777" then
+  		      if monitor_mem_address_drive(23 downto 16) = x"77" then
   		        -- M777xxxx in serial monitor reads memory from CPU's perspective
   		        memory_access_resolve_address := '1';
   		      else
@@ -6361,11 +6070,11 @@ begin
   		    memory_access_write := '1';
   		    memory_access_wdata := dmagic_src_addr(15 downto 8);
   		    memory_access_resolve_address := '0';
-  		    memory_access_address := dmagic_dest_addr(35 downto 8);
+  		    memory_access_address := dmagic_dest_addr(31 downto 8);
 
   		    -- redirect memory write to IO block if required
   		    if dmagic_dest_addr(23 downto 20) = x"d" and dmagic_dest_io='1' then
-  		      memory_access_address(27 downto 16) := x"FFD";
+  		      memory_access_address(23 downto 16) := x"FD";
   		      memory_access_address(15 downto 14) := "00";
   		      memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
   		    end if;
@@ -6374,11 +6083,11 @@ begin
   		    -- Do memory read
   		    memory_access_read := '1';
   		    memory_access_resolve_address := '0';
-  		    memory_access_address := dmagic_src_addr(35 downto 8);
+  		    memory_access_address := dmagic_src_addr(31 downto 8);
 
   		    -- redirect memory write to IO block if required
   		    if dmagic_src_addr(23 downto 20) = x"d" and dmagic_src_io='1' then
-  		      memory_access_address(27 downto 16) := x"FFD";
+  		      memory_access_address(23 downto 16) := x"FD";
   		      memory_access_address(15 downto 14) := "00";
   		      memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
   		    end if;
@@ -6395,11 +6104,11 @@ begin
   		      end if;
   		      memory_access_wdata := reg_t;
   		      memory_access_resolve_address := '0';
-  		      memory_access_address := dmagic_dest_addr(35 downto 8);
+  		      memory_access_address := dmagic_dest_addr(31 downto 8);
 
   		      -- redirect memory write to IO block if required
   		      if dmagic_dest_addr(15 downto 12) = x"d" and dmagic_dest_io='1' then
-  		        memory_access_address(27 downto 16) := x"FFD";
+  		        memory_access_address(23 downto 16) := x"FD";
   		        memory_access_address(15 downto 14) := "00";
   		        memory_access_address(13 downto 12)  := unsigned(viciii_iomode);
   		      end if;
@@ -6416,7 +6125,7 @@ begin
   		          -- On memory read wait-state, read from RAM, so that FastIO
   		          -- lines clear
   		          memory_access_read := '1';
-  		          memory_access_address := x"0000002";
+  		          memory_access_address := x"000002";
   		          memory_access_resolve_address := '0';
   		        end if;
   		      when M_nnX =>
@@ -6424,7 +6133,7 @@ begin
   		          -- On memory read wait-state, read from RAM, so that FastIO
   		          -- lines clear
   		          memory_access_read := '1';
-  		          memory_access_address := x"0000002";
+  		          memory_access_address := x"000002";
   		          memory_access_resolve_address := '0';
   		        end if;
   		      when M_nnY =>
@@ -6432,7 +6141,7 @@ begin
   		          -- On memory read wait-state, read from RAM, so that FastIO
   		          -- lines clear
   		          memory_access_read := '1';
-  		          memory_access_address := x"0000002";
+  		          memory_access_address := x"000002";
   		          memory_access_resolve_address := '0';
   		        end if;
   		      when others =>
@@ -6449,23 +6158,23 @@ begin
   		    stack_push := '1';
   		    memory_access_wdata := reg_addr32save(7 downto 0);
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';                
   		  when Flat32Dereference1 =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';                
   		  when Flat32Dereference2 =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';                
   		  when Flat32Dereference3 =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';                
   		  when Flat32Dereference4 =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';                
   		  when Cycle3 =>
 
@@ -6478,14 +6187,14 @@ begin
   		        when M_InnX =>                    
   		          temp_addr := reg_b & (reg_arg1+reg_X);
   		          memory_access_read := '1';
-  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_address := x"00"&temp_addr;
   		          memory_access_resolve_address := '1';
   		        when M_nn =>
   		          if is_load='1' or is_rmw='1' then
   		            -- On memory read wait-state, read from RAM, so that FastIO
   		            -- lines clear
   		            memory_access_read := '1';
-  		            memory_access_address := x"0000002";
+  		            memory_access_address := x"000002";
   		            memory_access_resolve_address := '0';
   		          end if;
   		        when M_immnn => -- Handled in MicrocodeInterpret
@@ -6495,7 +6204,7 @@ begin
   		          if reg_instruction = I_JSR or reg_instruction = I_BSR then
   		            memory_access_read := '0';
   		            memory_access_write := '1';
-  		            memory_access_address := x"000"&reg_sph&reg_sp;
+  		            memory_access_address := x"00"&reg_sph&reg_sp;
   		            memory_access_resolve_address := '1';
   		            memory_access_wdata := reg_pc_jsr(15 downto 8);
   		          else
@@ -6503,23 +6212,23 @@ begin
   		              -- On memory read wait-state, read from RAM, so that FastIO
   		              -- lines clear
   		              memory_access_read := '1';
-  		              memory_access_address := x"0000002";
+  		              memory_access_address := x"000002";
   		              memory_access_resolve_address := '0';
   		            end if;
   		          end if;
   		        when M_nnrr =>
   		          memory_access_read := '1';
-  		          memory_access_address := x"000"&reg_b&reg_arg1;
+  		          memory_access_address := x"00"&reg_b&reg_arg1;
   		          memory_access_resolve_address := '1';
   		        when M_InnY =>
   		          temp_addr := reg_b&reg_arg1;
   		          memory_access_read := '1';
-  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_address := x"00"&temp_addr;
   		          memory_access_resolve_address := '1';
   		        when M_InnZ =>
   		          temp_addr := reg_b&reg_arg1;
   		          memory_access_read := '1';
-  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_address := x"00"&temp_addr;
   		          memory_access_resolve_address := '1';
   		        when M_nnX =>
   		          temp_addr := reg_b & (reg_arg1 + reg_X);
@@ -6527,7 +6236,7 @@ begin
   		            -- On memory read wait-state, read from RAM, so that FastIO
   		            -- lines clear
   		            memory_access_read := '1';
-  		            memory_access_address := x"0000002";
+  		            memory_access_address := x"000002";
   		            memory_access_resolve_address := '0';
   		          end if;
   		        when M_nnY =>
@@ -6536,7 +6245,7 @@ begin
   		            -- On memory read wait-state, read from RAM, so that FastIO
   		            -- lines clear
   		            memory_access_read := '1';
-  		            memory_access_address := x"0000002";
+  		            memory_access_address := x"000002";
   		            memory_access_resolve_address := '0';
   		          end if;
   		        when M_nnnnY =>
@@ -6544,7 +6253,7 @@ begin
   		            -- On memory read wait-state, read from RAM, so that FastIO
   		            -- lines clear
   		            memory_access_read := '1';
-  		            memory_access_address := x"0000002";
+  		            memory_access_address := x"000002";
   		            memory_access_resolve_address := '0';
   		          end if;
   		        when M_nnnnX =>
@@ -6552,14 +6261,14 @@ begin
   		            -- On memory read wait-state, read from RAM, so that FastIO
   		            -- lines clear
   		            memory_access_read := '1';
-  		            memory_access_address := x"0000002";
+  		            memory_access_address := x"000002";
   		            memory_access_resolve_address := '0';
   		          end if;
   		        when M_InnSPY =>
   		          temp_addr :=  to_unsigned(to_integer(reg_b&reg_arg1)
   		                                    +to_integer(reg_sph&reg_sp),16);
   		          memory_access_read := '1';
-  		          memory_access_address := x"000"&temp_addr;
+  		          memory_access_address := x"00"&temp_addr;
   		          memory_access_resolve_address := '1';
   		        when others =>
   		          null;
@@ -6569,72 +6278,72 @@ begin
   		    -- Push PCH
   		    memory_access_read := '0';
   		    memory_access_write := '1';
-  		    memory_access_address := x"000"&reg_sph&reg_sp;
+  		    memory_access_address := x"00"&reg_sph&reg_sp;
   		    memory_access_resolve_address := '1';
   		    memory_access_wdata := reg_pc_jsr(7 downto 0);
   		  when CallSubroutine2 =>
   		    -- Immediately start reading the next instruction
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnXReadVectorLow =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnXReadVectorHigh =>
   		    if is_load='1' or is_rmw='1' then
   		      -- On memory read wait-state, read from RAM, so that FastIO
   		      -- lines clear
   		      memory_access_read := '1';
-  		      memory_access_address := x"0000002";
+  		      memory_access_address := x"000002";
   		      memory_access_resolve_address := '0';
   		    end if;
   		  when InnSPYReadVectorLow =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnSPYReadVectorHigh =>
   		    if is_load='1' or is_rmw='1' then
   		      -- On memory read wait-state, read from RAM, so that FastIO
   		      -- lines clear
   		      memory_access_read := '1';
-  		      memory_access_address := x"0000002";
+  		      memory_access_address := x"000002";
   		      memory_access_resolve_address := '0';
   		    end if;
   		  when InnYReadVectorLow =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnYReadVectorHigh =>
   		    if is_load='1' or is_rmw='1' then
   		      -- On memory read wait-state, read from RAM, so that FastIO
   		      -- lines clear
   		      memory_access_read := '1';
-  		      memory_access_address := x"0000002";
+  		      memory_access_address := x"000002";
   		      memory_access_resolve_address := '0';
   		    end if;
   		  when InnZReadVectorLow =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnZReadVectorByte2 =>
   		    -- Do addition of Z register as we go along, so that we don't have
   		    -- a 32-bit carry.
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnZReadVectorByte3 =>
   		    -- Do addition of Z register as we go along, so that we don't have
   		    -- a 32-bit carry.
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when InnZReadVectorByte4 =>
   		    if is_load='1' or is_rmw='1' then
   		      -- On memory read wait-state, read from RAM, so that FastIO
   		      -- lines clear
   		      memory_access_read := '1';
-  		      memory_access_address := x"0000002";
+  		      memory_access_address := x"000002";
   		      memory_access_resolve_address := '0';
   		    end if;
   		  when InnZReadVectorHigh =>
@@ -6642,18 +6351,18 @@ begin
   		      -- On memory read wait-state, read from RAM, so that FastIO
   		      -- lines clear
   		      memory_access_read := '1';
-  		      memory_access_address := x"0000002";
+  		      memory_access_address := x"000002";
   		      memory_access_resolve_address := '0';
   		    end if;
   		  when JumpDereference =>
   		    -- reg_addr holds the address we want to load a 16 bit address
   		    -- from for a JMP or JSR.
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when JumpDereference2 =>
   		    memory_access_read := '1';
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		  when JumpDereference3 =>
   		    if reg_instruction=I_JMP then
@@ -6661,12 +6370,12 @@ begin
   		    else
   		      memory_access_read := '0';
   		      memory_access_write := '1';
-  		      memory_access_address := x"000"&reg_sph&reg_sp;
+  		      memory_access_address := x"00"&reg_sph&reg_sp;
   		      memory_access_resolve_address := '1';
   		      memory_access_wdata := reg_pc_jsr(15 downto 8);
   		    end if;        
   		  when DummyWrite =>
-  		    memory_access_address := x"000"&reg_addr;
+  		    memory_access_address := x"00"&reg_addr;
   		    memory_access_resolve_address := '1';
   		    memory_access_write := '1';
   		    memory_access_read := '0';
@@ -6676,9 +6385,9 @@ begin
   		    memory_access_address(15 downto 0) := reg_addr;
   		    memory_access_resolve_address := not absolute32_addressing_enabled;
   		    if absolute32_addressing_enabled='1' then
-  		      memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		      memory_access_address(23 downto 16) := reg_addr_msbs(7 downto 0);
   		    else
-  		      memory_access_address(27 downto 16) := x"000";
+  		      memory_access_address(23 downto 16) := x"00";
   		    end if;
   		    memory_access_wdata := reg_t;
   		  when LoadTarget =>
@@ -6688,9 +6397,9 @@ begin
   		    memory_access_address(15 downto 0) := reg_addr;
   		    memory_access_resolve_address := not absolute32_addressing_enabled;
   		    if absolute32_addressing_enabled='1' then
-  		      memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		      memory_access_address(23 downto 16) := reg_addr_msbs(7 downto 0);
   		    else
-  		      memory_access_address(27 downto 16) := x"000";
+  		      memory_access_address(23 downto 16) := x"00";
   		    end if;
         when LoadTarget32 =>
           if axyz_phase /= 4 then
@@ -6722,7 +6431,7 @@ begin
   		       memory_access_wdata(5) := '1';  -- E always set when pushed
   		    end if;              
   		    if reg_microcode.mcWriteRegAddr='1' then
-  		      memory_access_address := x"000"&reg_addr;
+  		      memory_access_address := x"00"&reg_addr;
   		      memory_access_resolve_address := '1';
   		    end if;
   		    case reg_instruction is
@@ -6735,7 +6444,7 @@ begin
   		    end case;              
   		    stack_pop := reg_microcode.mcPop;
   		    if reg_microcode.mcWordOp='1' then
-  		      memory_access_address := x"000"&(reg_addr+1);
+  		      memory_access_address := x"00"&(reg_addr+1);
   		      memory_access_resolve_address := '1';
   		      memory_access_read := '1';
   		    end if;
@@ -6744,9 +6453,9 @@ begin
   		      memory_access_address(15 downto 0) := reg_addr;
   		      memory_access_resolve_address := not absolute32_addressing_enabled;
   		      if absolute32_addressing_enabled='1' then
-  		        memory_access_address(27 downto 16) := reg_addr_msbs(11 downto 0);
+  		        memory_access_address(23 downto 16) := reg_addr_msbs(7 downto 0);
   		      else
-  		        memory_access_address(27 downto 16) := x"000";
+  		        memory_access_address(23 downto 16) := x"00";
   		      end if;
   		    end if;
   		  when PushWordLow =>
@@ -6756,12 +6465,12 @@ begin
   		    stack_push := '1';
   		    memory_access_wdata := reg_t_high;
   		  when WordOpWriteLow =>
-  		    memory_access_address := x"000"&(reg_addr);
+  		    memory_access_address := x"00"&(reg_addr);
   		    memory_access_resolve_address := '1';
   		    memory_access_write := '1';
   		    memory_access_wdata := reg_t;
   		  when WordOpWriteHigh =>
-  		    memory_access_address := x"000"&(reg_addr);
+  		    memory_access_address := x"00"&(reg_addr);
   		    memory_access_resolve_address := '1';
   		    memory_access_write := '1';
   		    memory_access_wdata := reg_t_high;
@@ -6771,7 +6480,7 @@ begin
 
   		if stack_push='1' then
   		  memory_access_write := '1';
-  		  memory_access_address := x"000"&reg_sph&reg_sp;
+  		  memory_access_address := x"00"&reg_sph&reg_sp;
   		  memory_access_resolve_address := '1';      
   		end if;
 
@@ -6779,10 +6488,10 @@ begin
   		  memory_access_read := '1';
   		  if flag_e='0' then
   		    -- stack pointer can roam full 64KB
-  		    memory_access_address := x"000"&((reg_sph&reg_sp)+1);
+  		    memory_access_address := x"00"&((reg_sph&reg_sp)+1);
   		  else
   		    -- constrain stack pointer to single page if E flag is set
-  		    memory_access_address := x"000"&reg_sph&(reg_sp+1);
+  		    memory_access_address := x"00"&reg_sph&(reg_sp+1);
   		  end if;
   		  memory_access_resolve_address := '1';
   		end if;
@@ -6794,7 +6503,7 @@ begin
   		      when "01" => reg_pages_dirty_var(1) := '1'; 
   		      when "10" => reg_pages_dirty_var(2) := '1'; 
   		      when "11" => reg_pages_dirty_var(3) := '1';
-  		      when others => null;
+--  		      when others => null;
   		    end case;
   		  end if;
   		end if;
@@ -6802,29 +6511,33 @@ begin
   		--shadow_address_var := memory_access_address(long_address(16 downto 0));
   		shadow_wdata_var := memory_access_wdata;
 
+      pre_resolve_memory_access_address <= memory_access_address(15 downto 0);
+      pre_resolve_memory_access_write <= memory_access_write = '1';
+
+		  if memory_access_resolve_address = '1' then
+		    memory_access_address := post_resolve_memory_access_address; --resolve_address_to_long(memory_access_address(15 downto 0),true);
+		  end if;
+      
+		  real_long_address := memory_access_address;
+
+      if 1 = 0 then
+		  -- Remap GeoRAM memory accesses
+		  if real_long_address(23 downto 16) = x"FD"
+		    and real_long_address(11 downto 8)= x"E"
+                  and georam_blockmask /= x"00" then
+		    long_address := georam_page&real_long_address(7 downto 0);
+                end if;
+      end if;
+      
   		if memory_access_write='1' then
-  		  if memory_access_resolve_address = '1' then
-  		    memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),true);
-  		  end if;
 
-  		  real_long_address := memory_access_address;
-
-  		  -- Remap GeoRAM memory accesses
-  		  if real_long_address(27 downto 16) = x"FFD"
-  		    and real_long_address(11 downto 8)= x"E"
-                    and georam_blockmask /= x"00" then
-  		    long_address := georam_page&real_long_address(7 downto 0);
-                  end if;
-
-  		  -- shadow_address_var := to_integer(long_address(16 downto 0));
-		  
   		  if
   		    -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
   		    -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
-  		    (real_long_address(27 downto 12) = x"FF80" and real_long_address(11) = '0')
+  		    (real_long_address(23 downto 12) = x"F80" and real_long_address(11) = '0')
   		    or
   		    -- FFD[0-3]800-BFF
-  		    (real_long_address(27 downto 16) = x"FFD"
+  		    (real_long_address(23 downto 16) = x"FD"
   		     and real_long_address(15 downto 14) = "00"
   		     and real_long_address(11 downto 10) = "10")        
   		  then
@@ -6833,90 +6546,77 @@ begin
   		    -- shadow_write <= '0';
 
   		    -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
-  		    long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		    long_address := x"F80"&'0'&real_long_address(10 downto 0);
 
   		    -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
   		    -- Is this for creating a linear memory map for quick task swapping, or
   		    -- something else? (PGS)
-  		  elsif real_long_address(27 downto 16) = x"7F4" then
-  				long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-  		  else
+          --elsif real_long_address(23 downto 16) = x"7F4" then
+  				--long_address := x"F80"&'0'&real_long_address(10 downto 0);
+          --else
   		    long_address := real_long_address;
   		  end if;
 		  
   		  long_address_write_var := long_address;
 		        
-  		  if long_address(27 downto 17)="00000000001" then
+  		  if long_address(23 downto 17)="000001" then
   		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
   		    shadow_write_var := not rom_writeprotect;
   		    shadow_address_var := to_integer(long_address(19 downto 0));
-                  elsif long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+        elsif long_address(23 downto 20)=x"0" and ((not long_address(19)) or chipram_1mb)='1' then
   		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
   		    shadow_write_var := '1';
   		    shadow_address_var := to_integer(long_address(19 downto 0));
 
-                    -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
-                    -- when writing here.
-                    if long_address(27 downto 12) = x"001F" and long_address(11) = '1' then
-                      report "writing to colour RAM via $001F8xx" severity note;
+          -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
+          -- when writing here.
+          if long_address(23 downto 12) = x"01F" and long_address(11) = '1' then
+            report "writing to colour RAM via $001F8xx" severity note;
 
-                      -- And also to colour RAM
-                      fastio_addr_var(19 downto 16) := x"8";
-                      fastio_addr_var(15 downto 11) := (others => '0');
-                      fastio_addr_var(10 downto 0) := std_logic_vector(long_address(10 downto 0));
-                    end if;
-                  end if;
+            -- And also to colour RAM
+            fastio_addr_var(19 downto 16) := x"8";
+            fastio_addr_var(15 downto 11) := (others => '0');
+            fastio_addr_var(10 downto 0) := std_logic_vector(long_address(10 downto 0));
+          end if;
+        end if;
         
-                  if long_address(27 downto 24) = x"F" then --
-                    fastio_addr_var := std_logic_vector(long_address(19 downto 0));
-                  end if;
+        if long_address(23 downto 20) = x"F" then --
+          fastio_addr_var := std_logic_vector(long_address(19 downto 0));
+        end if;
         
-  		elsif memory_access_read='1' then
+      elsif memory_access_read='1' then
 		   
-  		  if memory_access_resolve_address = '1' then
-  		    memory_access_address := resolve_address_to_long(memory_access_address(15 downto 0),false);
-  		  end if;
-
-  		  real_long_address := memory_access_address;
-		  
-  		  -- Remap GeoRAM memory accesses
-  		  if real_long_address(27 downto 16) = x"FFD"
-  		    and real_long_address(11 downto 8) = x"E"
-                    and georam_blockmask /= x"00" then
-  		    long_address := georam_page&real_long_address(7 downto 0);
-  		  end if;
-		        
-  		  if real_long_address(27 downto 12) = x"001F" and real_long_address(11)='1' then
+  		  if real_long_address(23 downto 12) = x"01F" and real_long_address(11)='1' then
   		    -- colour ram access: remap to $FF80000 - $FF807FF
-  		    long_address := x"FF80"&'0'&real_long_address(10 downto 0);
+  		    long_address := x"F80"&'0'&real_long_address(10 downto 0);
   			  -- also remap to $7F40000 - $7F407FF
-  		  elsif real_long_address(27 downto 16) = x"7F4" then
-  				  long_address := x"FF80"&'0'&real_long_address(10 downto 0);
-  				else
+          --elsif real_long_address(23 downto 16) = x"7F4" then
+				  --long_address := x"F80"&'0'&real_long_address(10 downto 0);
+        else
   		    long_address := real_long_address;
   		  end if;
 		  
   		  long_address_read_var := long_address;
 		  
-                  if long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
-                    shadow_read_var := '1';
-                    shadow_address_var := to_integer(long_address(19 downto 0));
-                  end if;
+        if long_address(23 downto 20)=x"0" and ((not long_address(19)) or chipram_1mb)='1' then
+          shadow_read_var := '1';
+          shadow_address_var := to_integer(long_address(19 downto 0));
+        end if;
 		   
-         if long_address(19 downto 14)&"00" = x"F8" then
-           kickstart_address_var := std_logic_vector(long_address(13 downto 0));
-         end if;
-       
-         if long_address(27 downto 20) = x"FF" then
+        if long_address(19 downto 14)&"00" = x"F8" then
+          kickstart_address_var := std_logic_vector(long_address(13 downto 0));
+        end if;
+     
+        if long_address(23 downto 20) = x"F" then
            fastio_addr_var := std_logic_vector(long_address(19 downto 0));
-         end if;
-         
-       end if;
-
-      if shadow_address_var >= chipram_size then
-        shadow_address_var := 0;
-        shadow_write_var := '0';
+        end if;
+       
       end if;
+
+      --if shadow_address_var >= chipram_size then
+      --  shadow_address_var := 0;
+      --  shadow_write_var := '0';
+      --end if;
 
       shadow_address_next <= shadow_address_var;
       kickstart_address_next <= kickstart_address_var;
@@ -6966,3 +6666,4 @@ begin
   end process;
   
 end Behavioural;
+
