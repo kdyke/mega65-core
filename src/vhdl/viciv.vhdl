@@ -937,7 +937,10 @@ architecture Behavioral of viciv is
   signal badlineprog_inhibit_screen_row_buffer_write_counter : integer := 0;
   -- Indicates if the next 16 bit screen token will be a GOTO/GOSUB token
   signal next_token_is_goto : std_logic := '0';
-  
+
+  attribute keep_hierarchy : string;
+--  attribute keep_hierarchy of Behavioral : architecture is "yes";
+
 begin
   
   rasterbuffer1: entity work.ram18x2k

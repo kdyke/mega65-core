@@ -128,6 +128,9 @@ architecture behavioural of sprite is
 
   signal x_in : xposition := 0;
 
+  attribute keep_hierarchy : string;
+--  attribute keep_hierarchy of behavioural : architecture is "yes";
+
 begin  -- behavioural
   
   -- purpose: sprite drawing

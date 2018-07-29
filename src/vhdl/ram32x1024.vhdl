@@ -38,6 +38,9 @@ end ram32x1024;
 
 architecture behavioural of ram32x1024 is
 
+  attribute keep_hierarchy : string;
+--  attribute keep_hierarchy of behavioural : architecture is "yes";
+
 	type ram_type is array (0 to SIZE-1) of std_logic_vector (NB_COL*COL_WIDTH-1 downto 0);
 	shared variable RAM : ram_type := (
 		X"00000000",X"ffffff00",X"ab312600",X"66daff00",X"bb3fb800",X"55ce5800",X"1d0e9700",X"eaf57c00",

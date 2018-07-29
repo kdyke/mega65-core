@@ -195,6 +195,9 @@ architecture behavioural of bitplanes is
 
   signal bitplanes_y_start_drive : unsigned(7 downto 0) := to_unsigned(0,8);
   
+  attribute keep_hierarchy : string;
+--  attribute keep_hierarchy of behavioural : architecture is "yes";
+  
 begin  -- behavioural
 
   -- 4K buffer for holding buffered bitplane data for rendering.

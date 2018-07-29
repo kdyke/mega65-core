@@ -301,6 +301,9 @@ architecture behavioural of vicii_sprites is
   signal alpha_0_bp : unsigned(7 downto 0);  
   signal alpha_final : unsigned(7 downto 0);  
 
+  attribute keep_hierarchy : string;
+--  attribute keep_hierarchy of behavioural : architecture is "yes";
+
 begin
 
   -- The eight VIC-II sprites.
