@@ -57,8 +57,8 @@ end frame_generator;
 
 architecture brutalist of frame_generator is
 
-  signal x : integer := 0;
-  signal y : integer := 0;
+  signal x : integer range 0 to 4095 := 0;
+  signal y : integer range 0 to 4095 := 0;
   signal inframe_internal : std_logic := '0';
 
   signal lcd_inletterbox : std_logic := '0';
