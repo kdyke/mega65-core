@@ -84,7 +84,7 @@ entity machine is
          slow_access_request_toggle : out std_logic;
          slow_access_ready_toggle : in std_logic := '0';
          slow_access_write : out std_logic := '0';
-         slow_access_address : out unsigned(27 downto 0);
+         slow_access_address : out unsigned(23 downto 0);
          slow_access_wdata : out unsigned(7 downto 0);
          slow_access_rdata : in unsigned(7 downto 0);
          cart_access_count : in unsigned(7 downto 0) := x"00";
@@ -324,7 +324,7 @@ architecture Behavioral of machine is
       monitor_cpu_state : in unsigned(15 downto 0);
       monitor_hypervisor_mode : in std_logic;
       monitor_instruction : in unsigned(7 downto 0);
-      monitor_watch : out unsigned(27 downto 0) := x"7FFFFFF";
+      monitor_watch : out unsigned(23 downto 0) := x"7FFFFF";
       monitor_watch_match : in std_logic;
       monitor_opcode : in unsigned(7 downto 0);
       monitor_ibytes : in std_logic_vector(3 downto 0);
@@ -350,7 +350,7 @@ architecture Behavioral of machine is
       monitor_char_toggle : in std_logic;
       monitor_char_busy : out std_logic;
       
-      monitor_mem_address : out unsigned(27 downto 0);
+      monitor_mem_address : out unsigned(23 downto 0);
       monitor_mem_rdata : in unsigned(7 downto 0);
       monitor_mem_wdata : out unsigned(7 downto 0);
       monitor_mem_attention_request : out std_logic := '0';
@@ -457,13 +457,13 @@ architecture Behavioral of machine is
   signal monitor_state : unsigned(15 downto 0);
   signal monitor_instruction : unsigned(7 downto 0);
   signal monitor_instructionpc : unsigned(15 downto 0);
-  signal monitor_watch : unsigned(27 downto 0);
+  signal monitor_watch : unsigned(23 downto 0);
 --  signal monitor_debug_memory_access : std_logic_vector(31 downto 0);
   signal monitor_proceed : std_logic;
   signal monitor_waitstates : unsigned(7 downto 0);
   signal monitor_request_reflected : std_logic;
   signal monitor_watch_match : std_logic;
-  signal monitor_mem_address : unsigned(27 downto 0);
+  signal monitor_mem_address : unsigned(23 downto 0);
   signal monitor_mem_rdata : unsigned(7 downto 0);
   signal monitor_mem_wdata : unsigned(7 downto 0);
   signal monitor_map_offset_low : unsigned(11 downto 0);

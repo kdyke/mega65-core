@@ -54,7 +54,7 @@ module monitor_ctrl(input clk, input reset, output wire reset_out,
                     output reg [9:0] history_write_index, output wire history_write, output reg [9:0] history_read_index,
                     
                     /* CPU Memory Interface */
-                    output wire [27:0] mem_address, 
+                    output wire [23:0] mem_address, 
                     input [7:0] mem_rdata, 
                     output reg [7:0] mem_wdata,
                     output reg mem_attention_request, 
@@ -79,7 +79,7 @@ module monitor_ctrl(input clk, input reset, output wire reset_out,
                     `MARK_DEBUG input [7:0] protected_hardware,
                                     
                     /* Watch interface */
-                    output reg [27:0] monitor_watch,
+                    output reg [23:0] monitor_watch,
                     input monitor_watch_match,
                     input [7:0] monitor_p,
                     input [15:0] monitor_pc,
@@ -333,7 +333,7 @@ end
 
 // MON_MEM_ADDRn, MON_MEM_INC
 reg [31:0] mem_addr_reg;
-assign mem_address = mem_addr_reg[27:0];
+assign mem_address = mem_addr_reg[23:0];
 
 always @(posedge clk)
 begin
@@ -353,8 +353,8 @@ begin
         mem_addr_reg[15:8] <= di;
       if(address == `MON_MEM_ADDR2)
         mem_addr_reg[23:16] <= di;
-      if(address == `MON_MEM_ADDR3)
-        mem_addr_reg[31:24] <= di;
+      //if(address == `MON_MEM_ADDR3)
+      //  mem_addr_reg[31:24] <= di;
     end
   end
 end
@@ -473,8 +473,8 @@ begin
       monitor_watch[15:8] <= di;
     if(address == `MON_WATCH_ADDR2)
       monitor_watch[23:16] <= di;
-    if(address == `MON_WATCH_ADDR3)
-      monitor_watch[27:24] <= di[3:0];
+    //if(address == `MON_WATCH_ADDR3)
+    //  monitor_watch[27:24] <= di[3:0];
   end
 end
 
@@ -558,7 +558,7 @@ begin
   `MON_MEM_ADDR0:        do <= mem_addr_reg[7:0];
   `MON_MEM_ADDR1:        do <= mem_addr_reg[15:8];
   `MON_MEM_ADDR2:        do <= mem_addr_reg[23:16];
-  `MON_MEM_ADDR3:        do <= mem_addr_reg[31:24];
+  `MON_MEM_ADDR3:        do <= 8'h00;
   `MON_MEM_READ:         do <= mem_read_byte;
 //  `MON_MEM_WRITE:        do <= mem_wdata;
   `MON_MEM_STATUS:       do <= { mem_done, mem_error, 3'b000, monitor_hypervisor_mode, mem_state};

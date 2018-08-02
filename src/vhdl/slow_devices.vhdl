@@ -28,7 +28,7 @@ ENTITY slow_devices IS
     slow_access_request_toggle : in std_logic;
     slow_access_ready_toggle : out std_logic := '0';
     slow_access_write : in std_logic;
-    slow_access_address : in unsigned(27 downto 0);
+    slow_access_address : in unsigned(23 downto 0);
     slow_access_wdata : in unsigned(7 downto 0);
     slow_access_rdata : out unsigned(7 downto 0);    
 
@@ -193,11 +193,11 @@ begin
           -- All we have to do is direct access requests based on whether they
           -- are handled by the cartridge/expansion port, or by on-board
           -- expansion RAM of some sort.
-          if slow_access_address(27)='1' then
-            -- $8000000-$FFFFFFF = expansion RAM
+          if slow_access_address(23)='1' then
+            -- $800000-$FFFFFFF = expansion RAM
             state <= ExpansionRAMRequest;
-          elsif slow_access_address(26)='1' then
-            -- $4000000-$7FFFFFF = cartridge port
+          elsif slow_access_address(22)='1' then
+            -- $400000-$7FFFFFF = cartridge port
             report "Preparing to access from C64 cartridge port";
             state <= CartridgePortRequest;
           else
@@ -241,7 +241,7 @@ begin
             & std_logic'image(slow_access_write);
         cart_access_request <= '1';
         cart_access_read <= not slow_access_write;
-        cart_access_address(27 downto 0) <= slow_access_address;
+        cart_access_address(23 downto 0) <= slow_access_address;
         cart_access_address(31 downto 28) <= (others => '0');
         cart_access_wdata <= slow_access_wdata;
         if cart_access_accept_strobe = '1' then
