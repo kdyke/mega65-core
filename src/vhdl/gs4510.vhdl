@@ -854,11 +854,6 @@ architecture Behavioural of gs4510 is
   signal reg_addr_lsbs : unsigned(15 downto 0)  := (others => '0');
   -- Flag that indicates if a ($nn),Z access is using a 32-bit pointer
   signal absolute32_addressing_enabled : std_logic := '0';
-  -- Flag that indicates far JMP, JSR or RTS
-  -- (set by two CLD's in a row before the instruction)
-  signal flat32_address : std_logic := '0';
-  signal flat32_address_prime : std_logic := '0';
-  signal flat32_enabled : std_logic := '1';
   -- flag for progressive carry calculation when loading a 32-bit pointer
   signal pointer_carry : std_logic := '0';
   -- Temporary value holder (used for RMW instructions)
@@ -992,13 +987,6 @@ architecture Behavioural of gs4510 is
     InstructionDecode,  -- $16          -- 0x13
     InstructionDecode6502,              -- 0x14
     Cycle2,Cycle3,                      -- 0x15, 0x16
-    Flat32Got2ndArgument,Flat32Byte3,Flat32Byte4,
-    Flat32SaveAddress,
-    Flat32SaveAddress1,Flat32SaveAddress2,Flat32SaveAddress3,Flat32SaveAddress4,
-    Flat32Dereference0,
-    Flat32Dereference1,Flat32Dereference2,Flat32Dereference3,Flat32Dereference4,
-    Flat32Translate,Flat32Dispatch,
-    Flat32RTS,
     Pull,
     RTI,RTI2,
     RTS,RTS1,RTS2,RTS3,
@@ -2126,7 +2114,7 @@ begin
                 & force_fast
                 & speed_gate_enable_internal
                 & rom_writeprotect
-                & flat32_enabled
+                & '0'
                 & cartridge_enable;                        
             when "111110" =>
               -- @IO:GS $D67E.7 (read) Hypervisor upgraded flag. Writing any value here sets this bit until next power on (i.e., it surives reset).
@@ -3160,7 +3148,6 @@ begin
                                         -- @IO:GS $D67D - Hypervisor watchdog register: writing any value clears the watch dog
         if last_write_address = x"FD367D" and hypervisor_mode='1' then
           cartridge_enable <= last_value(0);
-          flat32_enabled <= last_value(1);
           rom_writeprotect <= last_value(2);
           speed_gate_enable <= last_value(3);
           speed_gate_enable_internal <= last_value(3);
@@ -4050,8 +4037,6 @@ begin
                 -- interrupts are only checked in InstructionFetch, not
                 -- InstructionDecode).
                 absolute32_addressing_enabled <= '0';
-                flat32_address <= '0';
-                flat32_address_prime <= '0';
                 value32_enabled <= '0';
                 next_is_axyz32_instruction <= '0';
 
@@ -4114,8 +4099,6 @@ begin
                   when x"C8" => reg_y <= y_incremented; set_nz(y_incremented); -- INY
                   when x"CA" => reg_x <= x_decremented; set_nz(x_decremented); -- DEX
                   when x"D8" => flag_d <= '0';  -- CLD
-                                flat32_address_prime <= '1';
-                                flat32_address <= flat32_address_prime;
                   when x"E8" => reg_x <= x_incremented; set_nz(x_incremented); -- INX
                   when x"EA" => map_interrupt_inhibit <= '0'; -- EOM
                                 -- Enable 32-bit pointer for ($nn),Z addressing
@@ -4135,21 +4118,6 @@ begin
                 if memory_read_value(4 downto 0) = "10010" then
                   absolute32_addressing_enabled <= absolute32_addressing_enabled;
                 end if;
-                -- Preset flat32_address value if the current instruction is
-                -- JMP, JSR or RTS
-                -- This is opcodes JMP absolute ($4C), JMP indirect ($6C),
-                -- JMP (absolute,X) ($7C), JSR absolute ($20), JSR (absolute) ($22)
-                -- JSR (absolute,X) ($23), RTS ($60), RTS immediate ($62)
-                case memory_read_value is
-                  when x"20" => flat32_address <= flat32_address;
-                  when x"22" => flat32_address <= flat32_address;
-                  when x"23" => flat32_address <= flat32_address;
-                  when x"4C" => flat32_address <= flat32_address;
-                  when x"60" => flat32_address <= flat32_address;
-                  when x"62" => flat32_address <= flat32_address;
-                  when x"6C" => flat32_address <= flat32_address;
-                  when others => null;
-                end case;
                 
                 if op_is_single_cycle(to_integer(emu6502&memory_read_value)) = '0' then
                   if (mode_lut(to_integer(emu6502&memory_read_value)) = M_immnn)
@@ -4159,14 +4127,7 @@ begin
                     no_interrupt <= '0';
                     if memory_read_value=x"60" then
                                         -- Fast-track RTS
-                      if flat32_address = '0' then
-                                        -- Normal 16-bit RTS
                         state <= RTS;
-                      else
-                                        -- 32-bit RTS, including virtual memory address resolution
-                        report "Far-RTS";
-                        state <= Flat32RTS;
-                      end if;
                     elsif memory_read_value=x"40" then
                                         -- Fast-track RTI
                       state <= RTI;
@@ -4295,8 +4256,6 @@ begin
                   severity note;                
 
                 -- See if this is a single cycle instruction in 6502 mode.
-                flat32_address <= '0';
-                flat32_address_prime <= '0';
                 absolute32_addressing_enabled <= '0';
                 
                 case memory_read_value is
@@ -4321,8 +4280,6 @@ begin
                   when x"C8" => reg_y <= y_incremented; set_nz(y_incremented); -- INY
                   when x"CA" => reg_x <= x_decremented; set_nz(x_decremented); -- DEX
                   when x"D8" => flag_d <= '0';  -- CLD
-                                flat32_address_prime <= '1';
-                                flat32_address <= flat32_address_prime;
                   when x"E8" => reg_x <= x_incremented; set_nz(x_incremented); -- INX
                   when x"EA" => map_interrupt_inhibit <= '0'; -- EOM
                                                               -- Enable 32-bit pointer for ($nn),Z addressing
@@ -4340,14 +4297,7 @@ begin
                     no_interrupt <= '0';
                     if memory_read_value=x"60" then
                                         -- Fast-track RTS
-                      if flat32_address = '0' then
-                                        -- Normal 16-bit RTS
                         state <= RTS;
-                      else
-                                        -- 32-bit RTS, including virtual memory address resolution
-                        report "Far-RTS";
-                        state <= Flat32RTS;
-                      end if;
                     elsif memory_read_value=x"40" then
                                         -- Fast-track RTI
                       state <= RTI;
@@ -4470,14 +4420,7 @@ begin
               end case;
               
                                         -- Process instruction next cycle
-              if flat32_address='1' and flat32_enabled='1' then
-                                        -- 32bit absolute jsr/jmp
-                report "Far-JSR/JMP - got 2nd arg";
-                state <= Flat32Got2ndArgument;
-              else
-                                        -- normal instruction
                 state <= Cycle3;
-              end if;
 
                                         -- Fetch arg2 if required (only for 3 byte addressing modes)
                                         -- Also begin processing operations that don't need any more data
@@ -4542,152 +4485,6 @@ begin
                   pc_inc := '1';
                   null;
               end case;              
-            when Flat32Got2ndArgument =>
-                                        -- Flat 32bit JMP/JSR instructions require 4 address bytes.
-                                        -- At this point, we have the 2nd byte.  If the addressing mode
-                                        -- is absolute, then we can keep the 2 bytes already read, and just
-                                        -- read the last two address bytes.  If indirect, or indirectX, then
-                                        -- we need to begin reading from the 1st byte at the prescribed
-                                        -- address. IndirectX mode for flat 32 bit addressing will
-                                        -- multiply X by 4, so that it allows referencing of 256 unique
-                                        -- non-overlapping addresses, unlike JSR/JMP ($nnnn,X) on the
-                                        -- 65CE02/4502 where X is not scaled, resulting in only 128
-                                        -- non-overlapping addresses.
-              if reg_addressingmode = M_nnnn then
-                                        -- Store and read last two bytes
-                reg_addr32(15 downto 8) <= memory_read_value;
-                reg_addr32(7 downto 0) <= reg_addr(7 downto 0);
-                pc_inc := '1';
-                state <= Flat32Byte3;
-              elsif reg_addressingmode = M_Innnn then
-                                        -- Dereference, and read all four bytes
-                reg_addr(15 downto 8) <= memory_read_value;
-                state <= Flat32Dereference0;
-              elsif reg_addressingmode = M_InnnnX then
-                                        -- Add (X*4), dereference, and read all four bytes
-                reg_addr(15 downto 2) <= (memory_read_value & reg_addr(7 downto 2))
-                                         + to_integer(reg_x);
-                state <= Flat32Dereference1;
-              else
-                                        -- unknown mode
-                state <= normal_fetch_state;
-              end if;
-            when Flat32Byte3 =>
-              pc_inc := '1';
-              reg_addr32(23 downto 16) <= memory_read_value;
-              state <= Flat32Byte4;              
-            when Flat32Byte4 =>
-              pc_inc := '1';
-              reg_addr32(31 downto 24) <= memory_read_value;
-              if (reg_instruction = I_JMP) then
-                state <= Flat32Translate;
-              else
-                state <= Flat32SaveAddress;
-              end if;
-            when Flat32SaveAddress =>
-                                        -- Convert address back to virtual memory form, so that RTS page-fault
-                                        -- and reload the page if necessary.
-                                        -- We do this easily by just remembering the page number when we
-                                        -- far JMP/JSR somewhere (or when the hypervisor sets it during a
-                                        -- page fault).
-                                        -- This also means that we can distinguish between physical pages
-                                        -- and virtual addressed pages.
-              reg_addr32save(31 downto 14) <= reg_pagenumber;
-              reg_addr32save(13 downto 0) <= reg_pc(13 downto 0);
-              pc_inc := '0';
-              stack_push := '1';
-              state <= Flat32SaveAddress2;
-            when Flat32SaveAddress2 =>
-              pc_inc := '0';
-              stack_push := '1';
-              state <= Flat32SaveAddress3;
-            when Flat32SaveAddress3 =>
-              pc_inc := '0';
-              stack_push := '1';
-              state <= Flat32SaveAddress4;
-            when Flat32SaveAddress4 =>
-              pc_inc := '0';
-              stack_push := '1';
-              state <= Flat32Translate;
-            when Flat32RTS =>
-                                        -- Pull 32-bit address off the stack.
-                                        -- To save CPU complexity here, we will require the stack to have
-                                        -- the values LSB first, and then use the Flat32Dereference sequence
-                                        -- to pull the values in.
-              pc_inc := '0';
-              reg_addr <= ((reg_sph&reg_sp)+1);              
-              reg_sp <= reg_sp + 4;
-              if flag_e='0' and reg_sp(7 downto 2)="111111" then
-                reg_sph <= reg_sph + 1;
-              end if;
-              state <= Flat32Dereference0;
-            when Flat32Dereference0 =>
-              report "Far return: pulling return address from stack at $"
-                & to_hstring(reg_addr);
-              pc_inc := '0';
-              reg_addr <= reg_addr + 1;
-              state <= Flat32Dereference1;
-            when Flat32Dereference1 =>
-              pc_inc := '0';
-              reg_addr <= reg_addr + 1;
-              reg_addr32(7 downto 0) <= memory_read_value;
-              state <= Flat32Dereference2;
-            when Flat32Dereference2 =>
-              pc_inc := '0';
-              reg_addr <= reg_addr + 1;
-              reg_addr32(15 downto 8) <= memory_read_value;
-              state <= Flat32Dereference3;
-            when Flat32Dereference3 =>
-              pc_inc := '0';
-              reg_addr <= reg_addr + 1;
-              reg_addr32(23 downto 16) <= memory_read_value;
-              state <= Flat32Dereference4;
-            when Flat32Dereference4 =>
-              reg_addr32(31 downto 24) <= memory_read_value;
-              state <= Flat32Translate;
-            when Flat32Translate =>
-                                        -- We have the 32-bit address for a far JMP or JSR.
-                                        -- See if this 16KB page is loaded anywhere, and if so,
-                                        -- map it in and jump there.  Else trap to hypervisor so that it
-                                        -- can be mapped.
-                                        -- We only allow a very few pages of VM to be loaded at a time.
-                                        -- VM addresses are indicated by bit 31 being set.  The bottom 14
-                                        -- bits are within a page, so the page number is indicated by bits
-                                        -- (30 downto 14) = 17 bits. How annoying. So for now we will allow
-                                        -- only 1GB of virtual address space, and look at bits 29 downto
-                                        -- 14.
-                                        -- If bit31 is clear, then we assume it is direct addressed.
-
-                                        -- Remember page number for far RTS
-              reg_pagenumber <= reg_addr32(31 downto 14);
-
-              report "Far translate: input address = $" & to_hstring(reg_addr32);
-              
-              pc_inc := '0';
-              state <= Flat32Dispatch;
-            when Flat32Dispatch =>
-              report "Far dispatch: physical address is $" & to_hstring(reg_addr32)
-                & " + $4000";
-                                        -- MAP the appropriate 16KB block in to $4000-$7FFF,
-                                        -- then set PC to $4000 + (reg_addr32 & #$3FFF).
-                                        -- NOTE: To avoid complexity in the CPU, the $4000 offset is NOT
-                                        -- applied to the MAPping.  It is the hypervisor's job to
-                                        -- subtract $4000 from the address before storing in reg_pageX_physical
-              pc_inc := '0';
-              reg_pc(15 downto 14) <= "01";
-              reg_pc(13 downto 0) <= reg_addr32(13 downto 0);
-                                        -- Offsets are x 256 bytes.  16KB = 64 x 256 bytes, so the bottom
-                                        -- six bits of the offset will always be zero.
-              reg_offset_low(5 downto 0) <= "000000";
-                                        -- Then the upper 6 bits will be bits (19 downto 14) of reg_addr32
-              reg_offset_low(11 downto 6) <= reg_addr32(19 downto 14);
-                                        -- Finally, set the upper address bits into the MB register for
-                                        -- the lower map.
-              reg_mb_low <= reg_addr32(23 downto 20);
-                                        -- MAP upper 16KB of lower 32KB of address space
-              reg_map(3 downto 0) <= "1100";
-                                        -- Now we can start fetching the instruction.
-              state <= normal_fetch_state;
             when Cycle3 =>
                                         -- Show serial monitor what we are doing.
               if (reg_addressingmode /= M_A) then
@@ -6114,22 +5911,6 @@ begin
   		        null;
   		    end case;              
   		    memory_access_wdata := reg_pagenumber(17 downto 10);
-  		  when Flat32SaveAddress2 =>
-          address_op := addr_op_sp;
-  		    stack_push := '1';
-  		    memory_access_wdata := reg_addr32save(23 downto 16);
-  		  when Flat32SaveAddress3 =>
-          address_op := addr_op_sp;
-  		    stack_push := '1';
-  		    memory_access_wdata := reg_addr32save(15 downto 8);
-  		  when Flat32SaveAddress4 =>
-          address_op := addr_op_sp;
-  		    stack_push := '1';
-  		    memory_access_wdata := reg_addr32save(7 downto 0);
-  		    memory_access_read := '1';
-  		  when Flat32Dereference1|Flat32Dereference2|Flat32Dereference3|Flat32Dereference4 =>
-  		    memory_access_read := '1';
-          address_op := addr_op_addr;        
   		  when Cycle3 =>
 
   		    if reg_instruction = I_RTS or reg_instruction = I_RTI then
