@@ -790,23 +790,7 @@ architecture Behavioural of gs4510 is
   signal hyper_map_high : std_logic_vector(3 downto 0)  := (others => '0');
   signal hyper_map_offset_low : unsigned(11 downto 0)  := (others => '0');
   signal hyper_map_offset_high : unsigned(11 downto 0)  := (others => '0');
-  signal hyper_protected_hardware : unsigned(7 downto 0)  := (others => '0');
-  
-  -- Page table for virtual memory
-  signal reg_page0_logical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page0_physical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page1_logical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page1_physical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page2_logical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page2_physical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page3_logical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_page3_physical : unsigned(15 downto 0)  := (others => '0');
-  signal reg_pagenumber : unsigned(17 downto 0)  := (others => '0');
-  signal reg_pages_dirty : std_logic_vector(3 downto 0)  := (others => '0');
-  signal reg_pages_dirty_next : std_logic_vector(3 downto 0)  := (others => '0');
-  signal reg_pageid : unsigned(1 downto 0)  := (others => '0');
-  signal reg_pageactive : std_logic := '0';
-  
+  signal hyper_protected_hardware : unsigned(7 downto 0)  := (others => '0');  
 
   -- Flags to detect interrupts
   signal map_interrupt_inhibit : std_logic := '0';
@@ -2070,30 +2054,6 @@ begin
             when "011001" =>
               return "0000000"&virtualise_sd;
               
-            -- Virtual memory page registers here
-            when "011101" =>
-              return unsigned(std_logic_vector(reg_pagenumber(1 downto 0))
-                              &"0"
-                              &reg_pageactive
-                              &reg_pages_dirty);
-            when "011110" => return reg_pagenumber(9 downto 2);
-            when "011111" => return reg_pagenumber(17 downto 10);
-            when "100000" => return reg_page0_logical(7 downto 0);
-            when "100001" => return reg_page0_logical(15 downto 8);
-            when "100010" => return reg_page0_physical(7 downto 0);
-            when "100011" => return reg_page0_physical(15 downto 8);
-            when "100100" => return reg_page1_logical(7 downto 0);
-            when "100101" => return reg_page1_logical(15 downto 8);
-            when "100110" => return reg_page1_physical(7 downto 0);
-            when "100111" => return reg_page1_physical(15 downto 8);
-            when "101000" => return reg_page2_logical(7 downto 0);
-            when "101001" => return reg_page2_logical(15 downto 8);
-            when "101010" => return reg_page2_physical(7 downto 0);
-            when "101011" => return reg_page2_physical(15 downto 8);
-            when "101100" => return reg_page3_logical(7 downto 0);
-            when "101101" => return reg_page3_logical(15 downto 8);
-            when "101110" => return reg_page3_physical(7 downto 0);
-            when "101111" => return reg_page3_physical(15 downto 8);
             when "110000" => return georam_page(19 downto 12);
             when "110001" => return georam_blockmask;
             --$D672 - Protected Hardware
@@ -3027,86 +2987,6 @@ begin
         if last_write_address = x"FD3659" and hypervisor_mode='1' then
           virtualise_sd <= last_value(0);
         end if;
-                                        -- @IO:GS $D65D - Hypervisor current virtual page number (low byte)
-        if last_write_address = x"FD365D" and hypervisor_mode='1' then
-          reg_pagenumber(1 downto 0) <= last_value(7 downto 6);
-          reg_pageactive <= last_value(4);
-          reg_pages_dirty <= std_logic_vector(last_value(3 downto 0));
-        end if;
-                                        -- @IO:GS $D65E - Hypervisor current virtual page number (mid byte)
-        if last_write_address = x"FD365E" and hypervisor_mode='1' then
-          reg_pagenumber(9 downto 2) <= last_value;
-        end if;
-                                        -- @IO:GS $D65F - Hypervisor current virtual page number (high byte)
-        if last_write_address = x"FD365F" and hypervisor_mode='1' then
-          reg_pagenumber(17 downto 10) <= last_value;
-        end if;
-                                        -- @IO:GS $D660 - Hypervisor virtual memory page 0 logical page low byte
-                                        -- @IO:GS $D661 - Hypervisor virtual memory page 0 logical page high byte
-                                        -- @IO:GS $D662 - Hypervisor virtual memory page 0 physical page low byte
-                                        -- @IO:GS $D663 - Hypervisor virtual memory page 0 physical page high byte
-        if last_write_address = x"FD3660" and hypervisor_mode='1' then
-          reg_page0_logical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD3661" and hypervisor_mode='1' then
-          reg_page0_logical(15 downto 8) <= last_value;
-        end if;
-        if last_write_address = x"FD3662" and hypervisor_mode='1' then
-          reg_page0_physical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD3663" and hypervisor_mode='1' then
-          reg_page0_physical(15 downto 8) <= last_value;
-        end if;
-                                        -- @IO:GS $D664 - Hypervisor virtual memory page 1 logical page low byte
-                                        -- @IO:GS $D665 - Hypervisor virtual memory page 1 logical page high byte
-                                        -- @IO:GS $D666 - Hypervisor virtual memory page 1 physical page low byte
-                                        -- @IO:GS $D667 - Hypervisor virtual memory page 1 physical page high byte
-        if last_write_address = x"FD3664" and hypervisor_mode='1' then
-          reg_page1_logical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD3665" and hypervisor_mode='1' then
-          reg_page1_logical(15 downto 8) <= last_value;
-        end if;
-        if last_write_address = x"FD3666" and hypervisor_mode='1' then
-          reg_page1_physical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD3667" and hypervisor_mode='1' then
-          reg_page1_physical(15 downto 8) <= last_value;
-        end if;
-
-                                        -- @IO:GS $D668 - Hypervisor virtual memory page 2 logical page low byte
-                                        -- @IO:GS $D669 - Hypervisor virtual memory page 2 logical page high byte
-                                        -- @IO:GS $D66A - Hypervisor virtual memory page 2 physical page low byte
-                                        -- @IO:GS $D66B - Hypervisor virtual memory page 2 physical page high byte
-        if last_write_address = x"FD3668" and hypervisor_mode='1' then
-          reg_page2_logical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD3669" and hypervisor_mode='1' then
-          reg_page2_logical(15 downto 8) <= last_value;
-        end if;
-        if last_write_address = x"FD366A" and hypervisor_mode='1' then
-          reg_page2_physical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD366B" and hypervisor_mode='1' then
-          reg_page2_physical(15 downto 8) <= last_value;
-        end if;
-                                        -- @IO:GS $D66C - Hypervisor virtual memory page 3 logical page low byte
-                                        -- @IO:GS $D66D - Hypervisor virtual memory page 3 logical page high byte
-                                        -- @IO:GS $D66E - Hypervisor virtual memory page 3 physical page low byte
-                                        -- @IO:GS $D66F - Hypervisor virtual memory page 3 physical page high byte
-        if last_write_address = x"FD366C" and hypervisor_mode='1' then
-          reg_page3_logical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD366D" and hypervisor_mode='1' then
-          reg_page3_logical(15 downto 8) <= last_value;
-        end if;
-        if last_write_address = x"FD366E" and hypervisor_mode='1' then
-          reg_page3_physical(7 downto 0) <= last_value;
-        end if;
-        if last_write_address = x"FD366F" and hypervisor_mode='1' then
-          reg_page3_physical(15 downto 8) <= last_value;
-        end if;
-
                                         -- @IO:GS $D670 - Hypervisor GeoRAM base address (x MB)
         if last_write_address = x"FD3670" and hypervisor_mode='1' then
           georam_page(19 downto 12) <= last_value;
@@ -5531,20 +5411,6 @@ begin
                                         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
-          -- Mark pages dirty as necessary        
-          if(reg_pages_dirty_next(0) = '1') then
-            reg_pages_dirty(0) <= '1';
-          end if;
-          if(reg_pages_dirty_next(1) = '1') then
-            reg_pages_dirty(1) <= '1';
-          end if;
-          if(reg_pages_dirty_next(2) = '1') then
-            reg_pages_dirty(2) <= '1';
-          end if;
-          if(reg_pages_dirty_next(3) = '1') then
-            reg_pages_dirty(3) <= '1';
-          end if;
-
                                         -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
@@ -5661,11 +5527,11 @@ begin
   process (state,reg_pc,vector,reg_t,hypervisor_mode,monitor_mem_attention_request_drive,monitor_mem_address_drive,
     reg_dmagic_addr,mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,monitor_mem_write_drive,monitor_mem_wdata_drive,
     monitor_mem_read,monitor_mem_setpc,dmagic_src_addr,dmagic_dest_addr,viciii_iomode,reg_dmagic_transparent_value,
-    reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_pagenumber,reg_addr32save,reg_addr,reg_instruction,
+    reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_addr32save,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
-    dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,reg_pageactive,shadow_rdata,proceed,
+    dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,shadow_rdata,proceed,
     reg_mult_a,read_data,shadow_wdata,shadow_address,kickstart_address,
-    reg_pageid,rom_writeprotect,georam_page, fastio_addr, axyz_phase, reg_val32,
+    rom_writeprotect,georam_page, fastio_addr, axyz_phase, reg_val32,
     kickstart_address_next, post_resolve_memory_access_address, georam_blockmask,
     shadow_address_next, read_source, fastio_addr_next
     )
@@ -5691,7 +5557,6 @@ begin
     variable stack_pop : std_logic;
     variable stack_push : std_logic;
     variable virtual_reg_p : std_logic_vector(7 downto 0);
-    variable reg_pages_dirty_var : std_logic_vector(3 downto 0)  := (others => '0');
   
     -- temp hack as I work to move this code around...
     variable real_long_address : unsigned(23 downto 0);
@@ -5757,12 +5622,8 @@ begin
     memory_access_address := x"000000";
     memory_access_wdata := x"00";
 
-		reg_pages_dirty_var(0) := '0';
-		reg_pages_dirty_var(1) := '0';
-		reg_pages_dirty_var(2) := '0';
-		reg_pages_dirty_var(3) := '0';
-
     dmagic_address := x"000000";
+
     pre_resolve_memory_access_address <= x"0000";
     pre_resolve_memory_access_write <= false;
     temp_addr := x"0000";
@@ -5910,7 +5771,7 @@ begin
   		      when others =>
   		        null;
   		    end case;              
-  		    memory_access_wdata := reg_pagenumber(17 downto 10);
+  		    memory_access_wdata := x"00";
   		  when Cycle3 =>
 
   		    if reg_instruction = I_RTS or reg_instruction = I_RTI then
@@ -6116,18 +5977,6 @@ begin
         when others => null;
       end case;
 
-  		if (reg_pageactive = '1' ) then
-  		  if (memory_access_address(15 downto 14) = "01") then
-  		    case reg_pageid is
-  		      when "00" => reg_pages_dirty_var(0) := '1'; 
-  		      when "01" => reg_pages_dirty_var(1) := '1'; 
-  		      when "10" => reg_pages_dirty_var(2) := '1'; 
-  		      when "11" => reg_pages_dirty_var(3) := '1';
---  		      when others => null;
-  		    end case;
-  		  end if;
-  		end if;
-
   		--shadow_address_var := memory_access_address(long_address(16 downto 0));
   		shadow_wdata_var := memory_access_wdata;
 
@@ -6251,7 +6100,6 @@ begin
     memory_access_write_next <= memory_access_write;
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
-    reg_pages_dirty_next <= reg_pages_dirty_var;
         
     shadow_write_next <= shadow_write_var;
     
