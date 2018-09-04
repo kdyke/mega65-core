@@ -827,10 +827,6 @@ architecture Behavioural of gs4510 is
   signal reg_pc_jsr : unsigned(15 downto 0)  := (others => '0');
   -- Temporary address register (used for indirect modes)
   signal reg_addr : unsigned(15 downto 0)  := (others => '0');
-  -- ... and this one for 32-bit flat addressing modes
-  signal reg_addr32 : unsigned(31 downto 0)  := (others => '0');
-  -- ... and this one for pushing 32bit virtual address onto the stack
-  signal reg_addr32save : unsigned(31 downto 0)  := (others => '0');
   -- Upper and lower
   -- 16 bits of temporary address register. Used for 32-bit
   -- absolute addresses
@@ -844,11 +840,6 @@ architecture Behavioural of gs4510 is
   signal reg_t : unsigned(7 downto 0)  := (others => '0');
   signal reg_t_high : unsigned(7 downto 0)  := (others => '0');
 
-  signal reg_val32 : unsigned(31 downto 0) := to_unsigned(0,32);
-  signal next_is_axyz32_instruction : std_logic := '0';
-  signal value32_enabled : std_logic := '0';
-  signal axyz_phase : integer range 0 to 4 := 0;
-  
   signal instruction_phase : unsigned(3 downto 0)  := (others => '0');
   
 -- Indicate source of operand for instructions
@@ -1002,10 +993,7 @@ architecture Behavioural of gs4510 is
     WordOpWriteHigh,
     PushWordLow,PushWordHigh,
     Pop,
-    MicrocodeInterpret,
-    LoadTarget32,
-    Execute32,
-    StoreTarget32
+    MicrocodeInterpret
     );
   signal state : processor_state := ResetLow;
   signal fast_fetch_state : processor_state := InstructionDecode;
@@ -3917,12 +3905,7 @@ begin
                 -- interrupts are only checked in InstructionFetch, not
                 -- InstructionDecode).
                 absolute32_addressing_enabled <= '0';
-                value32_enabled <= '0';
-                next_is_axyz32_instruction <= '0';
 
-                report "VAL32: next_is_axyz32_instruction=" & std_logic'image(next_is_axyz32_instruction)
-                  & ", value32_enabled = " & std_logic'image(value32_enabled);
-                
                 case memory_read_value is
                   when x"03" =>
                     flag_e <= '1'; -- SEE
@@ -3945,17 +3928,6 @@ begin
                   when x"3B" => reg_z <= z_decremented; set_nz(z_decremented); -- DEZ
                   when x"42" =>
                     reg_a <= a_negated; set_nz(a_negated); -- NEG A
-                    -- NEG / NEG / INSTRUCTION is used to indicate using AXYZ
-                    -- regs as single 32-bit pseudo register.
-                    -- This prefix can be used together with the NOP / NOP prefix
-                    -- for the 32-bit ZP-indirect instructions. In that case,
-                    -- this prefix must come first, i.e., NEG / NEG / NOP / NOP
-                    -- / LDA or STA ($xx), Z
-                    if value32_enabled = '0' then
-                      value32_enabled <= '1';
-                    else
-                      next_is_axyz32_instruction <= '1';
-                    end if;
                   when x"43" => reg_a <= a_asr; set_nz(a_asr); -- ASR A
                   when x"4A" => reg_a <= a_lsr; set_nz(a_lsr); flag_c <= reg_a(0); -- LSR A
                   when x"4B" => reg_z <= reg_a; set_nz(reg_a); -- TAZ
@@ -3984,9 +3956,6 @@ begin
                                 -- Enable 32-bit pointer for ($nn),Z addressing
                                 -- mode
                                 absolute32_addressing_enabled <= '1';
-                                -- Preserve NEG / NEG prefix status for AXYZ
-                                -- 32-bit pseudo register usage.
-                                next_is_axyz32_instruction <= next_is_axyz32_instruction;
                   when x"F8" => flag_d <= '1';  -- SED
                   when others => null;
                 end case;
@@ -4016,7 +3985,6 @@ begin
                       state <= MicrocodeInterpret;
                     end if;
                   else
-                    next_is_axyz32_instruction <= next_is_axyz32_instruction;
                     state <= Cycle2;
                   end if;
                 else
@@ -4254,7 +4222,6 @@ begin
                                         -- XXX - This is at the cost of 1 cycle on most 2 or 3 byte, which
                                         -- is really bad. ZP is practically pointless as a result.  See below
                                         -- for optimising this away for most instructions.
-              report "VAL32: next_is_axyz32_instruction = " & std_logic'image(next_is_axyz32_instruction);
               reg_pc_jsr <= reg_pc;
               
                                         -- Store and announce arg1
@@ -4701,21 +4668,13 @@ begin
                                         -- Do addition of Z register as we go along, so that we don't have
                                         -- a 32-bit carry.
               reg_addr <= reg_addr + 1;
-              if (reg_instruction = I_STA) and (next_is_axyz32_instruction='1') then
-                report "VAL32/ABS32: not adding value of Z for 32-bit STA ($nn),Z because it is using 32-bit AXYZ register";
-              
-                temp17 :=
-                  to_unsigned(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0))
-                              + 0,17);
-              else
-                report "VAL32/ABS32: Adding "
-                  & integer'image(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0)) )
-                  & " to " & integer'image(to_integer(reg_z));
+              report "VAL32/ABS32: Adding "
+                & integer'image(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0)) )
+                & " to " & integer'image(to_integer(reg_z));
 
-                temp17 :=
-                  to_unsigned(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0))
-                              + to_integer(reg_z),17);
-              end if;
+              temp17 :=
+                to_unsigned(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0))
+                            + to_integer(reg_z),17);
               reg_addr_lsbs <= temp17(15 downto 0);
               pointer_carry <= temp17(16);
               state <= InnZReadVectorByte3;
@@ -4801,244 +4760,7 @@ begin
             when WriteCommit =>
               state <= normal_fetch_state;
             when LoadTarget =>
-              -- If an instruction was preceeded with NEG / NEG, then the load
-              -- is into all four registers, AXYZ, as a pseudo register.
-              -- We only support this for certain instructions:
-              -- LDA, STA, CMP, ADC, SBC, ORA, EOR, AND,
-              -- INC, DEC, ROL, ROR, ASL, LSR.
-              -- (All addressing modes are supported, however)
-              report "VAL32: next_is_axyz32_instruction = " & std_logic'image(next_is_axyz32_instruction)
-                & ", reg_instruction = " & instruction'image(reg_instruction) & ", reg_addr=$" & to_hstring(reg_addr);
-              if next_is_axyz32_instruction = '1' then
-                case reg_instruction is
-                  when I_LDA | I_CMP | I_ADC | I_SBC | I_ORA | I_EOR | I_AND | I_INC | I_DEC
-                      | I_ROL | I_ROR | I_ASL | I_LSR =>
-                    report "VAL32: Proceeding to LoadTarget32";
-                    state <= LoadTarget32;
-                    axyz_phase <= 1;
-                  when others =>
-                    -- Process other instructions normally
-                    report "VAL32: Ignoring unsupported instruction " & instruction'image(reg_instruction);
-                    state <= MicrocodeInterpret;
-                end case;
-              else
-                state <= MicrocodeInterpret;
-              end if;
-            when LoadTarget32 =>
-              reg_val32(31 downto 24) <= memory_read_value;
-              reg_val32(23 downto 0) <= reg_val32(31 downto 8);
-              report "VAL32: reg_val32 = $" & to_hstring(reg_val32) & ", at axyz_phase = " & integer'image(axyz_phase);
-              if axyz_phase /= 4 then
-                -- More bytes to read, so schedule next byte to read                
-                report "VAL32: memory_access_address=$" & to_hstring(memory_access_address);
-                axyz_phase <= axyz_phase + 1;
-              else
-                -- Already got the four bytes, so now trigger the execution
-                state <= Execute32;                    
-              end if;
-            when Execute32 =>
-              report "VAL32: reg_val32 = $" & to_hstring(reg_val32);
-              case reg_instruction is
-                when I_LDA =>
-                  reg_a <= reg_val32(7 downto 0);
-                  reg_x <= reg_val32(15 downto 8);
-                  reg_y <= reg_val32(23 downto 16);
-                  reg_z <= reg_val32(31 downto 24);
-                when I_CMP =>
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33 := vreg33 - reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_c <= not vreg33(32);
-                  flag_n <= vreg33(31);
-                when I_SBC =>
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33 := vreg33 - reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_c <= not vreg33(32);
-                  flag_n <= vreg33(31);
-                  reg_a <= vreg33(7 downto 0);
-                  reg_x <= vreg33(15 downto 8);
-                  reg_y <= vreg33(23 downto 16);
-                  reg_z <= vreg33(31 downto 24);
-                when I_ADC =>
-                  -- Note: No decimal mode for 32-bit add!
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33 := vreg33 + reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_c <= not vreg33(32);
-                  flag_n <= vreg33(31);
-                  reg_a <= vreg33(7 downto 0);
-                  reg_x <= vreg33(15 downto 8);
-                  reg_y <= vreg33(23 downto 16);
-                  reg_z <= vreg33(31 downto 24);
-                when I_ORA =>
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33(31 downto 0) := vreg33(31 downto 0) or reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  reg_a <= vreg33(7 downto 0);
-                  reg_x <= vreg33(15 downto 8);
-                  reg_y <= vreg33(23 downto 16);
-                  reg_z <= vreg33(31 downto 24);
-                when I_EOR =>
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33(31 downto 0) := vreg33(31 downto 0) or reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  reg_a <= vreg33(7 downto 0);
-                  reg_x <= vreg33(15 downto 8);
-                  reg_y <= vreg33(23 downto 16);
-                  reg_z <= vreg33(31 downto 24);
-                when I_AND =>
-                  vreg33 := '0' & reg_z & reg_y & reg_x & reg_a;
-                  vreg33(31 downto 0) := vreg33(31 downto 0) or reg_val32;
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  reg_a <= vreg33(7 downto 0);
-                  reg_x <= vreg33(15 downto 8);
-                  reg_y <= vreg33(23 downto 16);
-                  reg_z <= vreg33(31 downto 24);
-                when I_INC =>
-                  vreg33 := '0' & reg_val32;
-                  vreg33 := vreg33 + 1;
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when I_DEC =>
-                  vreg33 := '0' & reg_val32;
-                  vreg33 := vreg33 - 1;
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when I_ASL =>
-                  vreg33 := '0' & reg_val32;
-                  vreg33(32 downto 1) := vreg33(31 downto 0);
-                  vreg33(0) := vreg33(32);
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when I_ROL =>
-                  vreg33 := flag_c & reg_val32;
-                  vreg33(32 downto 1) := vreg33(31 downto 0);
-                  vreg33(0) := vreg33(32);
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when I_LSR =>
-                  vreg33 := '0' & reg_val32;
-                  vreg33(31 downto 0) := vreg33(32 downto 1);
-                  vreg33(32) := vreg33(0);
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when I_ROR =>
-                  vreg33 := flag_c & reg_val32;
-                  vreg33(31 downto 0) := vreg33(32 downto 1);
-                  vreg33(32) := vreg33(0);
-                  reg_val32 <= vreg33(31 downto 0);
-                  if vreg33(31 downto 0) = to_unsigned(0,32) then
-                    flag_z <= '1';
-                  else
-                    flag_z <= '0';
-                  end if;
-                  flag_n <= vreg33(31);
-                  axyz_phase <= 0;
-                  state <= StoreTarget32;
-                when others =>
-                  -- XXX: Don't lock CPU up if we get something odd here
-                  state <= normal_fetch_state;
-              end case;
-              if is_rmw = '0' then
-                -- Go to next instruction by default
-                if fast_fetch_state = InstructionDecode then
-                  pc_inc := reg_microcode.mcIncPC;
-                else
-                  report "not setting pc_inc, because fast_fetch_state /= InstructionDecode";
-                  pc_inc := '0';
-                end if;
-                pc_dec := reg_microcode.mcDecPC;
-                if reg_microcode.mcInstructionFetch='1' then
-                  report "Fast dispatch for next instruction by order of microcode";
-                  state <= fast_fetch_state;
-                else
-                  state <= normal_fetch_state;
-                end if;
-              end if;
-            when StoreTarget32 =>
-              if axyz_phase /= 4 then
-                reg_val32(23 downto 0) <= reg_val32(31 downto 8);
-                axyz_phase <= axyz_phase + 1;
-              end if;              
-              if axyz_phase = 4 then
-                -- Go to next instruction by default
-                if fast_fetch_state = InstructionDecode then
-                  pc_inc := reg_microcode.mcIncPC;
-                else
-                  report "not setting pc_inc, because fast_fetch_state /= InstructionDecode";
-                  pc_inc := '0';
-                end if;
-                pc_dec := reg_microcode.mcDecPC;
-                if reg_microcode.mcInstructionFetch='1' then
-                  report "Fast dispatch for next instruction by order of microcode";
-                  state <= fast_fetch_state;
-                else
-                  state <= normal_fetch_state;
-                end if;
-              end if;
+              state <= MicrocodeInterpret;
             when MicrocodeInterpret =>
                                         -- By this stage we have the address of the operand in
                                         -- reg_addr, and if it is a load instruction then the contents
@@ -5048,27 +4770,19 @@ begin
                                         -- us with loads, stores and reaad/modify/write instructions
 
                                         -- Go to next instruction by default
-              if next_is_axyz32_instruction = '1' and reg_instruction = I_STA then
-                -- 32-bit store begins here, and the other 3 bytes get written
-                -- in common with the 32-bit RMW instructions
-                axyz_phase <= 1;
-                reg_val32(23 downto 0) <= reg_val32(31 downto 8);
-                state <= StoreTarget32;
+              if fast_fetch_state = InstructionDecode then
+                pc_inc := reg_microcode.mcIncPC;
               else
-                if fast_fetch_state = InstructionDecode then
-                  pc_inc := reg_microcode.mcIncPC;
-                else
-                  report "not setting pc_inc, because fast_fetch_state /= InstructionDecode";
-                  pc_inc := '0';
-                end if;
-                pc_dec := reg_microcode.mcDecPC;
-                if reg_microcode.mcInstructionFetch='1' then
-                  report "Fast dispatch for next instruction by order of microcode";
-                  state <= fast_fetch_state;
-                else
-                                        -- (this gets overriden below for RMW and other instruction types)
-                  state <= normal_fetch_state;
-                end if;
+                report "not setting pc_inc, because fast_fetch_state /= InstructionDecode";
+                pc_inc := '0';
+              end if;
+              pc_dec := reg_microcode.mcDecPC;
+              if reg_microcode.mcInstructionFetch='1' then
+                report "Fast dispatch for next instruction by order of microcode";
+                state <= fast_fetch_state;
+              else
+                                      -- (this gets overriden below for RMW and other instruction types)
+                state <= normal_fetch_state;
               end if;
               
               if reg_addressingmode = M_immnn then
@@ -5527,11 +5241,11 @@ begin
   process (state,reg_pc,vector,reg_t,hypervisor_mode,monitor_mem_attention_request_drive,monitor_mem_address_drive,
     reg_dmagic_addr,mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,monitor_mem_write_drive,monitor_mem_wdata_drive,
     monitor_mem_read,monitor_mem_setpc,dmagic_src_addr,dmagic_dest_addr,viciii_iomode,reg_dmagic_transparent_value,
-    reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_addr32save,reg_addr,reg_instruction,
+    reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
     dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,shadow_rdata,proceed,
     reg_mult_a,read_data,shadow_wdata,shadow_address,kickstart_address,
-    rom_writeprotect,georam_page, fastio_addr, axyz_phase, reg_val32,
+    rom_writeprotect,georam_page, fastio_addr,
     kickstart_address_next, post_resolve_memory_access_address, georam_blockmask,
     shadow_address_next, read_source, fastio_addr_next
     )
@@ -5569,7 +5283,6 @@ begin
       addr_op_sp,         -- current SP
       addr_op_pop,        -- basically SP+1
       addr_op_addr,       -- normal 16-bit address
-      addr_op_addr32data, -- 32-bit data fetch
       addr_op_addr32flat, -- 32-bit flat address fetch
       addr_op_monitor,
       addr_op_dmagic,
@@ -5863,20 +5576,6 @@ begin
   		    -- cycle to improve timing.
   		    memory_access_read := '1';
           address_op := addr_op_addr32flat;
-        when LoadTarget32 =>
-          if axyz_phase /= 4 then
-            -- More bytes to read, so schedule next byte to read                
-            report "VAL32: memory_access_address=$" & to_hstring(memory_access_address);
-            memory_access_read := '1';
-            address_op := addr_op_addr32data;
-          end if;
-        when StoreTarget32 =>
-          report "VAL32: StoreTarget32 memory_access_address=$" & to_hstring(memory_access_address) & ", reg_val32=$" & to_hstring(reg_val32);
-          if axyz_phase /= 4 then
-            memory_access_write := '1';
-            address_op := addr_op_addr32data;
-            memory_access_wdata := reg_val32(7 downto 0);
-          end if;              
   		  when MicrocodeInterpret =>
 
   		    if reg_microcode.mcStoreA='1' then memory_access_wdata := reg_a; end if;
@@ -5971,9 +5670,6 @@ begin
   		    else
   		      memory_access_address(23 downto 16) := x"00";
   		    end if;
-        when addr_op_addr32data =>
-          memory_access_address(15 downto 0) := to_unsigned(to_integer(reg_addr) + axyz_phase,16);
-          memory_access_resolve_address := not absolute32_addressing_enabled;
         when others => null;
       end case;
 
