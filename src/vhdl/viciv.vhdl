@@ -938,7 +938,24 @@ architecture Behavioral of viciv is
   -- Indicates if the next 16 bit screen token will be a GOTO/GOSUB token
   signal next_token_is_goto : std_logic := '0';
 
+  signal register_bank_sig : unsigned(7 downto 0);
+  signal register_page_sig : unsigned(3 downto 0);
+  signal register_num_sig : unsigned(7 downto 0);
+  signal register_number_sig : unsigned(11 downto 0);
+  signal border_colour_written : std_logic;
+  
   attribute keep_hierarchy : string;
+  attribute keep : string;
+  attribute mark_debug : string;
+  
+  attribute mark_debug of register_bank_sig : signal is "true";
+  attribute mark_debug of register_page_sig : signal is "true";
+  attribute mark_debug of register_num_sig : signal is "true";
+  attribute mark_debug of register_number_sig : signal is "true";
+  attribute mark_debug of border_colour : signal is "true";
+  attribute keep of border_colour_written : signal is "true";
+  attribute mark_debug of border_colour_written : signal is "true";
+  
 --  attribute keep_hierarchy of Behavioral : architecture is "yes";
 
 begin
@@ -1501,6 +1518,11 @@ begin
           & integer'image(to_integer(register_number)) severity note;
       end if;
 
+      register_bank_sig   <= register_bank;
+      register_page_sig   <= register_page;
+      register_num_sig    <= register_num;
+      register_number_sig <= register_number;
+
       -- $D800 - $DBFF colour RAM access.
       -- This is a bit fun, because colour RAM is mapped in 3 separate places:
       --   $D800 - $DBFF in the usual IO pages.
@@ -1977,7 +1999,6 @@ begin
         and (fastio_addr(19 downto 12)=x"0D")
         and (fastio_addr(11 downto  8)=x"D")
         and (fastio_addr(3 downto 0) = x"0")
-        and (fastio_addr(15 downto 14) = "00")
         and (colourram_at_dc00_internal = '0')
       then
         report "Caught write to $DD00" severity note;
@@ -2008,6 +2029,7 @@ begin
       clear_collisionspritesprite <= clear_collisionspritesprite_1;
       
       -- $D000 registers
+      border_colour_written <= '0';
       if fastio_write='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then
         if register_number>=0 and register_number<8 then
@@ -2126,16 +2148,18 @@ begin
           -- @IO:C64 $D020 Border colour
           -- @IO:C64 $D020.3-0 VIC-II display border colour (16 colour)
           -- @IO:C65 $D020.7-0 VIC-III/IV display border colour (256 colour)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             border_colour(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
+            border_colour_written <= '1';
           else
             border_colour <= unsigned(fastio_wdata);
+            border_colour_written <= '1';
           end if;
         elsif register_number=33 then
           -- @IO:C64 $D021 Screen colour
           -- @IO:C64 $D021.3-0 VIC-II screen colour (16 colour)
           -- @IO:C65 $D021.7-0 VIC-III/IV screen colour (256 colour)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             screen_colour(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
           else
             screen_colour <= unsigned(fastio_wdata);
@@ -2144,7 +2168,7 @@ begin
           -- @IO:C64 $D022 VIC-II multi-colour 1
           -- @IO:C64 $D022.3-0 VIC-II multi-colour 1 (16 colour)
           -- @IO:C65 $D022.7-0 VIC-III/IV multi-colour 1 (256 colour)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             multi1_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi1_colour <= unsigned(fastio_wdata);
@@ -2153,7 +2177,7 @@ begin
           -- @IO:C64 $D023 VIC-II multi-colour 2
           -- @IO:C64 $D023.3-0 VIC-II multi-colour 2 (16 colour)
           -- @IO:C65 $D023.7-0 VIC-III/IV multi-colour 2 (256 colour)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             multi2_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi2_colour <= unsigned(fastio_wdata);
@@ -2162,7 +2186,7 @@ begin
           -- @IO:C64 $D024 VIC-II multi-colour 3
           -- @IO:C64 $D024.3-0 VIC-II multi-colour 3 (16 colour)
           -- @IO:C65 $D024.7-0 VIC-III/IV multi-colour 3 (256 colour)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             multi3_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi3_colour <= unsigned(fastio_wdata);
@@ -2182,7 +2206,7 @@ begin
           -- @IO:C64 $D02C VIC-II sprite 5 colour / 16-colour sprite transparency colour (lower nybl)
           -- @IO:C64 $D02D VIC-II sprite 6 colour / 16-colour sprite transparency colour (lower nybl)
           -- @IO:C64 $D02E VIC-II sprite 7 colour / 16-colour sprite transparency colour (lower nybl)
-          if (viciii_iomode(1)='0') then
+          if (viciii_iomode(0)='0') then
             sprite_colours(to_integer(register_number)-39)(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
           else
             sprite_colours(to_integer(register_number)-39) <= unsigned(fastio_wdata);
