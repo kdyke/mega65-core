@@ -79,6 +79,7 @@ attribute keep_hierarchy : string;
 attribute mark_debug : string;
 attribute keep_hierarchy of Behavioural : architecture is "yes";
 
+attribute keep of short_address: signal is "true";
 attribute mark_debug of short_address: signal is "true";
 attribute mark_debug of extio_sel: signal is "true";
 attribute mark_debug of fastio_sel: signal is "true";
@@ -315,7 +316,7 @@ begin
 
     -- C65 DAT
     report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
-    if map_io='1' and temp_address(19 downto 3) & "000" = x"0D040" then
+    if resolve_addr='1' and map_io='1' and temp_address(19 downto 3) & "000" = x"0D040" then
       temp_address(19 downto 17) := (others => '0');
       temp_address(16) := temp_address(0); -- odd/even bitplane bank select
       -- Bit plane address
@@ -1499,6 +1500,7 @@ architecture Behavioural of gs4510 is
     attribute mark_debug of accessing_colour_ram_fastio: signal is "true";
     attribute mark_debug of accessing_slowram: signal is "true";
     attribute mark_debug of proceed: signal is "true";
+    attribute mark_debug of memory_access_resolve_address_next: signal is "true";
     
     attribute keep of reg_dmagic_addr : signal is "true";
     attribute mark_debug of reg_dmagic_addr : signal is "true";
@@ -2294,7 +2296,7 @@ begin
       dmagic_write_sig <= dmagic_write;
     
       -- Write to CPU port
-      if (long_address = x"000000") then
+      if (fastio_sel='0' and long_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
         if value = x"40" then
           force_fast <= '0';
@@ -2303,7 +2305,7 @@ begin
         else
           cpuport_ddr <= value;
         end if;
-      elsif (long_address = x"000001") then
+      elsif (fastio_sel='0' and long_address = x"000001") then
         report "MEMORY: Writing to CPU PORT register" severity note;
         cpuport_value <= value;
       -- Write to DMAgic registers if required
