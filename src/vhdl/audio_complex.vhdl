@@ -241,7 +241,7 @@ begin
     clock50mhz => clock50mhz,
     i2s_clk => i2s_master_clk_int,
     i2s_sync => i2s_master_sync_int,
-    pcm_out => i2s_headphones_data_out,
+    pcm_out => i2s_speaker_data_out,
     pcm_in => i2s_headphones_data_in,
     tx_sample_left => spkr_left,
     tx_sample_right => spkr_right

@@ -75,16 +75,16 @@ entity machine is
          flopled : out std_logic;
          flopmotor : out std_logic;
 
-         buffereduart_rx : inout std_logic;
+         buffereduart_rx : in std_logic;
          buffereduart_tx : out std_logic := '1';
          buffereduart_ringindicate : in std_logic;
-         buffereduart2_rx : inout std_logic;
+         buffereduart2_rx : in std_logic;
          buffereduart2_tx : out std_logic := '1';
          
          slow_access_request_toggle : out std_logic;
          slow_access_ready_toggle : in std_logic := '0';
          slow_access_write : out std_logic := '0';
-         slow_access_address : out unsigned(23 downto 0);
+         slow_access_address : out unsigned(19 downto 0);
          slow_access_wdata : out unsigned(7 downto 0);
          slow_access_rdata : in unsigned(7 downto 0);
          cart_access_count : in unsigned(7 downto 0) := x"00";
@@ -934,7 +934,7 @@ begin
       monitor_cpuport => monitor_cpuport,
       
       slow_access_request_toggle => slow_access_request_toggle,
-      slow_access_ready_toggle => slow_access_ready_toggle,    
+      slow_access_ready_toggle => slow_access_ready_toggle,
       slow_access_address => slow_access_address,
       slow_access_write => slow_access_write,
       slow_access_wdata => slow_access_wdata,

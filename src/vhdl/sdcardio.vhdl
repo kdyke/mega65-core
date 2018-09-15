@@ -443,6 +443,9 @@ architecture behavioural of sdcardio is
     return to_integer("11" & f011orsd & addr);
   end function;
   
+  attribute mark_debug : string;
+  attribute mark_debug of sector_buffer_mapped: signal is "true";
+  
 begin  -- behavioural
 
 --**********************************************************************
@@ -1223,8 +1226,7 @@ begin  -- behavioural
       -- Advance f011 buffer position when reading from data register
       last_was_d087 <= '0';
       if fastio_read='1' then
-        if (fastio_addr(19 downto 0) = x"D1087"
-            or fastio_addr(19 downto 0) = x"D3087") then
+        if (viciii_iomode="01" or viciii_iomode="11") and (fastio_addr(19 downto 0) = x"0D087") then
           if last_was_d087='0' then
             report "$D087 access : advancing CPU sector buffer pointer";
             f011_buffer_cpu_pointer_advance <= '1';

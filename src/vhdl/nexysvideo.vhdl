@@ -261,7 +261,7 @@ end component;
   signal slow_access_request_toggle : std_logic;
   signal slow_access_ready_toggle : std_logic;
   signal slow_access_write : std_logic;
-  signal slow_access_address : unsigned(23 downto 0);
+  signal slow_access_address : unsigned(19 downto 0);
   signal slow_access_wdata : unsigned(7 downto 0);
   signal slow_access_rdata : unsigned(7 downto 0);
 
@@ -544,9 +544,9 @@ begin
       vgablue(7 downto 0)         => vgablue,
 
       -- need to figure out what to do with these on this board.
-      --buffereduart_rx => jclo(3),
+      buffereduart_rx => '1', --jclo(3),
       --buffereduart_tx => jclo(4),
-      --buffereduart2_rx => jchi(9),
+      buffereduart2_rx => '1', --jchi(9),
       --buffereduart2_tx => jchi(10),
       buffereduart_ringindicate => '1',
 

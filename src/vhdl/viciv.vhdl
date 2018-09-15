@@ -152,7 +152,7 @@ entity viciv is
     colour_ram_cs : in std_logic;
     charrom_write_cs : in std_logic;
 
-    viciii_iomode : out std_logic_vector(1 downto 0) := "11";
+    viciii_iomode : inout std_logic_vector(1 downto 0) := "11";
 
     iomode_set : in std_logic_vector(1 downto 0);
     iomode_set_toggle : in std_logic;
@@ -1139,6 +1139,8 @@ begin
               is_background_out => pixel_is_background_out,
               is_foreground_out => pixel_is_foreground_out,
 
+              viciii_iomode => viciii_iomode,
+              
               -- Get sprite collision info
               sprite_fg_map_final => vicii_sprite_bitmap_collision_map,
               sprite_map_final => vicii_sprite_sprite_collision_map,
@@ -1473,7 +1475,7 @@ begin
         register_num := x"FF";
       end if;    
       
-      if (register_bank=x"D0" or register_bank=x"D2") and register_page<4 then
+      if (register_bank=x"0D" and viciii_iomode="00") and register_page<4 then
         -- First 1KB of normal C64 IO space maps to r$0 - r$3F
         register_number(5 downto 0) := unsigned(fastio_addr(5 downto 0));        
         register_number(11 downto 6) := (others => '0');
@@ -1491,7 +1493,7 @@ begin
         end if;
         report "IO access resolves to video register number "
           & integer'image(to_integer(register_number)) severity note;        
-      elsif (register_bank = x"D1" or register_bank = x"D3") and register_page<4 then
+      elsif (register_bank=x"0D" and (viciii_iomode="01" or viciii_iomode="11")) and register_page<4 then
         register_number(11 downto 10) := "00";
         register_number(9 downto 8) := register_page(1 downto 0);
         register_number(7 downto 0) := register_num;
@@ -1508,8 +1510,7 @@ begin
       -- The colour RAM has to be dual-port since the video controller needs to
       -- access it as well, so all these have to be mapped on a single port.
       colour_ram_fastio_address <= (others => '1');
-      if register_bank = x"D0" or register_bank = x"D1"
-        or register_bank = x"D2" or register_Bank=x"D3" then
+      if register_bank = x"0D" then
         if register_page>=8 and register_page<12 then
                                         -- colour ram read $D800 - $DBFF
           colour_ram_fastio_address <= unsigned("000000" & fastio_addr(9 downto 0));
@@ -1973,7 +1974,7 @@ begin
       -- $DD00 video bank bits
       if fastio_write='1'
         -- Fastio IO addresses D{0,1,2,3}Dx0
-        and (fastio_addr(19 downto 16)=x"D")
+        and (fastio_addr(19 downto 12)=x"0D")
         and (fastio_addr(11 downto  8)=x"D")
         and (fastio_addr(3 downto 0) = x"0")
         and (fastio_addr(15 downto 14) = "00")
@@ -2125,7 +2126,7 @@ begin
           -- @IO:C64 $D020 Border colour
           -- @IO:C64 $D020.3-0 VIC-II display border colour (16 colour)
           -- @IO:C65 $D020.7-0 VIC-III/IV display border colour (256 colour)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             border_colour(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
           else
             border_colour <= unsigned(fastio_wdata);
@@ -2134,7 +2135,7 @@ begin
           -- @IO:C64 $D021 Screen colour
           -- @IO:C64 $D021.3-0 VIC-II screen colour (16 colour)
           -- @IO:C65 $D021.7-0 VIC-III/IV screen colour (256 colour)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             screen_colour(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
           else
             screen_colour <= unsigned(fastio_wdata);
@@ -2143,7 +2144,7 @@ begin
           -- @IO:C64 $D022 VIC-II multi-colour 1
           -- @IO:C64 $D022.3-0 VIC-II multi-colour 1 (16 colour)
           -- @IO:C65 $D022.7-0 VIC-III/IV multi-colour 1 (256 colour)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             multi1_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi1_colour <= unsigned(fastio_wdata);
@@ -2152,7 +2153,7 @@ begin
           -- @IO:C64 $D023 VIC-II multi-colour 2
           -- @IO:C64 $D023.3-0 VIC-II multi-colour 2 (16 colour)
           -- @IO:C65 $D023.7-0 VIC-III/IV multi-colour 2 (256 colour)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             multi2_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi2_colour <= unsigned(fastio_wdata);
@@ -2161,7 +2162,7 @@ begin
           -- @IO:C64 $D024 VIC-II multi-colour 3
           -- @IO:C64 $D024.3-0 VIC-II multi-colour 3 (16 colour)
           -- @IO:C65 $D024.7-0 VIC-III/IV multi-colour 3 (256 colour)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             multi3_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
           else
             multi3_colour <= unsigned(fastio_wdata);
@@ -2181,7 +2182,7 @@ begin
           -- @IO:C64 $D02C VIC-II sprite 5 colour / 16-colour sprite transparency colour (lower nybl)
           -- @IO:C64 $D02D VIC-II sprite 6 colour / 16-colour sprite transparency colour (lower nybl)
           -- @IO:C64 $D02E VIC-II sprite 7 colour / 16-colour sprite transparency colour (lower nybl)
-          if (register_bank=x"D0" or register_bank=x"D2") then
+          if (viciii_iomode(1)='0') then
             sprite_colours(to_integer(register_number)-39)(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
           else
             sprite_colours(to_integer(register_number)-39) <= unsigned(fastio_wdata);

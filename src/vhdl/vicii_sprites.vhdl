@@ -108,6 +108,8 @@ entity vicii_sprites is
     signal sprite_fg_map_final : out std_logic_vector(7 downto 0);
     signal sprite_map_final : out std_logic_vector(7 downto 0);
 
+    signal viciii_iomode : in std_logic_vector(1 downto 0);
+
     -- We need the registers that describe the various sprites.
     -- We could pull these in from the VIC-IV, but that would mean that they
     -- would have to propogate within one pixelclock, which will be very
@@ -951,7 +953,7 @@ begin
         register_num := x"FF";
       end if;    
       
-      if (register_bank=x"D0" or register_bank=x"D2") and register_page<4 then
+      if register_bank=x"0D" and (viciii_iomode="00") and register_page<4 then
         -- First 1KB of normal C64 IO space maps to r$0 - r$3F
         register_number(5 downto 0) := unsigned(fastio_addr(5 downto 0));        
         register_number(11 downto 6) := (others => '0');
@@ -961,7 +963,7 @@ begin
         end if;
         report "IO access resolves to video register number "
           & integer'image(to_integer(register_number)) severity note;        
-      elsif (register_bank = x"D1" or register_bank = x"D3") and register_page<4 then
+      elsif register_bank=x"0D" and (viciii_iomode="01" or viciii_iomode="11") and register_page<4 then
         register_number(11 downto 10) := "00";
         register_number(9 downto 8) := register_page(1 downto 0);
         register_number(7 downto 0) := register_num;

@@ -38,10 +38,10 @@ entity iomapper is
         uart_monitor_char : out unsigned(7 downto 0);
         uart_monitor_char_valid : out std_logic := '0';
 
-        buffereduart_rx : inout std_logic := 'H';
+        buffereduart_rx : in std_logic := 'H';
         buffereduart_tx : out std_logic := '1';
         buffereduart_ringindicate : in std_logic;
-        buffereduart2_rx : inout std_logic := 'H';
+        buffereduart2_rx : in std_logic := 'H';
         buffereduart2_tx : out std_logic := '1';
         
         display_shift_out : out std_logic_vector(2 downto 0) := "000";
@@ -164,7 +164,7 @@ entity iomapper is
         hdmi_scl : inout std_logic := '1';
         hdmi_sda : inout std_logic := 'Z';
 
-        uart_rx : inout std_logic := 'H';
+        uart_rx : in std_logic;
         uart_tx : out std_logic;
 
         pixel_stream_in : in unsigned (7 downto 0);
@@ -435,6 +435,21 @@ architecture behavioral of iomapper is
 
   signal cpu_ethernet_stream : std_logic;
   
+  attribute mark_debug : string;
+  attribute mark_debug of kickstartcs: signal is "true";
+  attribute mark_debug of data_i: signal is "true";
+  attribute mark_debug of w: signal is "true";
+  attribute mark_debug of address: signal is "true";
+  attribute mark_debug of kickstart_address: signal is "true";
+  attribute mark_debug of sdcardio_cs: signal is "true";
+  attribute mark_debug of sdcardio_en: signal is "true";
+  attribute mark_debug of f011_cs: signal is "true";
+  attribute mark_debug of viciii_iomode : signal is "true";
+  
+  attribute mark_debug of sectorbuffercs: signal is "true";
+  attribute mark_debug of sectorbuffercs_fast: signal is "true";
+  attribute mark_debug of sector_buffer_mapped_read: signal is "true";
+  attribute mark_debug of chipselect_enables: signal is "true";
 begin
 
   block1: block
@@ -1158,6 +1173,7 @@ begin
   process (r,w,address,cia1portb_in,cia1porta_out,colourram_at_dc00,
            sector_buffer_mapped_read)
     variable temp : unsigned(19 downto 0);
+        
   begin  -- process
 
 --    data_o <= (others => 'H');
@@ -1183,8 +1199,7 @@ begin
       sectorbuffercs_fast <= '0';
       report "fastio address = $" & to_hstring(address) severity note;
       
-      if address(19 downto 16) = x"D"
-        and address(15 downto 14) = "00"
+      if address(19 downto 12) = x"0D"
         and address(11 downto 9)&'0' = x"E"
         and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' then
         sectorbuffercs <= sbcs_en;
@@ -1199,8 +1214,7 @@ begin
       end if;
 
       -- Same thing as above, but for the addr_fast bus, which is usually one clock ahead.
-      if addr_fast(19 downto 16) = x"D"
-        and addr_fast(15 downto 14) = "00"
+      if addr_fast(19 downto 12) = x"0D"
         and addr_fast(11 downto 9)&'0' = x"E"
         and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' then
         sectorbuffercs_fast <= sbcs_en;
@@ -1221,14 +1235,11 @@ begin
       -- Presumably repeated through to $D5FF.  But we will repeat to $D4FF only
       -- so that we can use $D500-$D5FF for other stuff.
       case address(19 downto 8) is
-        when x"D04" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
-        when x"D14" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
-        when x"D24" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
-        when x"D34" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
+        when x"0D4" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
         -- Some C64 dual-sid programs expect the 2nd sid to be at $D500, so
         -- we will make the SIDs visible at $D500 in c64 io context, and switched
         -- sides.
-        when x"D05" => leftsid_cs <= not address(6) and lscs_en; rightsid_cs <= address(6) and rscs_en;
+        when x"0D5" => leftsid_cs <= not address(6) and lscs_en; rightsid_cs <= address(6) and rscs_en;
         when others => leftsid_cs <= '0'; rightsid_cs <= '0';
       end case;
 
@@ -1242,21 +1253,19 @@ begin
       temp(1 downto 0) := "00";
       if address(7 downto 4) /= x"3" then
         case temp(15 downto 0) is
-          when x"D160" => c65uart_cs <= c65uart_en;
-          when x"D260" => c65uart_cs <= c65uart_en;
-          when x"D360" => c65uart_cs <= c65uart_en;
+          when x"0D60" => c65uart_cs <= c65uart_en;
           when others => c65uart_cs <= '0';
         end case;
       else
         c65uart_cs <= '0';
         -- $D630-$D63F is thumbnail generator
-        if address(19 downto 8) = x"D363" then
+        if address(19 downto 8) = x"0D63" then
           thumbnail_cs <= c65uart_en;
         else
           thumbnail_cs <= '0';
         end if;
       end if;
-      if address(19 downto 4) = x"D36E" then
+      if address(19 downto 4) = x"0D6E" then
         ethernet_cs <= ethernetcs_en;
       else
         ethernet_cs <= '0';
@@ -1270,18 +1279,14 @@ begin
       temp(15 downto 3) := unsigned(address(19 downto 7));
       temp(2 downto 0) := "000";
       case temp(15 downto 0) is
-        when x"D168" => sdcardio_cs <= sdcardio_en;
-        when x"D268" => sdcardio_cs <= sdcardio_en;
-        when x"D368" => sdcardio_cs <= sdcardio_en;
+        when x"0D68" => sdcardio_cs <= sdcardio_en;
         when others => sdcardio_cs <= '0';
       end case;
 
       temp(15 downto 3) := unsigned(addr_fast(19 downto 7));
       temp(2 downto 0) := "000";
       case temp(15 downto 0) is
-        when x"D168" => sdcardio_cs_fast <= sdcardio_en;
-        when x"D268" => sdcardio_cs_fast <= sdcardio_en;
-        when x"D368" => sdcardio_cs_fast <= sdcardio_en;
+        when x"0D68" => sdcardio_cs_fast <= sdcardio_en;
         when others => sdcardio_cs_fast <= '0';
       end case;
 
@@ -1289,18 +1294,14 @@ begin
       temp(15 downto 1) := unsigned(address(19 downto 5));
       temp(0) := '0';
       case temp(15 downto 0) is
-        when x"D108" => f011_cs <= sdcardio_en;
-        when x"D208" => f011_cs <= sdcardio_en;
-        when x"D308" => f011_cs <= sdcardio_en;
+        when x"0D08" => f011_cs <= sdcardio_en;
         when others => f011_cs <= '0';
       end case;
 
       -- Buffered UART registers at $D0Ex
       temp(15 downto 0) := unsigned(address(19 downto 4));
       case temp(15 downto 0) is
-        when x"D10E" => buffereduart_cs <= sdcardio_en;
-        when x"D20E" => buffereduart_cs <= sdcardio_en;
-        when x"D30E" => buffereduart_cs <= sdcardio_en;
+        when x"0D0E" => buffereduart_cs <= sdcardio_en;
         when others => buffereduart_cs <= '0';
       end case;
             
@@ -1321,14 +1322,8 @@ begin
       cia2cs <='0';
       if colourram_at_dc00='0' then
         case address(19 downto 8) is
-          when x"D0C" => cia1cs <=cia1cs_en;
-          when x"D1C" => cia1cs <=cia1cs_en;
-          when x"D2C" => cia1cs <=cia1cs_en;
-          when x"D3C" => cia1cs <=cia1cs_en;
-          when x"D0D" => cia2cs <=cia2cs_en;
-          when x"D1D" => cia2cs <=cia2cs_en;
-          when x"D2D" => cia2cs <=cia2cs_en;
-          when x"D3D" => cia2cs <=cia2cs_en;
+          when x"0DC" => cia1cs <=cia1cs_en;
+          when x"0DD" => cia2cs <=cia2cs_en;
           when others => null;
         end case;
       end if;
