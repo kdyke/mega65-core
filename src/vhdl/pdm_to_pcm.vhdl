@@ -61,9 +61,16 @@ architecture behavioural of pdm_to_pcm is
   signal infra_counter : integer := 0;
   signal infra_value : sample_t := 0;
   
+  signal recent_index : integer range 0 to 15 := 0;
+  signal rolling_index : integer range 0 to 15 := 0;
+  
 begin
   process (clock) is
     variable ny : std_logic_vector(1 downto 0);
+    variable oldest_rolling_sum : sample_t;
+    variable oldest_recent_sum : sample_t;
+    variable tmp : sample_t;
+    
   begin
     if rising_edge(clock) then
       if sample_clock='1' then
@@ -114,35 +121,40 @@ begin
         end case;
 
         -- Stage 2: Sum recent sums: Range is 0 - 10x31 = 310
-        for i in 15 downto 1 loop
-          recent_sums(i) <= recent_sums(i-1);
+--        for i in 15 downto 1 loop
+--          recent_sums(i) <= recent_sums(i-1);
 --              report "recent_sums(" & integer'image(i) & ") = "
 --              & integer'image(recent_sums(i-1));
-        end loop;            
-        recent_sums(0) <= sum;
-        if ( rolling_sum + sum ) > recent_sums(15) then
+--        end loop;
+        oldest_recent_sum := recent_sums(recent_index+1);
+        tmp := rolling_sum + sum;
+        if tmp >  oldest_recent_sum then
 --            report "rolling_sum <= " & integer'image(rolling_sum)
 --              & " + " & integer'image(sum)
 --              & " - " & integer'image(recent_sums(15));
-          rolling_sum <= rolling_sum + sum - recent_sums(15);
+          rolling_sum <= tmp - oldest_recent_sum;
         else
           rolling_sum <= 0;
         end if;
-
+        recent_sums(recent_index) <= sum;
+        recent_index <= recent_index + 1;
+        
         -- Stage 3: Sum those recent sums: Range is 0 to 13x10x31 = ~4K
-        for i in 15 downto 1 loop
-          rolling_sums(i) <= rolling_sums(i-1);
-        end loop;
-        rolling_sums(0) <= rolling_sum;
+--        for i in 15 downto 1 loop
+--          rolling_sums(i) <= rolling_sums(i-1);
+--        end loop;
         report "sum = " & integer'image(sum);
         report "sample_value = " & integer'image(sample_value);
         report "rolling_sum = " & integer'image(rolling_sum);
-        if ( sample_value + rolling_sum ) > rolling_sums(15) then
-          sample_value <= sample_value + rolling_sum - rolling_sums(15);
+        oldest_rolling_sum := rolling_sums(rolling_index+1);
+        tmp := sample_value + rolling_sum;
+        if tmp > oldest_rolling_sum then
+          sample_value <= tmp - oldest_rolling_sum;
         else
           sample_value <= 0;
         end if;
-
+        rolling_sums(rolling_index) <= rolling_sum;
+        rolling_index <= rolling_index + 1;
         -- Get most significant bits of the sample
         -- We shift it left one bit, as the microphone tends to be quite quiet
         sample_out(15 downto 1) <= to_unsigned(sample_value,15);
