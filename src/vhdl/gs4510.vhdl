@@ -5771,14 +5771,16 @@ begin
         
   		  long_address_write_var := long_address;
 		        
-  		  if long_address(19 downto 17)="00001" then
+  		  if long_address(19 downto 17)="001" then
   		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
   		    shadow_write_var := not rom_writeprotect;
   		    shadow_address_var := to_integer(long_address(19 downto 0));
-    		elsif long_address(19 downto 17)="00000" then
+    		elsif long_address(19 downto 17)="000"then
   		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
-  		    shadow_write_var := '1';
-  		    shadow_address_var := to_integer(long_address(19 downto 0));
+          if fastio_sel='0' then
+            shadow_write_var := '1';
+            shadow_address_var := to_integer(long_address(19 downto 0));
+          end if;
 
           -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
           -- when writing here.
