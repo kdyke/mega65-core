@@ -316,7 +316,7 @@ begin
 
     -- C65 DAT
     report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
-    if resolve_addr='1' and map_io='1' and temp_address(19 downto 3) & "000" = x"0D040" then
+    if map_io='1' and viciii_iomode(0)='1' and temp_address(19 downto 3) & "000" = x"0D040" then
       temp_address(19 downto 17) := (others => '0');
       temp_address(16) := temp_address(0); -- odd/even bitplane bank select
       -- Bit plane address
