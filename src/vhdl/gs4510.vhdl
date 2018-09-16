@@ -71,24 +71,15 @@ end entity address_resolver;
 --purpose: Convert a 16-bit C64 address to native RAM (or I/O or ROM) address
 architecture Behavioural of address_resolver is
 
-signal blocknum_sig : unsigned(3 downto 0);
-signal lhc_sig : std_logic_vector(4 downto 0);
-
 attribute keep : string;
 attribute keep_hierarchy : string;
 attribute mark_debug : string;
 attribute keep_hierarchy of Behavioural : architecture is "yes";
 
-attribute keep of short_address: signal is "true";
 attribute mark_debug of short_address: signal is "true";
 attribute mark_debug of extio_sel: signal is "true";
 attribute mark_debug of fastio_sel: signal is "true";
 attribute mark_debug of resolved_address: signal is "true";
-
-attribute keep of blocknum_sig: signal is "true";
-attribute mark_debug of blocknum_sig: signal is "true";
-attribute keep of lhc_sig: signal is "true";
-attribute mark_debug of lhc_sig: signal is "true";
 
 attribute mark_debug of cpuport_ddr: signal is "true";
 attribute mark_debug of cpuport_value: signal is "true";
@@ -116,14 +107,7 @@ begin
   variable reg_mb : unsigned(3 downto 0);
   variable map_io : std_logic;
   variable map_exp : std_logic;
-  
-  attribute mark_debug of map_io: variable is "true";
-  attribute mark_debug of blocknum: variable is "true";
-  attribute mark_debug of lhc: variable is "true";
-  attribute keep of map_io: variable is "true";
-  attribute keep of blocknum: variable is "true";
-  attribute keep of lhc: variable is "true";
-  
+    
   begin  -- resolve_long_address
 
     -- Now apply C64-style $01 lines first, because MAP and $D030 take precedence
@@ -137,9 +121,6 @@ begin
     lhc(2) := lhc(2) or (not cpuport_ddr(2));
     lhc(1) := lhc(1) or (not cpuport_ddr(1));
     lhc(0) := lhc(0) or (not cpuport_ddr(0));
-    
-    blocknum_sig <= short_address(15 downto 12);
-    lhc_sig <= lhc;
     
     if(writeP) then
       char_access_page := x"0";
@@ -918,8 +899,6 @@ architecture Behavioural of gs4510 is
   
   signal monitor_mem_trace_toggle_last : std_logic := '0';
 
-  signal dmagic_write_sig : std_logic;
-  
   -- Microcode data and ALU routing signals follow:
 
   signal mem_reading : std_logic := '0';
@@ -1489,7 +1468,6 @@ architecture Behavioural of gs4510 is
     
     attribute mark_debug of reg_opcode: signal is "true";
 
-    attribute keep of state: signal is "true";
     attribute mark_debug of state: signal is "true";
     
     attribute mark_debug of accessing_fastio: signal is "true";
@@ -1502,19 +1480,12 @@ architecture Behavioural of gs4510 is
     attribute mark_debug of proceed: signal is "true";
     attribute mark_debug of memory_access_resolve_address_next: signal is "true";
     
-    attribute keep of reg_dmagic_addr : signal is "true";
     attribute mark_debug of reg_dmagic_addr : signal is "true";
 
-    attribute keep of dmagic_src_addr : signal is "true";
     attribute mark_debug of dmagic_src_addr : signal is "true";
-    attribute keep of dmagic_dest_addr : signal is "true";
     attribute mark_debug of dmagic_dest_addr : signal is "true";
     
-    attribute keep of pre_dma_cpuport_bits : signal is "true";
     attribute mark_debug of pre_dma_cpuport_bits : signal is "true";
-    
-    attribute keep of dmagic_write_sig : signal is "true";
-    attribute mark_debug of dmagic_write_sig : signal is "true";
     
     attribute mark_debug of colour_ram_cs : signal is "true";
     attribute mark_debug of colourram_at_dc00 : signal is "true";
@@ -2293,8 +2264,6 @@ begin
         dmagic_write := '1';
       end if;
 
-      dmagic_write_sig <= dmagic_write;
-    
       -- Write to CPU port
       if (fastio_sel='0' and long_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
@@ -5227,7 +5196,6 @@ begin
           write_long_byte(memory_access_address,memory_access_wdata,fastio_sel,extio_sel);
         elsif memory_access_read='1' then 
           report "memory_access_read=1, addres=$"&to_hstring(memory_access_address) severity note;
-          dmagic_write_sig <= '0'; -- ugh
           read_long_address(memory_access_address,fastio_sel,extio_sel);
         end if;
       end if; -- if not reseting

@@ -938,23 +938,11 @@ architecture Behavioral of viciv is
   -- Indicates if the next 16 bit screen token will be a GOTO/GOSUB token
   signal next_token_is_goto : std_logic := '0';
 
-  signal register_bank_sig : unsigned(7 downto 0);
-  signal register_page_sig : unsigned(3 downto 0);
-  signal register_num_sig : unsigned(7 downto 0);
-  signal register_number_sig : unsigned(11 downto 0);
-  signal border_colour_written : std_logic;
-  
   attribute keep_hierarchy : string;
   attribute keep : string;
   attribute mark_debug : string;
   
-  attribute mark_debug of register_bank_sig : signal is "true";
-  attribute mark_debug of register_page_sig : signal is "true";
-  attribute mark_debug of register_num_sig : signal is "true";
-  attribute mark_debug of register_number_sig : signal is "true";
   attribute mark_debug of border_colour : signal is "true";
-  attribute keep of border_colour_written : signal is "true";
-  attribute mark_debug of border_colour_written : signal is "true";
   
 --  attribute keep_hierarchy of Behavioral : architecture is "yes";
 
@@ -1518,11 +1506,6 @@ begin
           & integer'image(to_integer(register_number)) severity note;
       end if;
 
-      register_bank_sig   <= register_bank;
-      register_page_sig   <= register_page;
-      register_num_sig    <= register_num;
-      register_number_sig <= register_number;
-
       -- $D800 - $DBFF colour RAM access.
       -- This is a bit fun, because colour RAM is mapped in 3 separate places:
       --   $D800 - $DBFF in the usual IO pages.
@@ -2029,7 +2012,6 @@ begin
       clear_collisionspritesprite <= clear_collisionspritesprite_1;
       
       -- $D000 registers
-      border_colour_written <= '0';
       if fastio_write='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then
         if register_number>=0 and register_number<8 then
@@ -2150,10 +2132,8 @@ begin
           -- @IO:C65 $D020.7-0 VIC-III/IV display border colour (256 colour)
           if (viciii_iomode(0)='0') then
             border_colour(3 downto 0) <= unsigned(fastio_wdata(3 downto 0));
-            border_colour_written <= '1';
           else
             border_colour <= unsigned(fastio_wdata);
-            border_colour_written <= '1';
           end if;
         elsif register_number=33 then
           -- @IO:C64 $D021 Screen colour
