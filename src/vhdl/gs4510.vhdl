@@ -5270,7 +5270,6 @@ begin
     
     variable shadow_address_var : integer range 0 to 1048575 := 0;
     variable shadow_write_var : std_logic := '0';
-    variable shadow_read_var : std_logic := '0';
     variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
 
     variable kickstart_address_var : std_logic_vector(13 downto 0);
@@ -5303,7 +5302,6 @@ begin
     
     variable address_op : address_op_t;
     
-    attribute mark_debug of shadow_read_var : variable is "true";
     attribute mark_debug of shadow_write_var : variable is "true";
     attribute mark_debug of address_op : variable is "true";
     attribute mark_debug of memory_access_resolve_address : variable is "true";
@@ -5331,7 +5329,6 @@ begin
     
     -- These always reset after each cycle though (no feedback loop)
     shadow_write_var := '0';
-    shadow_read_var := '0';
     
     fastio_addr_var := fastio_addr;
     fastio_addr_next <= fastio_addr;
@@ -5712,44 +5709,23 @@ begin
                 end if;
       end if;
       
+      -- Default shadow memory address is passthrough...
+	    shadow_address_var := to_integer(long_address(19 downto 0));
+      kickstart_address_var := std_logic_vector(long_address(13 downto 0));
+      
   		if memory_access_write='1' then
-  		  if
-  		    -- FF80000-FF807FF = 2KB colour RAM at times, which overlaps chip RAM
-  		    -- XXX - We don't handle the 2nd KB colour RAM at $DC00 when mapped
-  		    --(real_long_address(23 downto 12) = x"F80" and real_long_address(11) = '0')
-  		    --or
-  		    -- FFD[0-3]800-BFF
-  		    (real_long_address(19 downto 16) = x"8"
-  		     and real_long_address(15 downto 14) = "00"
-  		     and real_long_address(11 downto 10) = "10")
-  		  then
-  		    report "Writing to colour RAM";
-  		    -- Write to shadow RAM
-  		    -- shadow_write <= '0';
-
-  		    -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
-  		    long_address := x"80"&'0'&real_long_address(10 downto 0);
-
-  		    -- XXX What the heck is this remapping of $7F4xxxx -> colour RAM for?
-  		    -- Is this for creating a linear memory map for quick task swapping, or
-  		    -- something else? (PGS)
-          --elsif real_long_address(23 downto 16) = x"7F4" then
-  				--long_address := x"F80"&'0'&real_long_address(10 downto 0);
-        else
-  		    long_address := real_long_address;
-  		  end if;
+		    long_address := real_long_address;
         
   		  long_address_write_var := long_address;
 		        
   		  if long_address(19 downto 17)="001" then
   		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
   		    shadow_write_var := not rom_writeprotect;
-  		    shadow_address_var := to_integer(long_address(19 downto 0));
     		elsif long_address(19 downto 17)="000"then
   		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
+          -- Writes that don't hit I/O go to shadow memory
           if fastio_sel='0' then
             shadow_write_var := '1';
-            shadow_address_var := to_integer(long_address(19 downto 0));
           end if;
 
           -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
@@ -5764,44 +5740,24 @@ begin
           end if;
         end if;
         
-        -- Fast I/O or kickstart/charrom write accesses need to drive fastio address bus (for now, at least)
+        -- Fast I/O and kickstart/charrom write accesses need to drive fastio address bus (for now, at least)
+        -- Eventually we should always be able to drive the fastIO address bus signal and rely on chip select
+        -- logic to avoid false writes.   The CPU core shouldn't now about *any* of this stuff.
         if fastio_sel='1' or long_address(19 downto 14)&"00" = x"F8" or long_address(19 downto 12) = x"7E" then
           fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
         
       elsif memory_access_read='1' then
 		   
-  		  if real_long_address(19 downto 12) = x"1F" and real_long_address(11)='1' then
-  		    -- colour ram access: remap to $FF80000 - $FF807FF
-  		    long_address := x"80"&'0'&real_long_address(10 downto 0);
-  			  -- also remap to $7F40000 - $7F407FF
-          --elsif real_long_address(23 downto 16) = x"7F4" then
-				  --long_address := x"F80"&'0'&real_long_address(10 downto 0);
-        else
-  		    long_address := real_long_address;
-  		  end if;
-		  
+		    long_address := real_long_address;
+
   		  long_address_read_var := long_address;
 		  
-        if ((not long_address(19)) or chipram_1mb)='1' then
-          shadow_read_var := '1';
-          shadow_address_var := to_integer(long_address(19 downto 0));
-        end if;
-		   
-        if long_address(19 downto 14)&"00" = x"F8" then
-          kickstart_address_var := std_logic_vector(long_address(13 downto 0));
-        end if;
-     
         if fastio_sel='1' then
            fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
        
       end if;
-
-      --if shadow_address_var >= chipram_size then
-      --  shadow_address_var := 0;
-      --  shadow_write_var := '0';
-      --end if;
 
       shadow_address_next <= shadow_address_var;
       kickstart_address_next <= kickstart_address_var;
