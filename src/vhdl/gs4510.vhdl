@@ -5796,8 +5796,8 @@ begin
           end if;
         end if;
         
-        -- Fast I/O or kickstart write accesses need to drive fastio address bus (for now, at least)
-        if fastio_sel='1' or long_address(19 downto 14)&"00" = x"F8" then --
+        -- Fast I/O or kickstart/charrom write accesses need to drive fastio address bus (for now, at least)
+        if fastio_sel='1' or long_address(19 downto 14)&"00" = x"F8" or long_address(19 downto 12) = x"7E" then
           fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
         
