@@ -54,6 +54,9 @@ entity iomapper is
         fpga_temperature : in std_logic_vector(11 downto 0);
         address : in std_logic_vector(19 downto 0);
         addr_fast : in std_logic_vector(19 downto 0);
+        io_sel : in std_logic;
+        io_sel_next : in std_logic;
+        
         r : in std_logic;
         w : in std_logic;
         data_i : in std_logic_vector(7 downto 0);
@@ -435,6 +438,7 @@ architecture behavioral of iomapper is
 
   signal cpu_ethernet_stream : std_logic;
   
+  attribute keep : string;
   attribute mark_debug : string;
   attribute mark_debug of kickstartcs: signal is "true";
   attribute mark_debug of data_i: signal is "true";
@@ -445,6 +449,14 @@ architecture behavioral of iomapper is
   attribute mark_debug of sdcardio_en: signal is "true";
   attribute mark_debug of f011_cs: signal is "true";
   attribute mark_debug of viciii_iomode : signal is "true";
+
+  attribute keep of cia1cs : signal is "true";
+  attribute keep of cia2cs : signal is "true";
+  attribute mark_debug of cia1cs : signal is "true";
+  attribute mark_debug of cia2cs : signal is "true";
+
+  attribute mark_debug of io_sel : signal is "true";
+  attribute mark_debug of io_sel_next : signal is "true";
   
   attribute mark_debug of sectorbuffercs: signal is "true";
   attribute mark_debug of sectorbuffercs_fast: signal is "true";
@@ -1320,10 +1332,10 @@ begin
       -- being mapped in $DC00-$DFFF using the C65 2K colour ram register
       cia1cs <='0';
       cia2cs <='0';
-      if colourram_at_dc00='0' then
-        case address(19 downto 8) is
-          when x"0DC" => cia1cs <=cia1cs_en;
-          when x"0DD" => cia2cs <=cia2cs_en;
+      if colourram_at_dc00='0' and io_sel='1'then
+        case address(11 downto 8) is
+          when x"C" => cia1cs <=cia1cs_en;
+          when x"D" => cia2cs <=cia2cs_en;
           when others => null;
         end case;
       end if;

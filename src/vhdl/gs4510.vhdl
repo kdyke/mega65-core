@@ -61,7 +61,7 @@ entity address_resolver is
     rom_at_8000 : in std_logic;
     dat_bitplane_addresses : in sprite_vector_eight;
     dat_offset_drive : in unsigned(15 downto 0);
-    fastio_sel : out std_logic;
+    io_sel_resolved : out std_logic;
     extio_sel : out std_logic;
     resolved_address : out unsigned(19 downto 0)
     );
@@ -78,7 +78,7 @@ attribute keep_hierarchy of Behavioural : architecture is "yes";
 
 attribute mark_debug of short_address: signal is "true";
 attribute mark_debug of extio_sel: signal is "true";
-attribute mark_debug of fastio_sel: signal is "true";
+attribute mark_debug of io_sel_resolved: signal is "true";
 attribute mark_debug of resolved_address: signal is "true";
 
 attribute mark_debug of cpuport_ddr: signal is "true";
@@ -273,7 +273,7 @@ begin
       --temp_address(23 downto 20) := reg_mb;
       temp_address(19 downto 8) := reg_offset+to_integer(short_address(15 downto 8));
       report "mapped memory address is $" & to_hstring(temp_address) severity note;
-      fastio_sel <= '0'; -- Force this back off for mapped addresses so mapped addresses bypass I/O?
+      map_io := '0'; -- Force this back off for mapped addresses so mapped addresses bypass I/O?
     else
       temp_address(19 downto 12) := nonmapped_page;
     end if;
@@ -312,10 +312,10 @@ begin
 
     -- Temp hack.  Kill external select lines if address resolver is being bypassed.
     if resolve_addr='1' then
-      fastio_sel <= map_io;
+      io_sel_resolved <= map_io;
       extio_sel <= map_exp;
     else
-      fastio_sel <= '0';
+      io_sel_resolved <= '0';
       extio_sel <= '0';
     end if;
       
@@ -493,6 +493,8 @@ entity gs4510 is
     fastio_rdata : in std_logic_vector(7 downto 0);
     kickstart_rdata : in std_logic_vector(7 downto 0);
     kickstart_address_out : out std_logic_vector(13 downto 0);
+    io_sel_next_out : out std_logic := '0';
+    io_sel_out : inout std_logic := '0';
     
     sector_buffer_mapped : in std_logic;
     fastio_vic_rdata : in std_logic_vector(7 downto 0);
@@ -554,7 +556,7 @@ architecture Behavioural of gs4510 is
       rom_at_8000 : in std_logic;
       dat_bitplane_addresses : in sprite_vector_eight;
       dat_offset_drive : in unsigned(15 downto 0);
-      fastio_sel : out std_logic;
+      io_sel_resolved : out std_logic;
       extio_sel : out std_logic;
       resolved_address : out unsigned(19 downto 0)
       );
@@ -624,7 +626,8 @@ architecture Behavioural of gs4510 is
   
   signal fastio_addr_next : std_logic_vector(19 downto 0);
   
-  signal fastio_sel : std_logic;
+  signal io_sel_resolved : std_logic;
+  signal io_sel_next : std_logic;
   signal extio_sel : std_logic;
   
   signal read_data : unsigned(7 downto 0)  := (others => '0');
@@ -1789,7 +1792,7 @@ begin
     -- TODO - Boot all of this out of the CPU core, it doesn't belong here at all.
     procedure read_long_address(
       real_long_address : in unsigned(19 downto 0);
-      fastio_sel : in std_logic;
+      io_sel_next : in std_logic;
       extio_sel : in std_logic) is
       variable long_address : unsigned(19 downto 0);
     begin
@@ -1822,7 +1825,7 @@ begin
       -- Clear fastio access so that we don't keep reading/writing last IO address
       -- (this is bad when it is $DC0D for example, as it will stop IRQs from
       -- the CIA).
-      fastio_addr <= x"FFFFF"; fastio_write <= '0'; fastio_read <= '0';
+      fastio_addr <= x"FFFFF"; fastio_write <= '0'; fastio_read <= '0'; io_sel_out <= '0';
       
       the_read_address <= long_address;
 
@@ -1833,7 +1836,7 @@ begin
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if fastio_sel='1' and long_address(15 downto 6)&"00" = x"D64" and hypervisor_mode='1' then
+      if io_sel_next='1' and long_address(15 downto 6)&"00" = x"D64" and hypervisor_mode='1' then
         report "Preparing for reading hypervisor register";
         read_source <= HypervisorRegister;
         accessing_hypervisor <= '1';
@@ -1853,7 +1856,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= real_long_address(3 downto 0);
-      elsif (fastio_sel='1' and long_address = x"0d0a0") then
+      elsif (io_sel_next='1' and long_address = x"0d0a0") then
         accessing_cpuport <= '1';
         report "Preparing to read from CPU memory expansion controller port";
         read_source <= CPUPort;
@@ -1863,7 +1866,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= "0010";        
-      elsif fastio_sel='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then
+      elsif io_sel_next='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then
         -- Reading from chipram
         -- @ IO:C64 $00002-$0FFFF - 64KB RAM
         -- @ IO:C65 $10000-$1FFFF - 64KB RAM
@@ -1894,7 +1897,7 @@ begin
           & to_hstring(long_address(19 downto 0)) severity note;
                                         --Also mapped to 7F2 0000 - 7F3 FFFF
       -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
-      elsif fastio_sel='0' and hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8" then
+      elsif io_sel_next='0' and hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8" then
         fastio_read <= '0';
         accessing_fastio <= '0';
         accessing_rom <= '0';
@@ -1916,7 +1919,7 @@ begin
         else
           wait_states_non_zero <= '0';
         end if;
-      elsif fastio_sel='1' or long_address(19 downto 16) = x"8" then
+      elsif io_sel_next='1' or long_address(19 downto 16) = x"8" then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
         accessing_shadow <= '0';
@@ -1927,6 +1930,8 @@ begin
         accessing_kickstart_fastio <= '0';
 
         fastio_addr <= fastio_addr_next;
+        io_sel_out <= io_sel_next;
+        
         last_fastio_addr <= fastio_addr_next;
         fastio_read <= '1';
         proceed <= '0';
@@ -2174,7 +2179,7 @@ begin
     procedure write_long_byte(
       real_long_address       : in unsigned(19 downto 0);
       value              : in unsigned(7 downto 0);
-      fastio_sel : in std_logic;
+      io_sel_next : in std_logic;
       extio_sel : in std_logic) is
       variable long_address : unsigned(19 downto 0);
       variable dmagic_write : std_logic;
@@ -2207,7 +2212,7 @@ begin
 
       -- Set GeoRAM page (gets munged later with GeoRAM base and mask values
       -- provided by the hypervisor)
-      if fastio_sel='1' and real_long_address(19 downto 8) = x"0df" then
+      if io_sel_next='1' and real_long_address(19 downto 8) = x"0df" then
         if real_long_address(7 downto 0) = x"ff" then
           georam_block <= value;
         elsif real_long_address(7 downto 0) = x"fe" then
@@ -2221,7 +2226,7 @@ begin
         -- XXX Start REU job
         end if;
       end if;
-      if fastio_sel='1' and real_long_address(19 downto 8) = x"0df" then
+      if io_sel_next='1' and real_long_address(19 downto 8) = x"0df" then
         if real_long_address(7 downto 0) = x"01" then
           reu_cmd_autoload <= value(5);
           reu_cmd_ff00decode <= value(4);
@@ -2260,12 +2265,12 @@ begin
       last_write_address <= real_long_address;
       last_write_fastio <= '0';
       
-      if (fastio_sel='1' and (viciii_iomode="01" or viciii_iomode="11") and long_address(19 downto 8) = x"0D7") then        
+      if (io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and long_address(19 downto 8) = x"0D7") then        
         dmagic_write := '1';
       end if;
 
       -- Write to CPU port
-      if (fastio_sel='0' and long_address = x"000000") then
+      if (io_sel_next='0' and long_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
         if value = x"40" then
           force_fast <= '0';
@@ -2274,11 +2279,11 @@ begin
         else
           cpuport_ddr <= value;
         end if;
-      elsif (fastio_sel='0' and long_address = x"000001") then
+      elsif (io_sel_next='0' and long_address = x"000001") then
         report "MEMORY: Writing to CPU PORT register" severity note;
         cpuport_value <= value;
       -- Write to DMAgic registers if required
-      elsif (fastio_sel='1' and (viciii_iomode="01" or viciii_iomode="11") and long_address = x"0D0A0") then
+      elsif (io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and long_address = x"0D0A0") then
         -- @ IO:65 $D0A0 - C65 RAM Expansion controller
         -- The specifications of this interface is VERY under-documented.
         -- There are two versions: 512KB and 1MB - 8MB
@@ -2367,7 +2372,7 @@ begin
       -- Get the shadow RAM address on the bus fast to improve timing.
       shadow_wdata <= value;
       
-      if fastio_sel='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then      
+      if io_sel_next='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then      
         report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
         shadow_address <= shadow_address_next;
         -- Enforce write protect of 2nd 128KB of memory, if being used as ROM
@@ -2403,7 +2408,7 @@ begin
           fastio_addr(15 downto 11) <= (others => '0');
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
-      elsif fastio_sel='1' 
+      elsif io_sel_next='1' 
             or (hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8") 
             or long_address(19 downto 16) = x"8"
             or long_address(19 downto 12) = x"7E" then --
@@ -2411,11 +2416,12 @@ begin
         shadow_write <= '0';
         shadow_write_flags(2) <= '1';
         fastio_addr <= fastio_addr_next;
+        io_sel_out <= io_sel_next;
         last_fastio_addr <= fastio_addr_next;
         fastio_write <= '1'; fastio_read <= '0';
         report "raising fastio_write" severity note;
         fastio_wdata <= std_logic_vector(value);
-
+        
         -- Setup delayed write to hypervisor registers
         -- (this removes the fan-out to 64 more registers from being on the
         -- critical path.  The side-effect is that writing to hypervisor
@@ -5140,7 +5146,7 @@ begin
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
           
-          if (viciii_iomode="01" or viciii_iomode="11") and fastio_sel='1' and memory_access_address = x"0D700" then
+          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D700" then
             report "DMAgic: DMA pending";
             dma_pending <= '1';
             state <= DMAgicTrigger;
@@ -5156,7 +5162,7 @@ begin
             report "Setting PC to self (DMAgic entry)";
             reg_pc <= reg_pc;
           end if;
-          if (viciii_iomode="01" or viciii_iomode="11") and fastio_sel='1' and memory_access_address = x"0D705" then
+          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D705" then
             report "DMAgic: Enhanced DMA pending";
             dma_pending <= '1';
             state <= DMAgicTrigger;
@@ -5174,7 +5180,7 @@ begin
           end if;
 
                                         -- @IO:GS $D67F - Trigger trap to hypervisor
-          if viciii_iomode="11" and fastio_sel='1' and memory_access_address(19 downto 6)&"111111" = x"0D67F" then
+          if viciii_iomode="11" and io_sel_next='1' and memory_access_address(19 downto 6)&"111111" = x"0D67F" then
             hypervisor_trap_port(5 downto 0) <= memory_access_address(5 downto 0);
             hypervisor_trap_port(6) <= '0';
             if hypervisor_mode = '0' then
@@ -5193,10 +5199,10 @@ begin
                                         -- report "Setting PC to self (CPU port access)";
                                         -- reg_pc <= reg_pc;
           end if;
-          write_long_byte(memory_access_address,memory_access_wdata,fastio_sel,extio_sel);
+          write_long_byte(memory_access_address,memory_access_wdata,io_sel_next,extio_sel);
         elsif memory_access_read='1' then 
           report "memory_access_read=1, addres=$"&to_hstring(memory_access_address) severity note;
-          read_long_address(memory_access_address,fastio_sel,extio_sel);
+          read_long_address(memory_access_address,io_sel_next,extio_sel);
         end if;
       end if; -- if not reseting
     end if;                         -- if rising edge of clock
@@ -5219,7 +5225,7 @@ begin
   monitor_map_offset_high <= reg_offset_high; 
   monitor_map_enables_low <= std_logic_vector(reg_map(3 downto 0)); 
   monitor_map_enables_high <= std_logic_vector(reg_map(7 downto 4)); 
-  
+    
   address_resolver0 : entity work.address_resolver port map(
     short_address => pre_resolve_memory_access_address,
     writeP => pre_resolve_memory_access_write,
@@ -5244,7 +5250,7 @@ begin
     rom_at_8000 => rom_at_8000,
     dat_bitplane_addresses => dat_bitplane_addresses,
     dat_offset_drive => dat_offset_drive,
-    fastio_sel => fastio_sel,
+    io_sel_resolved => io_sel_resolved,
     extio_sel => extio_sel,
     resolved_address => post_resolve_memory_access_address
   );
@@ -5259,7 +5265,7 @@ begin
     read_data,shadow_wdata,shadow_address,kickstart_address,
     rom_writeprotect,georam_page, fastio_addr,
     kickstart_address_next, post_resolve_memory_access_address, georam_blockmask,
-    shadow_address_next, read_source, fastio_addr_next, fastio_sel, extio_sel
+    shadow_address_next, read_source, fastio_addr_next, io_sel_next, extio_sel
     )
     variable memory_access_address : unsigned(19 downto 0) := x"FFFFF";
     variable memory_access_read : std_logic := '0';
@@ -5271,7 +5277,8 @@ begin
     variable shadow_address_var : integer range 0 to 1048575 := 0;
     variable shadow_write_var : std_logic := '0';
     variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
-
+    variable io_sel_next_var : std_logic := '0';
+    
     variable kickstart_address_var : std_logic_vector(13 downto 0);
     variable fastio_addr_var : std_logic_vector(19 downto 0);
 
@@ -5338,7 +5345,7 @@ begin
     shadow_address_next <= shadow_address;
     shadow_wdata_next <= shadow_wdata;
     kickstart_address_next <= kickstart_address;
-
+        
     shadow_address_var := shadow_address;
 
     long_address_write_var := x"FFFFF";
@@ -5355,6 +5362,9 @@ begin
     pre_resolve_memory_access_write <= false;
     temp_addr := x"0000";
 
+    -- This holds current value until we are ready to move on.
+    io_sel_next_var := io_sel_out;
+
     if proceed = '1' then
     
       -- By default read next byte in instruction stream.
@@ -5362,7 +5372,7 @@ begin
       memory_access_write := '0';
       memory_access_resolve_address := '1';
       address_op := addr_op_pc;
-      
+            
       fastio_addr_var := x"FFFFF";
           
   		case state is
@@ -5696,7 +5706,10 @@ begin
       
 		  if memory_access_resolve_address = '1' then
 		    memory_access_address := post_resolve_memory_access_address; --resolve_address_to_long(memory_access_address(15 downto 0),true);
-		  end if;
+        io_sel_next_var := io_sel_resolved;
+      else
+        io_sel_next_var := '0';
+      end if;      
       
 		  real_long_address := memory_access_address;
 
@@ -5724,7 +5737,7 @@ begin
     		elsif long_address(19 downto 17)="000"then
   		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
           -- Writes that don't hit I/O go to shadow memory
-          if fastio_sel='0' then
+          if io_sel_next_var='0' then
             shadow_write_var := '1';
           end if;
 
@@ -5743,7 +5756,7 @@ begin
         -- Fast I/O and kickstart/charrom write accesses need to drive fastio address bus (for now, at least)
         -- Eventually we should always be able to drive the fastIO address bus signal and rely on chip select
         -- logic to avoid false writes.   The CPU core shouldn't now about *any* of this stuff.
-        if fastio_sel='1' or long_address(19 downto 14)&"00" = x"F8" or long_address(19 downto 12) = x"7E" then
+        if io_sel_next_var='1' or long_address(19 downto 14)&"00" = x"F8" or long_address(19 downto 12) = x"7E" then
           fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
         
@@ -5753,7 +5766,7 @@ begin
 
   		  long_address_read_var := long_address;
 		  
-        if fastio_sel='1' then
+        if io_sel_next_var='1' then
            fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
        
@@ -5761,6 +5774,7 @@ begin
 
       shadow_address_next <= shadow_address_var;
       kickstart_address_next <= kickstart_address_var;
+      io_sel_next <= io_sel_next_var;
       
     end if;
 
@@ -5792,7 +5806,8 @@ begin
 
     kickstart_address_out <= kickstart_address_next;
     fastio_addr_fast <= fastio_addr_next;
-  
+    io_sel_next_out <= io_sel_next;
+    
   end process;
 
   -- read_data input mux

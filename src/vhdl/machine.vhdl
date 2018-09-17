@@ -435,6 +435,8 @@ architecture Behavioral of machine is
   signal fastio_rdata : std_logic_vector(7 downto 0);
   signal kickstart_rdata : std_logic_vector(7 downto 0);
   signal kickstart_address : std_logic_vector(13 downto 0);
+  signal io_sel_next : std_logic;
+  signal io_sel : std_logic;
   
   signal fastio_vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
@@ -959,7 +961,9 @@ begin
       kickstart_address_out => kickstart_address,
       colour_ram_cs => colour_ram_cs,
       charrom_write_cs => charrom_write_cs,
-
+      io_sel_next_out => io_sel_next,
+      io_sel_out => io_sel,
+      
       viciii_iomode => viciii_iomode,
       
       colourram_at_dc00 => colourram_at_dc00,
@@ -1255,6 +1259,9 @@ begin
       restore_nmi => restore_nmi,
       address => fastio_addr,
       addr_fast => fastio_addr_fast,
+      io_sel_next => io_sel_next,
+      io_sel => io_sel,
+      
       r => fastio_read, w => fastio_write,
       data_i => fastio_wdata, data_o => fastio_rdata,
       kickstart_rdata => kickstart_rdata,
