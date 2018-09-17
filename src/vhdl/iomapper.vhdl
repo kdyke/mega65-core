@@ -1199,6 +1199,7 @@ begin
       -- @IO:GS $FFF8110 Hypervisor entry point on FDC read (when virtualised) (trap $44)
       -- @IO:GS $FFF8114 Hypervisor entry point on FDC write (when virtualised) (trap $45)
       
+      -- FIXME - gs4510 already knows when kickstart is being accessed.
       if address(19 downto 14)&"00" = x"F8" then
         kickstartcs <= cpu_hypervisor_mode;
       else
@@ -1211,9 +1212,8 @@ begin
       sectorbuffercs_fast <= '0';
       report "fastio address = $" & to_hstring(address) severity note;
       
-      if address(19 downto 12) = x"0D"
-        and address(11 downto 9)&'0' = x"E"
-        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' then
+      if address(11 downto 9)&'0' = x"E"
+        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' and io_sel='1' then
         sectorbuffercs <= sbcs_en;
         report "selecting SD card sector buffer" severity note;
       end if;
@@ -1221,14 +1221,13 @@ begin
       -- VIC-IV IO mode and mapping of colour RAM
       -- @ IO:GS $FFD6E00-FFF - SD card direct access sector buffer
       -- @ IO:GS $FFD6C00-DFF - F011 floppy controller sector buffer
-      if address(19 downto 12) = x"D6" then
-        sectorbuffercs <= sbcs_en;
-      end if;
+      --if address(19 downto 12) = x"D6" then
+      --  sectorbuffercs <= sbcs_en;
+      --end if;
 
       -- Same thing as above, but for the addr_fast bus, which is usually one clock ahead.
-      if addr_fast(19 downto 12) = x"0D"
-        and addr_fast(11 downto 9)&'0' = x"E"
-        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' then
+      if addr_fast(11 downto 9)&'0' = x"E"
+        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' and io_sel_next='1' then
         sectorbuffercs_fast <= sbcs_en;
         report "selecting SD card sector buffer" severity note;
       end if;
@@ -1236,9 +1235,9 @@ begin
       -- VIC-IV IO mode and mapping of colour RAM
       -- @ IO:GS $FFD6E00-FFF - SD card direct access sector buffer
       -- @ IO:GS $FFD6C00-DFF - F011 floppy controller sector buffer
-      if addr_fast(19 downto 12) = x"D6" then
-        sectorbuffercs_fast <= sbcs_en;
-      end if;
+      --if addr_fast(19 downto 12) = x"D6" and io_sel_next then
+      --  sectorbuffercs_fast <= sbcs_en;
+      --end if;
 
       -- Now map the SIDs
       -- @IO:C64 $D440-$D47F = left SID
@@ -1246,12 +1245,12 @@ begin
       -- @IO:C64 $D480-$D4FF = repeated images of SIDs
       -- Presumably repeated through to $D5FF.  But we will repeat to $D4FF only
       -- so that we can use $D500-$D5FF for other stuff.
-      case address(19 downto 8) is
-        when x"0D4" => leftsid_cs <= address(6) and lscs_en; rightsid_cs <= not address(6) and rscs_en;
+      case address(11 downto 8) is
+        when x"4" => leftsid_cs <= address(6) and lscs_en and io_sel; rightsid_cs <= not address(6) and rscs_en and io_sel;
         -- Some C64 dual-sid programs expect the 2nd sid to be at $D500, so
         -- we will make the SIDs visible at $D500 in c64 io context, and switched
         -- sides.
-        when x"0D5" => leftsid_cs <= not address(6) and lscs_en; rightsid_cs <= address(6) and rscs_en;
+        when x"5" => leftsid_cs <= not address(6) and lscs_en and io_sel; rightsid_cs <= address(6) and rscs_en and io_sel;
         when others => leftsid_cs <= '0'; rightsid_cs <= '0';
       end case;
 
@@ -1264,20 +1263,20 @@ begin
       temp(15 downto 2) := unsigned(address(19 downto 6));
       temp(1 downto 0) := "00";
       if address(7 downto 4) /= x"3" then
-        case temp(15 downto 0) is
-          when x"0D60" => c65uart_cs <= c65uart_en;
+        case temp(7 downto 0) is
+          when x"60" => c65uart_cs <= c65uart_en and io_sel;
           when others => c65uart_cs <= '0';
         end case;
       else
         c65uart_cs <= '0';
         -- $D630-$D63F is thumbnail generator
-        if address(19 downto 8) = x"0D63" then
+        if address(11 downto 4) = x"63" and io_sel='1' then
           thumbnail_cs <= c65uart_en;
         else
           thumbnail_cs <= '0';
         end if;
       end if;
-      if address(19 downto 4) = x"0D6E" then
+      if address(11 downto 4) = x"6E" and io_sel='1' then
         ethernet_cs <= ethernetcs_en;
       else
         ethernet_cs <= '0';
@@ -1290,30 +1289,30 @@ begin
       -- uses $D680 - $D6FF
       temp(15 downto 3) := unsigned(address(19 downto 7));
       temp(2 downto 0) := "000";
-      case temp(15 downto 0) is
-        when x"0D68" => sdcardio_cs <= sdcardio_en;
+      case temp(7 downto 0) is
+        when x"68" => sdcardio_cs <= sdcardio_en and io_sel;
         when others => sdcardio_cs <= '0';
       end case;
 
       temp(15 downto 3) := unsigned(addr_fast(19 downto 7));
       temp(2 downto 0) := "000";
-      case temp(15 downto 0) is
-        when x"0D68" => sdcardio_cs_fast <= sdcardio_en;
+      case temp(7 downto 0) is
+        when x"68" => sdcardio_cs_fast <= sdcardio_en and io_sel;
         when others => sdcardio_cs_fast <= '0';
       end case;
 
       -- F011 emulation registers
       temp(15 downto 1) := unsigned(address(19 downto 5));
       temp(0) := '0';
-      case temp(15 downto 0) is
-        when x"0D08" => f011_cs <= sdcardio_en;
+      case temp(7 downto 0) is
+        when x"08" => f011_cs <= sdcardio_en and io_sel;
         when others => f011_cs <= '0';
       end case;
 
       -- Buffered UART registers at $D0Ex
       temp(15 downto 0) := unsigned(address(19 downto 4));
-      case temp(15 downto 0) is
-        when x"0D0E" => buffereduart_cs <= sdcardio_en;
+      case temp(7 downto 0) is
+        when x"0E" => buffereduart_cs <= sdcardio_en and io_sel;
         when others => buffereduart_cs <= '0';
       end case;
             
