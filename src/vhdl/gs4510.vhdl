@@ -639,30 +639,6 @@ architecture Behavioural of gs4510 is
   -- bit 7 = indicate error status?
   signal rec_status : unsigned(7 downto 0) := x"80";
   
-  -- GeoRAM emulation: by default point it the 128KB of extra memory at the
-  -- 256KB mark
-  -- georam_page is the address x 256, so 256KB = page $400
-  signal georam_page : unsigned(19 downto 0) := x"00400";
-  -- GeoRAM is organised in 16KB blocks.  The block mask is thus in units of 16KB.
-  -- Note that a 128KB GeoRAM is not standard, and some software may think it
-  -- is 512KB, which will of course cause problems.
-  signal georam_blockmask : unsigned(7 downto 0) := to_unsigned(128/16,8);
-  signal georam_block : unsigned(7 downto 0) := x"00";
-  signal georam_blockpage : unsigned(7 downto 0) := x"00";
-
-  -- REU emulation
-  signal reu_reg_status : unsigned(7 downto 0) := x"00"; -- read only
-  signal reu_cmd_autoload : std_logic := '0';
-  signal reu_cmd_ff00decode : std_logic := '0';
-  signal reu_cmd_operation : std_logic_vector(1 downto 0) := "00";
-  signal reu_c64_startaddr : unsigned(15 downto 0) := x"0000";
-  signal reu_reu_startaddr : unsigned(19 downto 0) := x"00000";
-  signal reu_transfer_length : unsigned(15 downto 0) := x"0000";
-  signal reu_useless_interrupt_mask : unsigned(7 downto 5) := "000";
-  signal reu_hold_c64_address : std_logic := '0';
-  signal reu_hold_reu_address : std_logic := '0';
-  signal reu_ff00_pending : std_logic := '0';
-
   signal last_fastio_addr : std_logic_vector(19 downto 0)  := (others => '0');
   signal last_write_address : unsigned(19 downto 0)  := (others => '0');
   signal shadow_write_flags : unsigned(3 downto 0) := "0000";
@@ -2109,8 +2085,6 @@ begin
             when "011001" =>
               return "0000000"&virtualise_sd;
               
-            when "110000" => return georam_page(19 downto 12);
-            when "110001" => return georam_blockmask;
             --$D672 - Protected Hardware
             when "110010" => return hyper_protected_hardware;
                              
@@ -2208,56 +2182,6 @@ begin
         wait_states_non_zero <= '1';
       else
         wait_states_non_zero <= '0';
-      end if;
-
-      -- Set GeoRAM page (gets munged later with GeoRAM base and mask values
-      -- provided by the hypervisor)
-      if io_sel_next='1' and real_long_address(19 downto 8) = x"0df" then
-        if real_long_address(7 downto 0) = x"ff" then
-          georam_block <= value;
-        elsif real_long_address(7 downto 0) = x"fe" then
-          georam_blockpage <= value;
-        end if;
-      end if;
-
-      -- And REU registers
-      if real_long_address(15 downto 0) = x"ff00" then
-        if reu_ff00_pending = '1' then
-        -- XXX Start REU job
-        end if;
-      end if;
-      if io_sel_next='1' and real_long_address(19 downto 8) = x"0df" then
-        if real_long_address(7 downto 0) = x"01" then
-          reu_cmd_autoload <= value(5);
-          reu_cmd_ff00decode <= value(4);
-          reu_cmd_operation <= std_logic_vector(value(1 downto 0));
-          if value(7)='1' and value(4)='0' then
-          -- XXX Start REU job by copying REU registers to DMAgic registers,
-          -- setting REU job flag and starting the job.
-          elsif value(7)='1' and value(4)='1' then
-            -- XXX Defer starting REU job until $FF00 is written
-            reu_ff00_pending <= '1';
-          end if;
-        elsif real_long_address(7 downto 0) = x"02" then
-          reu_c64_startaddr(7 downto 0) <= value;
-        elsif real_long_address(7 downto 0) = x"03" then
-          reu_c64_startaddr(15 downto 8) <= value;
-        elsif real_long_address(7 downto 0) = x"04" then
-          reu_c64_startaddr(7 downto 0) <= value;
-        elsif real_long_address(7 downto 0) = x"05" then
-          reu_reu_startaddr(15 downto 8) <= value;
-          --elsif real_long_address(11 downto 0) = x"f06" then
-          --reu_reu_startaddr(23 downto 16) <= value;
-        elsif real_long_address(7 downto 0) = x"07" then
-          reu_transfer_length(7 downto 0) <= value;
-        elsif real_long_address(7 downto 0) = x"08" then
-          reu_transfer_length(15 downto 8) <= value;
-        elsif real_long_address(7 downto 0) = x"09" then
-          reu_useless_interrupt_mask(7 downto 5) <= value(7 downto 5);
-        elsif real_long_address(7 downto 0) = x"0a" then
-          reu_hold_c64_address <= value(7);
-          reu_hold_reu_address <= value(6);
-        end if;        
       end if;
 
       long_address := long_address_write;
@@ -2907,10 +2831,6 @@ begin
         timing6502 <= '0';
       end if;
       
-                                        -- Work out actual georam page
-      georam_page(5 downto 0) <= georam_blockpage(5 downto 0);
-      georam_page(13 downto 6) <= georam_block and georam_blockmask;
-
                                         -- If the serial monitor interface has received the character, we can clear
                                         -- our temporary busy flag, then rely upon the serial monitor to deassert
                                         -- the "monitor_char_busy" signal when it has finished sending the char,
@@ -3033,14 +2953,6 @@ begin
         if last_write_address = x"0D659" and hypervisor_mode='1' then
           virtualise_sd <= last_value(0);
         end if;
-                                        -- @IO:GS $D670 - Hypervisor GeoRAM base address (x MB)
-        if last_write_address = x"0D670" and hypervisor_mode='1' then
-          georam_page(19 downto 12) <= last_value;
-        end if;
-                                        -- @IO:GS $D671 - Hypervisor GeoRAM address mask (applied to GeoRAM block register)
-        if last_write_address = x"0D671" and hypervisor_mode='1' then
-          georam_blockmask <= last_value;
-        end if;   
         
                                         -- @IO:GS $D672 - Protected Hardware configuration
                                         -- @IO:GS $D672.6 - Enable composited Matrix Mode, and disable UART access to serial monitor.
@@ -5263,8 +5175,8 @@ begin
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
     dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,shadow_rdata,proceed,
     read_data,shadow_wdata,shadow_address,kickstart_address,
-    rom_writeprotect,georam_page, fastio_addr,
-    kickstart_address_next, post_resolve_memory_access_address, georam_blockmask,
+    rom_writeprotect,fastio_addr,
+    kickstart_address_next, post_resolve_memory_access_address,
     shadow_address_next, read_source, fastio_addr_next, io_sel_next, extio_sel
     )
     variable memory_access_address : unsigned(19 downto 0) := x"FFFFF";
@@ -5713,15 +5625,6 @@ begin
       
 		  real_long_address := memory_access_address;
 
-      if 1 = 0 then
-		  -- Remap GeoRAM memory accesses
-		  if real_long_address(23 downto 16) = x"FD"
-		    and real_long_address(11 downto 8)= x"E"
-                  and georam_blockmask /= x"00" then
-		    long_address := georam_page&real_long_address(7 downto 0);
-                end if;
-      end if;
-      
       -- Default shadow memory address is passthrough...
 	    long_address := real_long_address;
 
