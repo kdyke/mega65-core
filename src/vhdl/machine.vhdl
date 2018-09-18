@@ -253,25 +253,7 @@ entity machine is
 
          uart_rx : inout std_logic;
          uart_tx : out std_logic;
-         
-         -- CPU block ram debug
-         -- Debugging
-         debug_address_w_dbg_out : out std_logic_vector(16 downto 0);
-         debug_address_r_dbg_out : out std_logic_vector(16 downto 0);
-         debug_rdata_dbg_out : out std_logic_vector(7 downto 0);
-         debug_wdata_dbg_out : out std_logic_vector(7 downto 0);
-         debug_write_dbg_out : out std_logic;
-         debug_read_dbg_out : out std_logic;
-         rom_address_i_dbg_out : out std_logic_vector(16 downto 0);
-         rom_address_o_dbg_out : out std_logic_vector(16 downto 0);
-         rom_address_rdata_dbg_out : out std_logic_vector(7 downto 0);
-         rom_address_wdata_dbg_out : out std_logic_vector(7 downto 0);
-         rom_address_write_dbg_out : out std_logic;
-         rom_address_read_dbg_out : out std_logic;
-         debug8_state_out : out std_logic_vector(7 downto 0);
-         debug4_state_out : out std_logic_vector(3 downto 0);
-         proceed_dbg_out : out std_logic;
-         
+                  
          ----------------------------------------------------------------------
          -- Debug interfaces on Nexys4 board
          ----------------------------------------------------------------------
@@ -863,16 +845,6 @@ begin
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
 
-      debug_address_w_dbg_out => debug_address_w_dbg_out,
-      debug_address_r_dbg_out => debug_address_r_dbg_out,
-      debug_rdata_dbg_out => debug_rdata_dbg_out,
-      debug_wdata_dbg_out => debug_wdata_dbg_out,
-      debug_write_dbg_out => debug_write_dbg_out,
-      debug_read_dbg_out => debug_read_dbg_out,
-      debug4_state_out => debug4_state_out,
-      
-      proceed_dbg_out => proceed_dbg_out,
-      
       irq_hypervisor => sw(4 downto 2),    -- JBM
       
       -- Hypervisor signals: we need to tell kickstart memory whether
@@ -1707,9 +1679,6 @@ begin
     end if;
   end process;
   
-  debug8_state_out <= std_logic_vector(monitor_state(15 downto 8));
---  debug4_state_out <= (others => '0');
-
   UART_TXD<=uart_txd_sig; 
   
 end Behavioral;

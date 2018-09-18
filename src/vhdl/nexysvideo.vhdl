@@ -164,20 +164,7 @@ entity container is
 --         ddr2_dq        : inout std_logic_vector(15 downto 0);
 --         ddr2_dqs_p     : inout std_logic_vector(1 downto 0);
 --         ddr2_dqs_n     : inout std_logic_vector(1 downto 0);
-         
--- FMC Debug interfaces
-        addr_o_dbg : out std_logic_vector(15 downto 0);
-        addr_i_dbg : out std_logic_vector(15 downto 0);
-        addr_w_dbg : out std_logic;
-        addr_r_dbg : out std_logic;
-        addr_read : out std_logic_vector(7 downto 0);
-        addr_write : out std_logic_vector(7 downto 0);
-        cpu_state : out std_logic_vector(7 downto 0);
-        addr_state : out std_logic_vector(3 downto 0);
-        proceed_dbg_out  : out std_logic;
-       
-        addr_clk : out std_logic;
-        
+                 
          ----------------------------------------------------------------------
          -- Debug interfaces on Nexys4 board
          ----------------------------------------------------------------------
@@ -371,23 +358,6 @@ end component;
   signal sawtooth_phase : integer := 0;
   signal sawtooth_counter : integer := 0;
   signal sawtooth_level : integer := 0;
-  
-  -- Debugging
-  signal debug_address_w_dbg_out : std_logic_vector(16 downto 0);
-  signal debug_address_r_dbg_out : std_logic_vector(16 downto 0);
-  signal debug_rdata_dbg_out : std_logic_vector(7 downto 0);
-  signal debug_wdata_dbg_out : std_logic_vector(7 downto 0);
-  signal debug_write_dbg_out : std_logic;
-  signal debug_read_dbg_out : std_logic;
-  signal rom_address_i_dbg_out : std_logic_vector(16 downto 0);
-  signal rom_address_o_dbg_out : std_logic_vector(16 downto 0);
-  signal rom_address_rdata_dbg_out : std_logic_vector(7 downto 0);
-  signal rom_address_wdata_dbg_out : std_logic_vector(7 downto 0);
-  signal rom_address_write_dbg_out : std_logic;
-  signal rom_address_read_dbg_out : std_logic;
-  signal debug8_state_out : std_logic_vector(7 downto 0);
-  signal debug4_state_out : std_logic_vector(3 downto 0);
-  signal sdcardio_cs : std_logic;
   
 begin
   
@@ -634,24 +604,7 @@ begin
 
       UART_TXD => UART_TXD,
       RsRx => RsRx,
-      
-          -- debug
-          debug_address_w_dbg_out => debug_address_w_dbg_out,
-          debug_address_r_dbg_out => debug_address_r_dbg_out,
-          debug_rdata_dbg_out => debug_rdata_dbg_out,
-          debug_wdata_dbg_out => debug_wdata_dbg_out,
-          debug_write_dbg_out => debug_write_dbg_out,
-          debug_read_dbg_out => debug_read_dbg_out,
-          rom_address_i_dbg_out => rom_address_i_dbg_out,
-          rom_address_o_dbg_out => rom_address_o_dbg_out,
-          rom_address_rdata_dbg_out => rom_address_rdata_dbg_out,
-          rom_address_wdata_dbg_out => rom_address_wdata_dbg_out,
-          rom_address_write_dbg_out => rom_address_write_dbg_out,
-          rom_address_read_dbg_out => rom_address_read_dbg_out,
-          debug8_state_out => debug8_state_out,
-          debug4_state_out => debug4_state_out,
-          proceed_dbg_out => proceed_dbg_out,
-          
+                
       sseg_ca => sseg_ca,
       sseg_an => sseg_an
       );
@@ -677,26 +630,7 @@ begin
   vga_blue_out(3 downto 0) <= std_logic_vector(vgablue(7 downto 4));
   vga_hsync_out <= hsync;
   vga_vsync_out <= vsync;
-  
-  addr_clk <= cpuclock;
-  addr_o_dbg(15 downto 0) <= debug_address_r_dbg_out(15 downto 0);
-  addr_i_dbg(15 downto 0) <= debug_address_w_dbg_out(15 downto 0);
-  addr_read <= debug_rdata_dbg_out;
-  addr_write <= debug_wdata_dbg_out;
-  addr_w_dbg <= debug_write_dbg_out;
-  addr_r_dbg <= debug_read_dbg_out;
-  
-  -- 12 bits of general purpose state for debugging, assigned by machine layer
-  addr_state(3 downto 0) <= debug4_state_out(3 downto 0);  
-  cpu_state(7 downto 0) <= debug8_state_out(7 downto 0);
-  
-  --addr_o_dbg(15 downto 0) <= "0011001000010000";  -- 3210 
-  --addr_i_dbg(15 downto 0) <= "0111011001010100";  -- 7654
-  --addr_read <= "10011000"; --debug_rdata_dbg_out;
-  --addr_write <= "10111010"; --debug_wdata_dbg_out;
-  --addr_w_dbg <= cpuclock;
-  --addr_r_dbg <= not cpuclock;
-  
+    
   process (cpuclock)
   begin
     if rising_edge(cpuclock) then
