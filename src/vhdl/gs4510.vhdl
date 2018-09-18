@@ -5723,11 +5723,12 @@ begin
       end if;
       
       -- Default shadow memory address is passthrough...
+	    long_address := real_long_address;
+
 	    shadow_address_var := to_integer(long_address(19 downto 0));
       kickstart_address_var := std_logic_vector(long_address(13 downto 0));
       
   		if memory_access_write='1' then
-		    long_address := real_long_address;
         
   		  long_address_write_var := long_address;
 		        
@@ -5762,8 +5763,6 @@ begin
         
       elsif memory_access_read='1' then
 		   
-		    long_address := real_long_address;
-
   		  long_address_read_var := long_address;
 		  
         if io_sel_next_var='1' then
