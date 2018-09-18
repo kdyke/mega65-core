@@ -1185,7 +1185,9 @@ begin
   process (r,w,address,cia1portb_in,cia1porta_out,colourram_at_dc00,
            sector_buffer_mapped_read)
     variable temp : unsigned(19 downto 0);
-        
+    variable c64mode : std_logic;
+    variable c65gsmode : std_logic;
+    
   begin  -- process
 
 --    data_o <= (others => 'H');
@@ -1206,6 +1208,9 @@ begin
         kickstartcs <='0';
       end if;
 
+      c64mode := not (viciii_iomode(1) or viciii_iomode(0));
+      c65gsmode := (viciii_iomode(1) and viciii_iomode(0));
+      
       -- sdcard sector buffer: only mapped if no colour ram @ $DC00, and if
       -- the sectorbuffer mapping flag is set
       sectorbuffercs <= '0';
@@ -1250,7 +1255,7 @@ begin
         -- Some C64 dual-sid programs expect the 2nd sid to be at $D500, so
         -- we will make the SIDs visible at $D500 in c64 io context, and switched
         -- sides.
-        when x"5" => leftsid_cs <= not address(6) and lscs_en and io_sel; rightsid_cs <= address(6) and rscs_en and io_sel;
+        when x"5" => leftsid_cs <= not address(6) and lscs_en and io_sel and c64mode; rightsid_cs <= address(6) and rscs_en and io_sel and c64mode;
         when others => leftsid_cs <= '0'; rightsid_cs <= '0';
       end case;
 
@@ -1264,19 +1269,19 @@ begin
       temp(1 downto 0) := "00";
       if address(7 downto 4) /= x"3" then
         case temp(7 downto 0) is
-          when x"60" => c65uart_cs <= c65uart_en and io_sel;
+          when x"60" => c65uart_cs <= c65uart_en and io_sel and not c64mode;
           when others => c65uart_cs <= '0';
         end case;
       else
         c65uart_cs <= '0';
         -- $D630-$D63F is thumbnail generator
-        if address(11 downto 4) = x"63" and io_sel='1' then
+        if address(11 downto 4) = x"63" and io_sel='1' and c65gsmode='1' then
           thumbnail_cs <= c65uart_en;
         else
           thumbnail_cs <= '0';
         end if;
       end if;
-      if address(11 downto 4) = x"6E" and io_sel='1' then
+      if address(11 downto 4) = x"6E" and io_sel='1'  and c65gsmode='1' then
         ethernet_cs <= ethernetcs_en;
       else
         ethernet_cs <= '0';
@@ -1290,14 +1295,14 @@ begin
       temp(15 downto 3) := unsigned(address(19 downto 7));
       temp(2 downto 0) := "000";
       case temp(7 downto 0) is
-        when x"68" => sdcardio_cs <= sdcardio_en and io_sel;
+        when x"68" => sdcardio_cs <= sdcardio_en and io_sel and not c64mode;
         when others => sdcardio_cs <= '0';
       end case;
 
       temp(15 downto 3) := unsigned(addr_fast(19 downto 7));
       temp(2 downto 0) := "000";
       case temp(7 downto 0) is
-        when x"68" => sdcardio_cs_fast <= sdcardio_en and io_sel;
+        when x"68" => sdcardio_cs_fast <= sdcardio_en and io_sel and not c64mode;
         when others => sdcardio_cs_fast <= '0';
       end case;
 
@@ -1305,14 +1310,14 @@ begin
       temp(15 downto 1) := unsigned(address(19 downto 5));
       temp(0) := '0';
       case temp(7 downto 0) is
-        when x"08" => f011_cs <= sdcardio_en and io_sel;
+        when x"08" => f011_cs <= sdcardio_en and io_sel and not c64mode;
         when others => f011_cs <= '0';
       end case;
 
       -- Buffered UART registers at $D0Ex
       temp(15 downto 0) := unsigned(address(19 downto 4));
       case temp(7 downto 0) is
-        when x"0E" => buffereduart_cs <= sdcardio_en and io_sel;
+        when x"0E" => buffereduart_cs <= sdcardio_en and io_sel and not c64mode;
         when others => buffereduart_cs <= '0';
       end case;
             
