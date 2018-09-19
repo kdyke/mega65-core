@@ -184,17 +184,17 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/pdm_to_pcm.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/kb_matrix_ram.vhdl"]"\
- "[file normalize "$origin_dir/src/verilog/6502_alu.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502_mux.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502_reg.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502_timing.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502_top.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502_ucode.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor_top.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor_mem.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor_ctrl.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor_bus.v"]"\
- "[file normalize "$origin_dir/src/verilog/asym_ram_sdp.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_alu.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_mux.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_reg.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_timing.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_top.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_ucode.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor/monitor_top.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor/monitor_mem.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor/monitor_ctrl.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor/monitor_bus.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor/asym_ram_sdp.v"]"\
 ]
 set imported_files [add_files -fileset sources_1 $files]
 
@@ -554,47 +554,47 @@ set file "vhdl/kb_matrix_ram.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "verilog/6502_alu.v"
+set file "verilog/6502/6502_alu.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502_mux.v"
+set file "verilog/6502/6502_mux.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502_reg.v"
+set file "verilog/6502/6502_reg.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502_timing.v"
+set file "verilog/6502/6502_timing.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502_top.v"
+set file "verilog/6502/6502_top.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502_ucode.v"
+set file "verilog/6502/6502_ucode.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor_top.v"
+set file "verilog/monitor/monitor_top.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor_mem.v"
+set file "verilog/monitor/monitor_mem.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor_ctrl.v"
+set file "verilog/monitor/monitor_ctrl.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor_bus.v"
+set file "verilog/monitor/monitor_bus.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/asym_ram_sdp.v"
+set file "verilog/monitor/asym_ram_sdp.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
