@@ -443,16 +443,13 @@ entity gs4510 is
     monitor_mem_trace_mode : in std_logic;
     monitor_mem_stage_trace_mode : in std_logic;
     monitor_mem_trace_toggle : in std_logic;
-          
-    ---------------------------------------------------------------------------
-    -- Interface to ChipRAM in video controller (just 128KB for now)
-    ---------------------------------------------------------------------------
-    chipram_we : OUT STD_LOGIC := '0';
 
-    chipram_clk : IN std_logic;
-    chipram_address : IN unsigned(19 DOWNTO 0) := to_unsigned(0,20);
-    chipram_dataout : OUT unsigned(7 DOWNTO 0);
-
+    -- Temporary external shadow ram bus
+    shadow_address_out : out integer range 0 to 1048575 := 0;
+    shadow_write_next : out std_logic := '0';
+    shadow_wdata_next : out  unsigned(7 downto 0)  := (others => '0');
+    shadow_rdata : in unsigned(7 downto 0)  := (others => '0');
+        
     cpu_leds : out std_logic_vector(3 downto 0);
 
     ---------------------------------------------------------------------------
@@ -597,16 +594,11 @@ architecture Behavioural of gs4510 is
   -- Shadow RAM control
   signal shadow_address : integer range 0 to 1048575 := 0;
   signal shadow_address_next : integer range 0 to 1048575 := 0;
-  
-  signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
+
   signal shadow_wdata : unsigned(7 downto 0)  := (others => '0');
-  signal shadow_wdata_next : unsigned(7 downto 0)  := (others => '0');
-  signal shadow_write_count : unsigned(7 downto 0)  := (others => '0');
-  signal shadow_no_write_count : unsigned(7 downto 0)  := (others => '0');
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_write : std_logic := '0';
-  signal shadow_write_next : std_logic := '0';
 
   signal kickstart_address : std_logic_vector(13 downto 0);
   signal kickstart_address_next : std_logic_vector(13 downto 0);
@@ -1444,19 +1436,6 @@ begin
 
   monitor_cpuport <= std_logic_vector(cpuport_value(2 downto 0));
   
-  shadowram0 : entity work.shadowram port map (
-    clkA      => clock,
-    addressa  => shadow_address_next,
-    wea       => shadow_write_next,
-    dia       => memory_access_wdata_next,
-    no_writes => shadow_no_write_count,
-    writes    => shadow_write_count,
-    doa       => shadow_rdata,
-    clkB      => chipram_clk,
-    addressb  => chipram_address,
-    dob       => chipram_dataout
-    );
-
   process(clock,reset,reg_a,reg_x,reg_y,reg_z,flag_c,phi0_export,all_pause)
     procedure disassemble_last_instruction is
       variable justification : side := RIGHT;
@@ -5626,7 +5605,9 @@ begin
     memory_access_write_next <= memory_access_write;
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
-        
+
+    shadow_address_out <= shadow_address_next;
+    shadow_wdata_next <= memory_access_wdata;
     shadow_write_next <= shadow_write_var;
     
     long_address_read <= long_address;

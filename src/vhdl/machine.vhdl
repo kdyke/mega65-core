@@ -419,6 +419,11 @@ architecture Behavioral of machine is
   signal kickstart_address : std_logic_vector(13 downto 0);
   signal io_sel_next : std_logic;
   signal io_sel : std_logic;
+
+  signal shadow_address_next : integer range 0 to 1048575 := 0;
+  signal shadow_write_next : std_logic := '0';
+  signal shadow_wdata_next : unsigned(7 downto 0)  := (others => '0');
+  signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
   
   signal fastio_vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
@@ -814,6 +819,17 @@ begin
     end if;
   end process;
   
+  shadowram0 : entity work.shadowram port map (
+    clkA      => cpuclock,
+    addressa  => shadow_address_next,
+    wea       => shadow_write_next,
+    dia       => shadow_wdata_next,
+    doa       => shadow_rdata,
+    clkB      => pixelclock,
+    addressb  => chipram_address,
+    dob       => chipram_data
+    );
+  
   cpu0: entity work.gs4510
     generic map(
       cpufrequency => cpufrequency)
@@ -914,11 +930,12 @@ begin
       slow_access_wdata => slow_access_wdata,
       slow_access_rdata => slow_access_rdata,
       
-      chipram_clk => pixelclock,
-      chipram_address => chipram_address,
-      chipram_dataout => chipram_data,
-
       cpu_leds => cpu_leds,
+      
+      shadow_address_out => shadow_address_next,
+      shadow_write_next   => shadow_write_next,
+      shadow_wdata_next   => shadow_wdata_next,
+      shadow_rdata        => shadow_rdata,
       
       fastio_addr => fastio_addr,
       fastio_addr_fast => fastio_addr_fast,
