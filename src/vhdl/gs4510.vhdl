@@ -50,8 +50,6 @@ entity address_resolver is
     sector_buffer_mapped : in std_logic;
     colourram_at_dc00 : in std_logic;
     hypervisor_mode : in std_logic;
-    reg_mb_low : in unsigned(3 downto 0);
-    reg_mb_high : in unsigned(3 downto 0);
     reg_map : in std_logic_vector(7 downto 0);
     reg_offset_low : in unsigned(11 downto 0);
     reg_offset_high : in unsigned(11 downto 0);
@@ -92,8 +90,7 @@ begin
   process(short_address, writeP, gated_exrom, gated_game, 
           cpuport_value, cpuport_ddr, viciii_iomode, hypervisor_mode, hyper_iomode,
           sector_buffer_mapped, colourram_at_dc00, 
-          reg_map, reg_offset_high, reg_mb_high,
-          reg_offset_low,  reg_mb_low,
+          reg_map, reg_offset_high, reg_offset_low,
           dat_bitplane_addresses, dat_offset_drive,
           rom_at_8000, rom_at_a000, rom_at_c000, rom_at_e000 )
 
@@ -104,7 +101,6 @@ begin
   variable lhc : std_logic_vector(4 downto 0);
   variable char_access_page : unsigned(19 downto 16);
   variable reg_offset : unsigned(11 downto 0);
-  variable reg_mb : unsigned(3 downto 0);
   variable map_io : std_logic;
   variable map_exp : std_logic;
     
@@ -262,15 +258,12 @@ begin
     blocknum := to_integer(short_address(15 downto 13));
     if short_address(15)='1' then
       reg_offset := reg_offset_high;
-      reg_mb := reg_mb_high;
     else
       reg_offset := reg_offset_low;
-      reg_mb := reg_mb_low;
     end if;
     
     -- choose between mapped address or unmapped address
     if reg_map(blocknum)='1' then
-      --temp_address(23 downto 20) := reg_mb;
       temp_address(19 downto 8) := reg_offset+to_integer(short_address(15 downto 8));
       report "mapped memory address is $" & to_hstring(temp_address) severity note;
       map_io := '0'; -- Force this back off for mapped addresses so mapped addresses bypass I/O?
@@ -530,8 +523,6 @@ architecture Behavioural of gs4510 is
       sector_buffer_mapped : in std_logic;
       colourram_at_dc00 : in std_logic;
       hypervisor_mode : in std_logic;
-      reg_mb_low : in unsigned(3 downto 0);
-      reg_mb_high : in unsigned(3 downto 0);
       reg_map_low : in std_logic_vector(3 downto 0);
       reg_map_high : in std_logic_vector(3 downto 0);
       reg_offset_low : in unsigned(11 downto 0);
@@ -695,7 +686,6 @@ architecture Behavioural of gs4510 is
   signal dmagic_subcmd : unsigned(7 downto 0)  := (others => '0');	-- F018A/B extention
   signal dmagic_count : unsigned(15 downto 0)  := (others => '0');
   signal dmagic_tally : unsigned(15 downto 0)  := (others => '0');
-  signal reg_dmagic_src_mb : unsigned(7 downto 0)  := (others => '0');
   signal dmagic_src_addr : unsigned(35 downto 0)  := (others => '0'); -- in 256ths of bytes
   signal reg_dmagic_use_transparent_value : std_logic := '0';
   signal reg_dmagic_transparent_value : unsigned(7 downto 0) := x"00";
@@ -745,11 +735,6 @@ architecture Behavioural of gs4510 is
   signal reg_pc : unsigned(15 downto 0)  := (others => '0');
 
   -- CPU RAM bank selection registers.
-  -- Now C65 style, but extended by 4 bits to give 16MB address space
-  signal reg_mb_low : unsigned(3 downto 0)  := (others => '0');
-  signal reg_mb_high : unsigned(3 downto 0)  := (others => '0');
-  --signal reg_map_low : std_logic_vector(3 downto 0)  := (others => '0');
-  --signal reg_map_high : std_logic_vector(3 downto 0)  := (others => '0');
   signal reg_offset_low : unsigned(11 downto 0)  := (others => '0');
   signal reg_offset_high : unsigned(11 downto 0)  := (others => '0');
   signal reg_map : std_logic_vector(7 downto 0)  := (others => '0');
@@ -776,8 +761,6 @@ architecture Behavioural of gs4510 is
   signal hyper_sp : unsigned(7 downto 0)  := (others => '0');
   signal hyper_sph : unsigned(7 downto 0)  := (others => '0');
   signal hyper_pc : unsigned(15 downto 0)  := (others => '0');
-  signal hyper_mb_low : unsigned(3 downto 0)  := (others => '0');
-  signal hyper_mb_high : unsigned(3 downto 0)  := (others => '0');
   signal hyper_port_00 : unsigned(7 downto 0)  := (others => '0');
   signal hyper_port_01 : unsigned(7 downto 0)  := (others => '0');
   signal hyper_map_low : std_logic_vector(3 downto 0)  := (others => '0');
@@ -1630,15 +1613,11 @@ begin
         reg_offset_high <= x"000";
         reg_map <= "00000000";
         reg_offset_low <= x"000";
-        reg_mb_high <= x"0";
-        reg_mb_low <= x"0";
       else
         -- with kickstart
         reg_offset_high <= x"F00";
         reg_map <= "10000100";
         reg_offset_low <= x"000";
-        reg_mb_high <= x"F";
-        reg_mb_low <= x"0"; -- Is this actually critical, or just paranoia?
       end if;
       
       -- Default CPU flags
@@ -1995,13 +1974,13 @@ begin
               return unsigned(std_logic_vector(hyper_map_high)
                               & std_logic_vector(hyper_map_offset_high(11 downto 8)));
             when "001101" => return hyper_map_offset_high(7 downto 0);
-            when "001110" => return hyper_mb_low & x"0";
-            when "001111" => return hyper_mb_high & x"0";
+            when "001110" => return x"00";
+            when "001111" => return x"00";
             when "010000" => return hyper_port_00;
             when "010001" => return hyper_port_01;
             when "010010" => return hyper_iomode;
-            when "010011" => return hyper_dmagic_src_mb;
-            when "010100" => return hyper_dmagic_dst_mb;
+            when "010011" => return x"00";
+            when "010100" => return x"00";
             when "010101" => return hyper_dmagic_list_addr(7 downto 0);
             when "010110" => return hyper_dmagic_list_addr(15 downto 8);
             when "010111" => return x"0" & hyper_dmagic_list_addr(19 downto 16);
@@ -2206,8 +2185,6 @@ begin
           reg_offset_high <= x"F00";
           reg_map <= "10000000";
           reg_offset_low <= x"000";
-          reg_mb_high <= x"F";
-          reg_mb_low <= x"0";
         end if;
       end if;
       
@@ -2395,14 +2372,6 @@ begin
       --+-------+-------+-------+-------+-------+-------+-------+-------+
       --
       
-      -- C65GS extension: Set the MegaByte register for low and high mobies
-      -- so that we can address all 256MB of RAM.
-      if reg_x = x"0f" then
-        reg_mb_low <= reg_a(3 downto 0); -- TEMP HACK
-      end if;
-      if reg_z = x"0f" then
-        reg_mb_high <= reg_y(3 downto 0); -- TEMP HACK
-      end if;
       reg_offset_low <= reg_x(3 downto 0) & reg_a;
       reg_map(3 downto 0) <= std_logic_vector(reg_x(7 downto 4));
       reg_offset_high <= reg_z(3 downto 0) & reg_y;
@@ -2417,8 +2386,6 @@ begin
     procedure dmagic_reset_options is
     begin
       reg_dmagic_use_transparent_value <= '0';
-      reg_dmagic_src_mb <= x"00";
-      reg_dmagic_dst_mb <= x"00";
       reg_dmagic_transparent_value <= x"00";
       reg_dmagic_src_skip <= x"0100";
       reg_dmagic_dst_skip <= x"0100";
@@ -2822,14 +2789,6 @@ begin
         if last_write_address = x"0D64D" and hypervisor_mode='1' then
           hyper_map_offset_high(7 downto 0) <= last_value;
         end if;
-                                        -- @IO:GS $D64E - Hypervisor MAPLO mega-byte number register storage
-        if last_write_address = x"0D64E" and hypervisor_mode='1' then
-          hyper_mb_low <= last_value(7 downto 4);
-        end if;
-                                        -- @IO:GS $D64F - Hypervisor MAPHI mega-byte number register storage
-        if last_write_address = x"0D64F" and hypervisor_mode='1' then
-          hyper_mb_high <= last_value(7 downto 4);
-        end if;
                                         -- @IO:GS $D650 - Hypervisor CPU port $00 value
         if last_write_address = x"0D650" and hypervisor_mode='1' then
           hyper_port_00 <= last_value;
@@ -2843,14 +2802,6 @@ begin
                                         -- @IO:GS $D652.2 - Use internal(0) or external(1) SIDs
         if last_write_address = x"0D652" and hypervisor_mode='1' then
           hyper_iomode <= last_value;
-        end if;
-                                        -- @IO:GS $D653 - Hypervisor DMAgic source MB
-        if last_write_address = x"0D653" and hypervisor_mode='1' then
-          hyper_dmagic_src_mb <= last_value;
-        end if;
-                                        -- @IO:GS $D654 - Hypervisor DMAgic destination MB
-        if last_write_address = x"0D654" and hypervisor_mode='1' then
-          hyper_dmagic_dst_mb <= last_value;
         end if;
                                         -- @IO:GS $D655 - Hypervisor DMAGic list address bits 0-7
         if last_write_address = x"0D655" and hypervisor_mode='1' then
@@ -3305,13 +3256,10 @@ begin
                                         -- Save all registers
               hyper_iomode(1 downto 0) <= unsigned(viciii_iomode);
               hyper_dmagic_list_addr <= reg_dmagic_addr;
-              hyper_dmagic_src_mb <= reg_dmagic_src_mb;
-              hyper_dmagic_dst_mb <= reg_dmagic_dst_mb;
               hyper_a <= reg_a; hyper_x <= reg_x;
               hyper_y <= reg_y; hyper_z <= reg_z;
               hyper_b <= reg_b; hyper_sp <= reg_sp;
               hyper_sph <= reg_sph; hyper_pc <= reg_pc;
-              hyper_mb_low <= reg_mb_low; hyper_mb_high <= reg_mb_high;
               hyper_map_low <= reg_map(3 downto 0); hyper_map_high <= reg_map(7 downto 4);
               hyper_map_offset_low <= reg_offset_low;
               hyper_map_offset_high <= reg_offset_high;
@@ -3352,13 +3300,6 @@ begin
                                         -- ROM is at $FFF8000-$FFFBFFF
               reg_map(7 downto 4) <= "0011";
               reg_offset_high <= x"f00"; -- add $F0000
-              reg_mb_high <= x"f";
-                                        -- Make sure that a naughty person can't trick the hypervisor
-                                        -- into modifying itself, by having the Hypervisor address space
-                                        -- mapped in the bottom 32KB of address space.
-              if reg_mb_low = x"f" then
-                reg_mb_low <= x"0";
-              end if;
                                         -- IO, but no C64 ROMS
               cpuport_ddr <= x"3f"; cpuport_value <= x"35";
 
@@ -3372,13 +3313,10 @@ begin
               iomode_set_toggle <= not iomode_set_toggle_internal;
               iomode_set_toggle_internal <= not iomode_set_toggle_internal;
               reg_dmagic_addr <= hyper_dmagic_list_addr;
-              reg_dmagic_src_mb <= hyper_dmagic_src_mb;
-              reg_dmagic_dst_mb <= hyper_dmagic_dst_mb;
               reg_a <= hyper_a; reg_x <= hyper_x; reg_y <= hyper_y;
               reg_z <= hyper_z; reg_b <= hyper_b; reg_sp <= hyper_sp;
               reg_sph <= hyper_sph; reg_pc <= hyper_pc;
               report "Setting PC on hypervisor exit";
-              reg_mb_low <= hyper_mb_low; reg_mb_high <= hyper_mb_high;
               reg_map(3 downto 0) <= hyper_map_low; reg_map(7 downto 4) <= hyper_map_high;
               reg_offset_low <= hyper_map_offset_low;
               reg_offset_high <= hyper_map_offset_high;
@@ -3422,9 +3360,9 @@ begin
                 case dmagic_option_id is
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $80 $xx = Set MB of source address
                   
-                  when x"80" => reg_dmagic_src_mb <= memory_read_value;
+                  --when x"80" => reg_dmagic_src_mb <= x"00";
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $81 $xx = Set MB of destination address
-                  when x"81" => reg_dmagic_dst_mb <= memory_read_value;
+                  --when x"81" => reg_dmagic_dst_mb <= x"00";
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $82 $xx = Set source skip rate (/256ths of bytes)
                   when x"82" => reg_dmagic_src_skip(7 downto 0) <= memory_read_value;
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $83 $xx = Set source skip rate (whole bytes)
@@ -3505,14 +3443,14 @@ begin
                 & ", count=$" & to_hstring(dmagic_count);
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
               if (job_is_f018b = '1') then
-                dmagic_src_addr(35 downto 28) <= reg_dmagic_src_mb + dmagic_src_bank_temp(6 downto 4);
+                dmagic_src_addr(35 downto 28) <= to_unsigned(0,8) + dmagic_src_bank_temp(6 downto 4);
                 dmagic_src_addr(27 downto 24) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(35 downto 28) <= reg_dmagic_dst_mb + dmagic_dest_bank_temp(6 downto 4);
+                dmagic_dest_addr(35 downto 28) <= to_unsigned(0,8) + dmagic_dest_bank_temp(6 downto 4);
                 dmagic_dest_addr(27 downto 24) <= dmagic_dest_bank_temp(3 downto 0);
               else
-                dmagic_src_addr(35 downto 28) <= reg_dmagic_src_mb;
+                dmagic_src_addr(35 downto 28) <= to_unsigned(0,8);
                 dmagic_src_addr(27 downto 24) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(35 downto 28) <= reg_dmagic_dst_mb;
+                dmagic_dest_addr(35 downto 28) <= to_unsigned(0,8);
                 dmagic_dest_addr(27 downto 24) <= dmagic_dest_bank_temp(3 downto 0);
               end if;               
               dmagic_src_addr(7 downto 0) <= (others => '0');
@@ -5071,8 +5009,6 @@ begin
     sector_buffer_mapped => sector_buffer_mapped,
     colourram_at_dc00 => colourram_at_dc00,
     hypervisor_mode => hypervisor_mode,
-    reg_mb_low => reg_mb_low,
-    reg_mb_high => reg_mb_high,
     reg_map => reg_map,
     reg_offset_low => reg_offset_low,
     reg_offset_high => reg_offset_high,
