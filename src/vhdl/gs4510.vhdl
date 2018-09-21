@@ -103,11 +103,11 @@ begin
   variable reg_offset : unsigned(11 downto 0);
   variable map_io : std_logic;
   variable map_exp : std_logic;
-    
+  variable map_en : std_logic;
+  
   begin  -- resolve_long_address
 
     -- Now apply C64-style $01 lines first, because MAP and $D030 take precedence
-    blocknum := to_integer(short_address(15 downto 12));
     map_io := '0';
     map_exp := '0';
     
@@ -146,114 +146,6 @@ begin
     nonmapped_page(19 downto 16) := (others => '0');
     nonmapped_page(15 downto 12) := short_address(15 downto 12);
 
-    -- IO
-    if (blocknum=13) then
-      -- IO is always visible in ultimax mode
-      if gated_exrom/='1' or gated_game/='0' or hypervisor_mode='1' then
-        case lhc(2 downto 0) is
-          when "000" => nonmapped_page(19 downto 16) := x"0";  -- WRITE RAM
-          when "001" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
-          when "010" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
-          when "011" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
-          when "100" => nonmapped_page(19 downto 16) := x"0";  -- WRITE RAM
-          when others =>
-            -- All else accesses IO
-            -- C64/C65/C65GS I/O is based on which secret knock has been applied
-            -- to $D02F
-            map_io := '1';
-            -- Optionally map SIDs to expansion port
-            if (short_address(11 downto 8) = x"4") and hyper_iomode(2)='1' then
-              map_exp := '1';
-              map_io := '0';
-            end if;
-        end case;
-      else
-        map_io := '1';
-      end if;      
-    end if;
-
-    if map_io = '1' then
-        -- nonmapped_page(23 downto 12) := x"FD3";
-        -- nonmapped_page(13 downto 12) := unsigned(viciii_iomode);
-        if sector_buffer_mapped='0' and colourram_at_dc00='0' then
-          -- Map $DE00-$DFFF IO expansion areas to expansion port
-          -- (but only if SD card sector buffer is not mapped, and
-          -- 2nd KB of colour RAM is not mapped).
-        if (short_address(11 downto 8) = x"E") or (short_address(11 downto 8) = x"F") then
-          map_exp := '1';
-          map_io := '0';
-        end if;        
-      end if;      
-    end if;
-
-      -- C64 KERNEL
-      if ((blocknum=14) or (blocknum=15)) then
-        if ((gated_exrom='1') and (gated_game='0')) then
-          -- ULTIMAX mode external ROM
-          map_exp := '1';
-        elsif (lhc(1)='1') and (writeP=false) then
-          nonmapped_page(19 downto 16) := x"2";
-        end if;        
-      end if;        
-
-      -- C64 BASIC or cartridge ROM LO
-      if ((blocknum=8) or (blocknum=9)) and
-        (
-          (
-            ((gated_exrom='1') and (gated_game='0'))
-            or
-            ((gated_exrom='0') and (lhc(1 downto 0)="11"))
-          )
-          and
-          (writeP=false)
-        )
-      then
-        -- ULTIMAX mode or cartridge external ROM
-      map_exp := '1';
-      end if;
-      
-    if ((blocknum=10) or blocknum=11) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
-      nonmapped_page(19 downto 16) := x"2";
-      end if;
-    
-      if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
-        and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
-      then
-        -- ULTIMAX mode or cartridge external ROM
-      map_exp := '1';
-      end if;
-
-    -- Expose remaining address space to cartridge port in ultimax mode
-    if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
-      if (blocknum=1) then
-        -- $1000 - $1FFF Ultimax mode
-        map_exp := '1';
-      end if;
-      if (blocknum=2 ) then
-        -- $2000 - $2FFF Ultimax mode
-        -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
-        -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
-        -- it down. Not yet implemented, and won't be perfectly compatible.
-        map_exp := '1';
-      end if;
-      if ((blocknum=4) or (blocknum=5)) then
-        -- $4000 - $5FFF Ultimax mode
-        map_exp := '1';
-      end if;
-      if ((blocknum=6) or (blocknum=7)) then
-        -- $6000 - $7FFF Ultimax mode
-        map_exp := '1';
-      end if;
-      if (blocknum=12) then
-        -- $C000 - $CFFF Ultimax mode
-        map_exp := '1';
-      end if;
-    end if;
-
-    if map_exp = '1' then
-        nonmapped_page(19 downto 16) := x"7";  -- temp hack to pick something out of the way
-    end if;
-
     -- Add the map offset if required
     blocknum := to_integer(short_address(15 downto 13));
     if short_address(15)='1' then
@@ -267,10 +159,124 @@ begin
       temp_address(19 downto 8) := reg_offset+to_integer(short_address(15 downto 8));
       report "mapped memory address is $" & to_hstring(temp_address) severity note;
       map_io := '0'; -- Force this back off for mapped addresses so mapped addresses bypass I/O?
+      map_en := '1';
     else
+      map_en := '0';
+    end if;
+
+    if(map_en='0') then
+      -- IO
+      blocknum := to_integer(short_address(15 downto 12));
+      if (blocknum=13) then
+        -- IO is always visible in ultimax mode
+        if gated_exrom/='1' or gated_game/='0' or hypervisor_mode='1' then
+          case lhc(2 downto 0) is
+            when "000" => nonmapped_page(19 downto 16) := x"0";  -- WRITE RAM
+            when "001" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
+            when "010" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
+            when "011" => nonmapped_page(19 downto 16) := char_access_page;  -- WRITE RAM / READ CHARROM
+            when "100" => nonmapped_page(19 downto 16) := x"0";  -- WRITE RAM
+            when others =>
+              -- All else accesses IO
+              -- C64/C65/C65GS I/O is based on which secret knock has been applied
+              -- to $D02F
+              map_io := '1';
+              -- Optionally map SIDs to expansion port
+              if (short_address(11 downto 8) = x"4") and hyper_iomode(2)='1' then
+                map_exp := '1';
+                map_io := '0';
+              end if;
+          end case;
+        else
+          map_io := '1';
+        end if;      
+      end if;
+
+      if map_io = '1' then
+          -- nonmapped_page(23 downto 12) := x"FD3";
+          -- nonmapped_page(13 downto 12) := unsigned(viciii_iomode);
+          if sector_buffer_mapped='0' and colourram_at_dc00='0' then
+            -- Map $DE00-$DFFF IO expansion areas to expansion port
+            -- (but only if SD card sector buffer is not mapped, and
+            -- 2nd KB of colour RAM is not mapped).
+          if (short_address(11 downto 8) = x"E") or (short_address(11 downto 8) = x"F") then
+            map_exp := '1';
+            map_io := '0';
+          end if;        
+        end if;      
+      end if;
+
+        -- C64 KERNEL
+        if ((blocknum=14) or (blocknum=15)) then
+          if ((gated_exrom='1') and (gated_game='0')) then
+            -- ULTIMAX mode external ROM
+            map_exp := '1';
+          elsif (lhc(1)='1') and (writeP=false) then
+            nonmapped_page(19 downto 16) := x"2";
+          end if;        
+        end if;        
+
+        -- C64 BASIC or cartridge ROM LO
+        if ((blocknum=8) or (blocknum=9)) and
+          (
+            (
+              ((gated_exrom='1') and (gated_game='0'))
+              or
+              ((gated_exrom='0') and (lhc(1 downto 0)="11"))
+            )
+            and
+            (writeP=false)
+          )
+        then
+          -- ULTIMAX mode or cartridge external ROM
+        map_exp := '1';
+        end if;
+      
+      if ((blocknum=10) or blocknum=11) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
+        nonmapped_page(19 downto 16) := x"2";
+        end if;
+    
+        if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
+          and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
+        then
+          -- ULTIMAX mode or cartridge external ROM
+        map_exp := '1';
+        end if;
+
+      -- Expose remaining address space to cartridge port in ultimax mode
+      if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
+        if (blocknum=1) then
+          -- $1000 - $1FFF Ultimax mode
+          map_exp := '1';
+        end if;
+        if (blocknum=2 ) then
+          -- $2000 - $2FFF Ultimax mode
+          -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
+          -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
+          -- it down. Not yet implemented, and won't be perfectly compatible.
+          map_exp := '1';
+        end if;
+        if ((blocknum=4) or (blocknum=5)) then
+          -- $4000 - $5FFF Ultimax mode
+          map_exp := '1';
+        end if;
+        if ((blocknum=6) or (blocknum=7)) then
+          -- $6000 - $7FFF Ultimax mode
+          map_exp := '1';
+        end if;
+        if (blocknum=12) then
+          -- $C000 - $CFFF Ultimax mode
+          map_exp := '1';
+        end if;
+      end if;
+
+      if map_exp = '1' then
+          nonmapped_page(19 downto 16) := x"7";  -- temp hack to pick something out of the way
+      end if;
+
       temp_address(19 downto 12) := nonmapped_page;
     end if;
-    
+  
     -- $D030 ROM select lines:
     if hypervisor_mode = '0' then
       blocknum := to_integer(short_address(15 downto 12));
