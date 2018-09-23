@@ -38,11 +38,11 @@ use work.victypes.all;
 entity address_resolver is
 
   port (
-    short_address : in unsigned(15 downto 0);
+    short_address : in unsigned(19 downto 0);
     writeP : in boolean;
-    resolve_addr : in std_logic;
     gated_exrom : in std_logic; 
     gated_game : in std_logic;
+    map_en : in std_logic;
     cpuport_ddr : in unsigned(7 downto 0);
     cpuport_value : in unsigned(7 downto 0);
     viciii_iomode : in std_logic_vector(1 downto 0);
@@ -50,9 +50,6 @@ entity address_resolver is
     sector_buffer_mapped : in std_logic;
     colourram_at_dc00 : in std_logic;
     hypervisor_mode : in std_logic;
-    reg_map : in std_logic_vector(7 downto 0);
-    reg_offset_low : in unsigned(11 downto 0);
-    reg_offset_high : in unsigned(11 downto 0);
     rom_at_e000 : in std_logic;
     rom_at_c000 : in std_logic;
     rom_at_a000 : in std_logic;
@@ -60,7 +57,8 @@ entity address_resolver is
     dat_bitplane_addresses : in sprite_vector_eight;
     dat_offset_drive : in unsigned(15 downto 0);
     io_sel_resolved : out std_logic;
-    extio_sel : out std_logic;
+    ext_sel_resolved : out std_logic;
+    
     resolved_address : out unsigned(19 downto 0)
     );
 
@@ -74,8 +72,9 @@ attribute keep_hierarchy : string;
 attribute mark_debug : string;
 attribute keep_hierarchy of Behavioural : architecture is "yes";
 
+attribute mark_debug of map_en: signal is "true";
 attribute mark_debug of short_address: signal is "true";
-attribute mark_debug of extio_sel: signal is "true";
+attribute mark_debug of ext_sel_resolved: signal is "true";
 attribute mark_debug of io_sel_resolved: signal is "true";
 attribute mark_debug of resolved_address: signal is "true";
 
@@ -85,12 +84,16 @@ attribute mark_debug of gated_exrom: signal is "true";
 attribute mark_debug of gated_game: signal is "true";
 attribute mark_debug of hypervisor_mode: signal is "true";
 
+attribute mark_debug of rom_at_e000: signal is "true";
+attribute mark_debug of rom_at_c000: signal is "true";
+attribute mark_debug of rom_at_a000: signal is "true";
+attribute mark_debug of rom_at_8000: signal is "true";
+
 begin
 
-  process(short_address, writeP, gated_exrom, gated_game, 
+  process(short_address, writeP, gated_exrom, gated_game, map_en,
           cpuport_value, cpuport_ddr, viciii_iomode, hypervisor_mode, hyper_iomode,
           sector_buffer_mapped, colourram_at_dc00, 
-          reg_map, reg_offset_high, reg_offset_low,
           dat_bitplane_addresses, dat_offset_drive,
           rom_at_8000, rom_at_a000, rom_at_c000, rom_at_e000 )
 
@@ -103,7 +106,6 @@ begin
   variable reg_offset : unsigned(11 downto 0);
   variable map_io : std_logic;
   variable map_exp : std_logic;
-  variable map_en : std_logic;
   
   begin  -- resolve_long_address
 
@@ -141,31 +143,13 @@ begin
     -- 1 1 1             BASIC-ROM  RAM       I/O        I/O       KERNAL-ROM RAM
     
     -- default is address in = address out
-    temp_address(19 downto 16) := (others => '0');
-    temp_address(15 downto 0) := short_address;
-    nonmapped_page(19 downto 16) := (others => '0');
-    nonmapped_page(15 downto 12) := short_address(15 downto 12);
-
-    -- Add the map offset if required
-    blocknum := to_integer(short_address(15 downto 13));
-    if short_address(15)='1' then
-      reg_offset := reg_offset_high;
-    else
-      reg_offset := reg_offset_low;
-    end if;
+    temp_address := short_address;
     
-    -- choose between mapped address or unmapped address
-    if reg_map(blocknum)='1' then
-      temp_address(19 downto 8) := reg_offset+to_integer(short_address(15 downto 8));
-      report "mapped memory address is $" & to_hstring(temp_address) severity note;
-      map_io := '0'; -- Force this back off for mapped addresses so mapped addresses bypass I/O?
-      map_en := '1';
-    else
-      map_en := '0';
-    end if;
-
-    if(map_en='0') then
+    if map_en='0' then
       -- IO
+      temp_address := short_address;
+      nonmapped_page(19 downto 16) := (others => '0');
+      nonmapped_page(15 downto 12) := short_address(15 downto 12);
       blocknum := to_integer(short_address(15 downto 12));
       if (blocknum=13) then
         -- IO is always visible in ultimax mode
@@ -206,42 +190,43 @@ begin
         end if;      
       end if;
 
-        -- C64 KERNEL
-        if ((blocknum=14) or (blocknum=15)) then
-          if ((gated_exrom='1') and (gated_game='0')) then
-            -- ULTIMAX mode external ROM
-            map_exp := '1';
-          elsif (lhc(1)='1') and (writeP=false) then
-            nonmapped_page(19 downto 16) := x"2";
-          end if;        
+      -- C64 KERNEL
+      if ((blocknum=14) or (blocknum=15)) then
+        if ((gated_exrom='1') and (gated_game='0')) then
+          -- ULTIMAX mode external ROM
+          map_exp := '1';
+        elsif (lhc(1)='1') and (writeP=false) then
+          nonmapped_page(19 downto 16) := x"2";
         end if;        
+      end if;        
 
-        -- C64 BASIC or cartridge ROM LO
-        if ((blocknum=8) or (blocknum=9)) and
+      -- C64 cartridge ROM LO
+      if ((blocknum=8) or (blocknum=9)) and
+        (
           (
-            (
-              ((gated_exrom='1') and (gated_game='0'))
-              or
-              ((gated_exrom='0') and (lhc(1 downto 0)="11"))
-            )
-            and
-            (writeP=false)
+            ((gated_exrom='1') and (gated_game='0'))
+            or
+            ((gated_exrom='0') and (lhc(1 downto 0)="11"))
           )
-        then
-          -- ULTIMAX mode or cartridge external ROM
+          and
+          (writeP=false)
+        )
+      then
+        -- ULTIMAX mode or cartridge external ROM
         map_exp := '1';
-        end if;
+      end if;
       
+      -- C64 BASIC
       if ((blocknum=10) or blocknum=11) and (lhc(0)='1') and (lhc(1)='1') and (writeP=false) then
         nonmapped_page(19 downto 16) := x"2";
-        end if;
+      end if;
     
-        if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
-          and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
-        then
-          -- ULTIMAX mode or cartridge external ROM
+      if (((blocknum=10) or (blocknum=11)) -- $A000-$BFFF cartridge ROM
+        and ((gated_exrom='0') and (gated_game='0'))) and (writeP=false)
+      then
+        -- ULTIMAX mode or cartridge external ROM
         map_exp := '1';
-        end if;
+      end if;
 
       -- Expose remaining address space to cartridge port in ultimax mode
       if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
@@ -309,15 +294,8 @@ begin
       report "C65 VIC-III DAT: Address translated to $" & to_hstring(temp_address);
     end if;
 
-    -- Temp hack.  Kill external select lines if address resolver is being bypassed.
-    if resolve_addr='1' then
-      io_sel_resolved <= map_io;
-      extio_sel <= map_exp;
-    else
-      io_sel_resolved <= '0';
-      extio_sel <= '0';
-    end if;
-      
+    io_sel_resolved <= map_io;
+    ext_sel_resolved <= map_exp;
     resolved_address <= temp_address;
   end process;
 
@@ -480,6 +458,8 @@ entity gs4510 is
     kickstart_address_out : out std_logic_vector(13 downto 0);
     io_sel_next_out : out std_logic := '0';
     io_sel_out : inout std_logic := '0';
+    ext_sel_next_out : out std_logic := '0';
+    ext_sel_out : inout std_logic := '0';
     
     sector_buffer_mapped : in std_logic;
     fastio_vic_rdata : in std_logic_vector(7 downto 0);
@@ -517,11 +497,11 @@ architecture Behavioural of gs4510 is
   
   component address_resolver is
     port (
-      short_address : in unsigned(15 downto 0);
+      short_address : in unsigned(19 downto 0);
       writeP : in boolean;
-      resolve_addr : in boolean;
       gated_exrom : in std_logic; 
       gated_game : in std_logic;
+      map_en : in std_logic;
       cpuport_ddr : in unsigned(7 downto 0);
       cpuport_value : in unsigned(7 downto 0);
       viciii_iomode : in std_logic_vector(1 downto 0);
@@ -529,10 +509,6 @@ architecture Behavioural of gs4510 is
       sector_buffer_mapped : in std_logic;
       colourram_at_dc00 : in std_logic;
       hypervisor_mode : in std_logic;
-      reg_map_low : in std_logic_vector(3 downto 0);
-      reg_map_high : in std_logic_vector(3 downto 0);
-      reg_offset_low : in unsigned(11 downto 0);
-      reg_offset_high : in unsigned(11 downto 0);
       rom_at_e000 : in std_logic;
       rom_at_c000 : in std_logic;
       rom_at_a000 : in std_logic;
@@ -540,7 +516,7 @@ architecture Behavioural of gs4510 is
       dat_bitplane_addresses : in sprite_vector_eight;
       dat_offset_drive : in unsigned(15 downto 0);
       io_sel_resolved : out std_logic;
-      extio_sel : out std_logic;
+      ext_sel_resolved : out std_logic;
       resolved_address : out unsigned(19 downto 0)
       );
     
@@ -604,7 +580,10 @@ architecture Behavioural of gs4510 is
   
   signal io_sel_resolved : std_logic;
   signal io_sel_next : std_logic;
-  signal extio_sel : std_logic;
+  signal ext_sel_resolved : std_logic;
+  signal ext_sel_next : std_logic;
+  signal map_en_next : std_logic;
+  signal map_en : std_logic;
   
   signal read_data : unsigned(7 downto 0)  := (others => '0');
   
@@ -1208,9 +1187,8 @@ architecture Behavioural of gs4510 is
 
   signal monitor_char_toggle_internal : std_logic := '1';
 
-  signal pre_resolve_memory_access_address : unsigned(15 downto 0);
+  signal pre_resolve_memory_access_address : unsigned(19 downto 0);
   signal pre_resolve_memory_access_write : boolean;
-  signal pre_resolve_memory_access_resolve : std_logic;
   signal post_resolve_memory_access_address : unsigned(19 downto 0);
   
   signal memory_access_address_next : unsigned(19 downto 0);
@@ -1392,6 +1370,15 @@ architecture Behavioural of gs4510 is
     attribute mark_debug of fastio_rdata: signal is "true";
     attribute mark_debug of fastio_wdata: signal is "true";
     attribute mark_debug of fastio_write: signal is "true";
+
+    attribute mark_debug of map_en: signal is "true";
+    attribute mark_debug of map_en_next: signal is "true";
+    attribute mark_debug of pre_resolve_memory_access_address: signal is "true";
+    attribute mark_debug of post_resolve_memory_access_address: signal is "true";
+    attribute mark_debug of ext_sel_next_out: signal is "true";
+    attribute mark_debug of io_sel_next_out: signal is "true";
+    attribute mark_debug of ext_sel_out: signal is "true";
+    attribute mark_debug of io_sel_out: signal is "true";
     
     attribute mark_debug of kickstart_rdata: signal is "true";
     attribute mark_debug of kickstart_address_out: signal is "true";
@@ -1407,6 +1394,7 @@ architecture Behavioural of gs4510 is
     attribute mark_debug of reg_opcode: signal is "true";
 
     attribute mark_debug of state: signal is "true";
+    attribute mark_debug of reset: signal is "true";
     
     attribute mark_debug of proceed: signal is "true";
     attribute mark_debug of memory_access_resolve_address_next: signal is "true";
@@ -1421,6 +1409,7 @@ architecture Behavioural of gs4510 is
     attribute mark_debug of colour_ram_cs : signal is "true";
     attribute mark_debug of colourram_at_dc00 : signal is "true";
     attribute mark_debug of sector_buffer_mapped : signal is "true";
+    
 begin
 
   monitor_cpuport <= std_logic_vector(cpuport_value(2 downto 0));
@@ -1704,7 +1693,7 @@ begin
     procedure read_long_address(
       real_long_address : in unsigned(19 downto 0);
       io_sel_next : in std_logic;
-      extio_sel : in std_logic) is
+      ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
     begin
 
@@ -1734,8 +1723,8 @@ begin
       -- Clear fastio access so that we don't keep reading/writing last IO address
       -- (this is bad when it is $DC0D for example, as it will stop IRQs from
       -- the CIA).
-      fastio_addr <= x"FFFFF"; fastio_write <= '0'; fastio_read <= '0'; io_sel_out <= '0';
-      
+      fastio_addr <= x"FFFFF"; fastio_write <= '0'; fastio_read <= '0';
+            
       the_read_address <= long_address;
 
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
@@ -1772,7 +1761,7 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= "0010";        
-      elsif io_sel_next='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then
+      elsif io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then
         -- Reading from chipram
         -- @ IO:C64 $00002-$0FFFF - 64KB RAM
         -- @ IO:C65 $10000-$1FFFF - 64KB RAM
@@ -1823,7 +1812,6 @@ begin
         read_source <= FastIO;
 
         fastio_addr <= fastio_addr_next;
-        io_sel_out <= io_sel_next;
         
         last_fastio_addr <= fastio_addr_next;
         fastio_read <= '1';
@@ -1892,7 +1880,7 @@ begin
               end if;
             end if;
         end if;                           -- $DXXXX
-      elsif extio_sel='1' then
+      elsif ext_sel_next='1' then
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF Slow Device memory (127MB)
         report "Preparing to read from SlowRAM";
@@ -2064,7 +2052,7 @@ begin
       real_long_address       : in unsigned(19 downto 0);
       value              : in unsigned(7 downto 0);
       io_sel_next : in std_logic;
-      extio_sel : in std_logic) is
+      ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
       variable dmagic_write : std_logic;
     begin
@@ -2075,7 +2063,7 @@ begin
       accessing_slowram <= '0';
       slow_access_write_drive <= '0';
       charrom_write_cs <= '0';
-
+      
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
@@ -2200,7 +2188,7 @@ begin
       -- Get the shadow RAM address on the bus fast to improve timing.
       shadow_wdata <= value;
       
-      if io_sel_next='0' and extio_sel='0' and long_address(19)='0' and long_address(18)='0' then      
+      if io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then      
         report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
         shadow_address <= shadow_address_next;
         -- Enforce write protect of 2nd 128KB of memory, if being used as ROM
@@ -2243,7 +2231,6 @@ begin
         shadow_write <= '0';
         shadow_write_flags(2) <= '1';
         fastio_addr <= fastio_addr_next;
-        io_sel_out <= io_sel_next;
         last_fastio_addr <= fastio_addr_next;
         fastio_write <= '1'; fastio_read <= '0';
         report "raising fastio_write" severity note;
@@ -2292,11 +2279,11 @@ begin
         else
           wait_states_non_zero <= '0';
         end if;
-      elsif extio_sel='1' then
+      elsif ext_sel_next='1' then
         report "writing to slow device memory..." severity note;
         accessing_slowram <= '1';
         shadow_write <= '0';
-        fastio_write <= '0';
+        fastio_write <= '0';        
         shadow_write_flags(2) <= '1';
         -- We dispatch the write, and then wait for the slow access controller
         -- to acknowledge the write.  The slow access controller is free to
@@ -4906,6 +4893,10 @@ begin
           end if;
         end if;
         
+        io_sel_out <= io_sel_next;
+        ext_sel_out <= ext_sel_next;
+        map_en <= map_en_next;
+        
                                         -- Effect memory accesses.
                                         -- Note that we cannot combine address resolution for read and write,
                                         -- because the resolution of some addresses is dependent on whether
@@ -4975,10 +4966,10 @@ begin
                                         -- report "Setting PC to self (CPU port access)";
                                         -- reg_pc <= reg_pc;
           end if;
-          write_long_byte(memory_access_address,memory_access_wdata,io_sel_next,extio_sel);
+          write_long_byte(memory_access_address,memory_access_wdata,io_sel_next,ext_sel_next);
         elsif memory_access_read='1' then 
           report "memory_access_read=1, addres=$"&to_hstring(memory_access_address) severity note;
-          read_long_address(memory_access_address,io_sel_next,extio_sel);
+          read_long_address(memory_access_address,io_sel_next,ext_sel_next);
         end if;
       end if; -- if not reseting
     end if;                         -- if rising edge of clock
@@ -5005,9 +4996,9 @@ begin
   address_resolver0 : entity work.address_resolver port map(
     short_address => pre_resolve_memory_access_address,
     writeP => pre_resolve_memory_access_write,
-    resolve_addr => pre_resolve_memory_access_resolve,
     gated_exrom => gated_exrom,
     gated_game => gated_game,
+    map_en => map_en_next,
     cpuport_value => cpuport_value,
     cpuport_ddr => cpuport_ddr,
     viciii_iomode => viciii_iomode,
@@ -5015,9 +5006,6 @@ begin
     sector_buffer_mapped => sector_buffer_mapped,
     colourram_at_dc00 => colourram_at_dc00,
     hypervisor_mode => hypervisor_mode,
-    reg_map => reg_map,
-    reg_offset_low => reg_offset_low,
-    reg_offset_high => reg_offset_high,
     rom_at_e000 => rom_at_e000,
     rom_at_c000 => rom_at_c000,
     rom_at_a000 => rom_at_a000,
@@ -5025,7 +5013,7 @@ begin
     dat_bitplane_addresses => dat_bitplane_addresses,
     dat_offset_drive => dat_offset_drive,
     io_sel_resolved => io_sel_resolved,
-    extio_sel => extio_sel,
+    ext_sel_resolved => ext_sel_resolved,
     resolved_address => post_resolve_memory_access_address
   );
           
@@ -5039,7 +5027,7 @@ begin
     read_data,shadow_wdata,shadow_address,kickstart_address,
     rom_writeprotect,fastio_addr,
     kickstart_address_next, post_resolve_memory_access_address,
-    shadow_address_next, read_source, fastio_addr_next, io_sel_next, extio_sel
+    shadow_address_next, read_source, fastio_addr_next, io_sel_next, ext_sel_next
     )
     variable memory_access_address : unsigned(19 downto 0) := x"FFFFF";
     variable memory_access_read : std_logic := '0';
@@ -5052,6 +5040,7 @@ begin
     variable shadow_write_var : std_logic := '0';
     variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
     variable io_sel_next_var : std_logic := '0';
+    variable ext_sel_next_var : std_logic := '0';
     
     variable kickstart_address_var : std_logic_vector(13 downto 0);
     variable fastio_addr_var : std_logic_vector(19 downto 0);
@@ -5081,6 +5070,10 @@ begin
     );
     
     variable address_op : address_op_t;
+    variable blocknum : integer;
+    variable reg_offset : unsigned(11 downto 0);
+    variable pre_resolve_addr_var : unsigned(19 downto 0);
+    variable map_en_var : std_logic;
     
     attribute mark_debug of shadow_write_var : variable is "true";
     attribute mark_debug of address_op : variable is "true";
@@ -5131,12 +5124,16 @@ begin
 
     dmagic_address := x"00000";
 
-    pre_resolve_memory_access_address <= x"0000";
+    pre_resolve_memory_access_address <= x"00000";
     pre_resolve_memory_access_write <= false;
     temp_addr := x"0000";
 
-    -- This holds current value until we are ready to move on.
-    io_sel_next_var := io_sel_out;
+    -- These hold current value until we are ready to move on.
+    io_sel_next <= io_sel_out;
+    ext_sel_next <= ext_sel_out;
+    
+    map_en_next <= map_en;
+    map_en_var := '0';
 
     if proceed = '1' then
     
@@ -5473,17 +5470,40 @@ begin
   		--shadow_address_var := memory_access_address(long_address(16 downto 0));
   		shadow_wdata_var := memory_access_wdata;
 
-      pre_resolve_memory_access_address <= memory_access_address(15 downto 0);
       pre_resolve_memory_access_write <= memory_access_write = '1';
-      pre_resolve_memory_access_resolve <= memory_access_resolve_address;
+
+      pre_resolve_addr_var(19 downto 16) := x"0";
+      pre_resolve_addr_var(15 downto 0) := memory_access_address(15 downto 0);
+
+      -- Add the map offset if required (It'll just get ignored if we are bypassing address resolver)
+      blocknum := to_integer(memory_access_address(15 downto 13));
+      if memory_access_address(15)='1' then
+        reg_offset := reg_offset_high;
+      else
+        reg_offset := reg_offset_low;
+      end if;
+  
+      -- choose between mapped address or unmapped address
+      if reg_map(blocknum)='1' then
+        pre_resolve_addr_var(19 downto 8) := reg_offset+to_integer(memory_access_address(15 downto 8));
+        map_en_var := '1';
+      else
+        map_en_var := '0';
+      end if;
       
+      map_en_next <= map_en_var;
+      pre_resolve_memory_access_address <= pre_resolve_addr_var;
+
 		  if memory_access_resolve_address = '1' then
-		    memory_access_address := post_resolve_memory_access_address; --resolve_address_to_long(memory_access_address(15 downto 0),true);
+        
+		    memory_access_address := post_resolve_memory_access_address;
         io_sel_next_var := io_sel_resolved;
+        ext_sel_next_var := ext_sel_resolved;
       else
         io_sel_next_var := '0';
+        ext_sel_next_var := '0';
       end if;      
-      
+            
       -- Default shadow memory address is passthrough...
 	    long_address := memory_access_address;
 
@@ -5536,7 +5556,7 @@ begin
       shadow_address_next <= shadow_address_var;
       kickstart_address_next <= kickstart_address_var;
       io_sel_next <= io_sel_next_var;
-      
+      ext_sel_next <= ext_sel_next_var;
     end if;
 
     fastio_addr_next <= fastio_addr_var;
@@ -5552,12 +5572,14 @@ begin
     shadow_wdata_next <= memory_access_wdata;
     shadow_write_next <= shadow_write_var;
     
-    long_address_read <= long_address;
-    long_address_write <= long_address;
+    -- FIXME - There's not really a reason for these to be different.
+    long_address_read <= long_address_read_var;
+    long_address_write <= long_address_write_var;
 
     kickstart_address_out <= kickstart_address_next;
     fastio_addr_fast <= fastio_addr_next;
     io_sel_next_out <= io_sel_next;
+    ext_sel_next_out <= ext_sel_next;
     
   end process;
 
