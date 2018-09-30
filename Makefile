@@ -92,6 +92,7 @@ SIDVHDL=		$(VHDLSRCDIR)/sid_6581.vhd \
 			$(VHDLSRCDIR)/sid_voice.vhd \
 
 CPUVHDL=		$(VHDLSRCDIR)/gs4510.vhdl \
+			$(VHDLSRCDIR)/bus_interface.vhdl \
 			$(VHDLSRCDIR)/multiply32.vhdl \
 			$(VHDLSRCDIR)/divider32.vhdl \
 			$(VHDLSRCDIR)/shifter32.vhdl
@@ -165,7 +166,6 @@ OVERLAYVHDL=		$(VHDLSRCDIR)/rain.vhdl \
 
 SERMONVHDL=		$(VHDLSRCDIR)/ps2_to_uart.vhdl \
 			$(VHDLSRCDIR)/uart_monitor.vhdl \
-			$(VHDLSRCDIR)/6502_top.vhdl \
 			$(VHDLSRCDIR)/uart_rx.vhdl \
 
 M65VHDL=		$(VHDLSRCDIR)/machine.vhdl \
@@ -192,6 +192,7 @@ MEMVHDL=		$(VHDLSRCDIR)/ghdl_chipram8bit.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram32x1024.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram18x2k.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram8x4096_sync.vhdl \
+			$(VHDLSRCDIR)/ghdl_ram8x4096.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram32x1024_sync.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram8x512.vhdl \
 			$(VHDLSRCDIR)/ghdl_ram9x4k.vhdl \
@@ -494,7 +495,7 @@ iverilog/driver/iverilog:
 	cd iverilog ; autoconf ; ./configure ; make
 
 $(VHDLSRCDIR)/6502_top.vhdl:	$(SRCDIR)/verilog/* iverilog/driver/iverilog
-	( cd src/verilog ; ../../iverilog/driver/iverilog  -tvhdl -o ../vhdl/6502_top.vhdl 6502_*.v )
+	( cd src/verilog ; iverilog -grelative-include -tvhdl -o ../vhdl/6502_top.vhdl 6502/6502_*.v )
  
 
 $(SDCARD_DIR)/BANNER.M65:	$(TOOLDIR)/pngprepare/pngprepare assets/mega65_320x64.png

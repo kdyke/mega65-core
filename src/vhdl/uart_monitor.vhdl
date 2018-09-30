@@ -59,7 +59,7 @@ entity uart_monitor is
     monitor_cpu_state : in unsigned(15 downto 0);
     monitor_hypervisor_mode : in std_logic;
     monitor_instruction : in unsigned(7 downto 0);
-    monitor_watch : out unsigned(27 downto 0) := x"7FFFFFF";
+    monitor_watch : out unsigned(23 downto 0) := x"7FFFFF";
     monitor_watch_match : in std_logic;
     monitor_opcode : in unsigned(7 downto 0);
     monitor_ibytes : in std_logic_vector(3 downto 0);
@@ -84,7 +84,7 @@ entity uart_monitor is
     monitor_char_toggle : in std_logic;
     monitor_char_busy : out std_logic;
 
-    monitor_mem_address : out unsigned(27 downto 0);
+    monitor_mem_address : out unsigned(23 downto 0);
     monitor_mem_rdata : in unsigned(7 downto 0);
     monitor_mem_wdata : out unsigned(7 downto 0);
     monitor_mem_attention_request : out std_logic := '0';

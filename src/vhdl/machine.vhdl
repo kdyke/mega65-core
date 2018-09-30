@@ -271,6 +271,11 @@ end machine;
 
 architecture Behavioral of machine is
 
+  attribute keep : string;
+  attribute keep_hierarchy : string;
+  attribute mark_debug : string;
+  attribute dont_touch : string;
+
   component uart_monitor is
     port (
       reset : in std_logic;
@@ -418,6 +423,7 @@ architecture Behavioral of machine is
   signal kickstart_rdata : std_logic_vector(7 downto 0);
   signal kickstart_address : std_logic_vector(13 downto 0);
   signal io_sel_next : std_logic;
+  signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
 
   signal shadow_address_next : integer range 0 to 1048575 := 0;
@@ -648,6 +654,33 @@ architecture Behavioral of machine is
   -- local debug signals from CPU
   signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
   signal pixelclock_select : std_logic_vector(7 downto 0);
+  
+  -- New CPU bus interface signals
+  signal cpu_memory_access_address_next : unsigned(19 downto 0);
+  signal cpu_memory_access_read_next : std_logic;
+  signal cpu_memory_access_write_next : std_logic;
+  signal cpu_memory_access_resolve_address_next : std_logic;
+  signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
+  signal cpu_memory_read_data : unsigned(7 downto 0);
+  signal cpu_proceed : std_logic;
+  signal cpu_map_en_next : std_logic;
+  signal memory_ready_out : std_logic;
+  signal rom_writeprotect : std_logic; -- TEMP
+  signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
+  signal cpuport_value : unsigned(7 downto 0);
+  
+  --attribute keep of cpu_memory_read_data : signal is "true";
+  --attribute dont_touch of cpu_memory_read_data : signal is "true";
+  --attribute mark_debug of cpu_memory_read_data : signal is "true";
+  --
+  --attribute mark_debug of btnCpuReset : signal is "true";
+  --attribute mark_debug of reset_io : signal is "true";
+  --attribute mark_debug of power_on_reset : signal is "true";
+  --attribute mark_debug of reset_monitor : signal is "true";
+  --attribute mark_debug of reset_combined : signal is "true";
+  --
+  --attribute mark_debug of shadow_write_next : signal is "true";
+  --attribute mark_debug of shadow_wdata_next : signal is "true";
   
 begin
 
@@ -885,7 +918,6 @@ begin
 
       monitor_proceed => monitor_proceed,
 --    monitor_debug_memory_access => monitor_debug_memory_access,
-      monitor_waitstates => monitor_waitstates,
       monitor_request_reflected => monitor_request_reflected,
       monitor_hypervisor_mode => monitor_hypervisor_mode,
       monitor_pc => monitor_pc,
@@ -907,7 +939,6 @@ begin
       monitor_map_offset_high => monitor_map_offset_high,
       monitor_map_enables_low => monitor_map_enables_low,
       monitor_map_enables_high => monitor_map_enables_high,
-      monitor_memory_access_address => monitor_memory_access_address,
 
       monitor_mem_address => monitor_mem_address,
       monitor_mem_rdata => monitor_mem_rdata,
@@ -923,45 +954,91 @@ begin
       monitor_mem_trace_toggle => monitor_mem_trace_toggle,
       monitor_cpuport => monitor_cpuport,
       
-      slow_access_request_toggle => slow_access_request_toggle,
-      slow_access_ready_toggle => slow_access_ready_toggle,
-      slow_access_address => slow_access_address,
-      slow_access_write => slow_access_write,
-      slow_access_wdata => slow_access_wdata,
-      slow_access_rdata => slow_access_rdata,
-      
       cpu_leds => cpu_leds,
       
-      shadow_address_out => shadow_address_next,
-      shadow_write_next   => shadow_write_next,
-      shadow_wdata_next   => shadow_wdata_next,
-      shadow_rdata        => shadow_rdata,
+      io_sel_next => io_sel_next,
+      ext_sel_next => ext_sel_next,
       
-      fastio_addr => fastio_addr,
-      fastio_addr_fast => fastio_addr_fast,
-      fastio_read => fastio_read,
-      fastio_write => fastio_write,
-      fastio_wdata => fastio_wdata,
-      fastio_rdata => fastio_rdata,
-      sector_buffer_mapped => sector_buffer_mapped,
-      fastio_vic_rdata => fastio_vic_rdata,
-      fastio_colour_ram_rdata => colour_ram_fastio_rdata,
-      kickstart_rdata => kickstart_rdata,
-      kickstart_address_out => kickstart_address,
-      colour_ram_cs => colour_ram_cs,
-      charrom_write_cs => charrom_write_cs,
-      io_sel_next_out => io_sel_next,
-      io_sel_out => io_sel,
+      cpu_memory_access_address_next         => cpu_memory_access_address_next,
+      cpu_memory_access_read_next            => cpu_memory_access_read_next,
+      cpu_memory_access_write_next           => cpu_memory_access_write_next,  
+      cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
+      cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
+      cpu_memory_read_data                   => cpu_memory_read_data,
+      cpu_proceed                            => cpu_proceed,
+      cpu_map_en                             => cpu_map_en_next,
+      cpu_memory_ready                       => memory_ready_out,
+      rom_writeprotect                      => rom_writeprotect,
+      cpuport_ddr_out => cpuport_ddr,
+      cpuport_value_out => cpuport_value,
       
-      viciii_iomode => viciii_iomode,
+      viciii_iomode => viciii_iomode
       
-      colourram_at_dc00 => colourram_at_dc00,
-      rom_at_e000 => rom_at_e000,
-      rom_at_c000 => rom_at_c000,
-      rom_at_a000 => rom_at_a000,
-      rom_at_8000 => rom_at_8000
-
       );
+
+      bus0: entity work.bus_interface
+        port map(
+          clock => cpuclock,
+          reset =>reset_combined,
+          exrom => cpu_exrom,
+          game => cpu_game,
+          hypervisor_mode => cpu_hypervisor_mode,
+
+          cpu_memory_access_address_next         => cpu_memory_access_address_next,
+          cpu_memory_access_read_next            => cpu_memory_access_read_next,
+          cpu_memory_access_write_next           => cpu_memory_access_write_next,  
+          cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
+          cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
+          cpu_memory_read_data                   => cpu_memory_read_data,
+          cpu_proceed                            => cpu_proceed,
+          cpu_map_en_next                        => cpu_map_en_next,
+          memory_ready_out                       => memory_ready_out,
+          rom_writeprotect                      => rom_writeprotect,
+          cpuport_ddr => cpuport_ddr,
+          cpuport_value => cpuport_value,
+          dat_offset => dat_offset,
+          dat_bitplane_addresses => dat_bitplane_addresses,
+
+          monitor_waitstates => monitor_waitstates,
+          monitor_memory_access_address => monitor_memory_access_address,
+      
+          slow_access_request_toggle => slow_access_request_toggle,
+          slow_access_ready_toggle => slow_access_ready_toggle,
+          slow_access_address => slow_access_address,
+          slow_access_write => slow_access_write,
+          slow_access_wdata => slow_access_wdata,
+          slow_access_rdata => slow_access_rdata,
+      
+          shadow_address_out => shadow_address_next,
+          shadow_write_next   => shadow_write_next,
+          shadow_wdata_next   => shadow_wdata_next,
+          shadow_rdata        => shadow_rdata,
+      
+          fastio_addr => fastio_addr,
+          fastio_addr_fast => fastio_addr_fast,
+          fastio_read => fastio_read,
+          fastio_write => fastio_write,
+          fastio_wdata => fastio_wdata,
+          fastio_rdata => fastio_rdata,
+          sector_buffer_mapped => sector_buffer_mapped,
+          fastio_vic_rdata => fastio_vic_rdata,
+          fastio_colour_ram_rdata => colour_ram_fastio_rdata,
+          kickstart_rdata => kickstart_rdata,
+          kickstart_address_out => kickstart_address,
+          colour_ram_cs => colour_ram_cs,
+          charrom_write_cs => charrom_write_cs,
+          io_sel_next_out => io_sel_next,
+          io_sel_out => io_sel,
+          ext_sel_next_out => ext_sel_next,
+          viciii_iomode => viciii_iomode,
+      
+          colourram_at_dc00 => colourram_at_dc00,
+          rom_at_e000 => rom_at_e000,
+          rom_at_c000 => rom_at_c000,
+          rom_at_a000 => rom_at_a000,
+          rom_at_8000 => rom_at_8000
+
+          );
 
   frame50: entity work.frame_generator
     generic map ( frame_width => 960,

@@ -130,7 +130,7 @@ architecture behavior of cpu_test is
   signal slow_access_request_toggle : std_logic;
   signal slow_access_ready_toggle : std_logic;
   signal slow_access_write : std_logic;
-  signal slow_access_address : unsigned(27 downto 0);
+  signal slow_access_address : unsigned(19 downto 0);
   signal slow_access_wdata : unsigned(7 downto 0);
   signal slow_access_rdata : unsigned(7 downto 0);
 
@@ -254,9 +254,9 @@ begin
       
       no_kickstart => '0',
 
---      buffereduart_rx => '1',
+      buffereduart_rx => '1',
       buffereduart_ringindicate => '1',
---      buffereduart2_rx => '1',
+      buffereduart2_rx => '1',
       
       ps2data => '1',
       ps2clock => '1',

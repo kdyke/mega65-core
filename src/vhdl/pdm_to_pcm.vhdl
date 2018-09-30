@@ -126,7 +126,7 @@ begin
 --              report "recent_sums(" & integer'image(i) & ") = "
 --              & integer'image(recent_sums(i-1));
 --        end loop;
-        oldest_recent_sum := recent_sums(recent_index+1);
+        oldest_recent_sum := recent_sums((recent_index+1) rem 16);
         tmp := rolling_sum + sum;
         if tmp >  oldest_recent_sum then
 --            report "rolling_sum <= " & integer'image(rolling_sum)
@@ -137,7 +137,7 @@ begin
           rolling_sum <= 0;
         end if;
         recent_sums(recent_index) <= sum;
-        recent_index <= recent_index + 1;
+        recent_index <= (recent_index + 1) rem 16;
         
         -- Stage 3: Sum those recent sums: Range is 0 to 13x10x31 = ~4K
 --        for i in 15 downto 1 loop
@@ -146,7 +146,7 @@ begin
         report "sum = " & integer'image(sum);
         report "sample_value = " & integer'image(sample_value);
         report "rolling_sum = " & integer'image(rolling_sum);
-        oldest_rolling_sum := rolling_sums(rolling_index+1);
+        oldest_rolling_sum := rolling_sums((rolling_index+1) rem 16);
         tmp := sample_value + rolling_sum;
         if tmp > oldest_rolling_sum then
           sample_value <= tmp - oldest_rolling_sum;
@@ -154,7 +154,7 @@ begin
           sample_value <= 0;
         end if;
         rolling_sums(rolling_index) <= rolling_sum;
-        rolling_index <= rolling_index + 1;
+        rolling_index <= (rolling_index + 1) rem 16;
         -- Get most significant bits of the sample
         -- We shift it left one bit, as the microphone tends to be quite quiet
         sample_out(15 downto 1) <= to_unsigned(sample_value,15);

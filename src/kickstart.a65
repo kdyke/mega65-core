@@ -2444,7 +2444,7 @@ checkpoint:
 	; Only do checkpoints visibly if shift held during boot
 	lda buckykey_status
 	and #$03
-	beq cp9
+	;beq cp9
 
 	; Write checkpoint byte values out as hex into message template
 	ldx checkpoint_a
@@ -2539,7 +2539,7 @@ nocheckpointmessage:
 	; Only do checkpoints visibly if shift key held
 	lda buckykey_status
 	and #$03
-	beq checkpoint_return
+	;beq checkpoint_return
 
 	; output checkpoint message to serial monitor
 	ldx #0

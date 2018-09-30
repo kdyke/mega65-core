@@ -942,7 +942,7 @@ architecture Behavioral of viciv is
   attribute keep : string;
   attribute mark_debug : string;
   
-  attribute mark_debug of border_colour : signal is "true";
+  --attribute mark_debug of border_colour : signal is "true";
   
 --  attribute keep_hierarchy of Behavioral : architecture is "yes";
 

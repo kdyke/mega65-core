@@ -440,28 +440,29 @@ architecture behavioral of iomapper is
   
   attribute keep : string;
   attribute mark_debug : string;
-  attribute mark_debug of kickstartcs: signal is "true";
-  attribute mark_debug of data_i: signal is "true";
-  attribute mark_debug of w: signal is "true";
-  attribute mark_debug of address: signal is "true";
-  attribute mark_debug of kickstart_address: signal is "true";
-  attribute mark_debug of sdcardio_cs: signal is "true";
-  attribute mark_debug of sdcardio_en: signal is "true";
-  attribute mark_debug of f011_cs: signal is "true";
-  attribute mark_debug of viciii_iomode : signal is "true";
-
-  attribute keep of cia1cs : signal is "true";
-  attribute keep of cia2cs : signal is "true";
-  attribute mark_debug of cia1cs : signal is "true";
-  attribute mark_debug of cia2cs : signal is "true";
-
-  attribute mark_debug of io_sel : signal is "true";
-  attribute mark_debug of io_sel_next : signal is "true";
   
-  attribute mark_debug of sectorbuffercs: signal is "true";
-  attribute mark_debug of sectorbuffercs_fast: signal is "true";
-  attribute mark_debug of sector_buffer_mapped_read: signal is "true";
-  attribute mark_debug of chipselect_enables: signal is "true";
+  --attribute mark_debug of kickstartcs: signal is "true";
+  --attribute mark_debug of data_i: signal is "true";
+  --attribute mark_debug of w: signal is "true";
+  --attribute mark_debug of address: signal is "true";
+  --attribute mark_debug of kickstart_address: signal is "true";
+  --attribute mark_debug of sdcardio_cs: signal is "true";
+  --attribute mark_debug of sdcardio_en: signal is "true";
+  --attribute mark_debug of f011_cs: signal is "true";
+  --attribute mark_debug of viciii_iomode : signal is "true";
+  --
+  --attribute keep of cia1cs : signal is "true";
+  --attribute keep of cia2cs : signal is "true";
+  --attribute mark_debug of cia1cs : signal is "true";
+  --attribute mark_debug of cia2cs : signal is "true";
+  --
+  --attribute mark_debug of io_sel : signal is "true";
+  --attribute mark_debug of io_sel_next : signal is "true";
+  --
+  --attribute mark_debug of sectorbuffercs: signal is "true";
+  --attribute mark_debug of sectorbuffercs_fast: signal is "true";
+  --attribute mark_debug of sector_buffer_mapped_read: signal is "true";
+  --attribute mark_debug of chipselect_enables: signal is "true";
 begin
 
   block1: block

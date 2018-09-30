@@ -444,7 +444,7 @@ architecture behavioural of sdcardio is
   end function;
   
   attribute mark_debug : string;
-  attribute mark_debug of sector_buffer_mapped: signal is "true";
+  --attribute mark_debug of sector_buffer_mapped: signal is "true";
   
 begin  -- behavioural
 
