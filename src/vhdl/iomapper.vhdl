@@ -61,7 +61,6 @@ entity iomapper is
         w : in std_logic;
         data_i : in std_logic_vector(7 downto 0);
         data_o : out std_logic_vector(7 downto 0);
-        kickstart_rdata : out std_logic_vector(7 downto 0);
         sector_buffer_mapped : out std_logic;
 
         key_scancode : in unsigned(15 downto 0);
@@ -285,9 +284,7 @@ entity iomapper is
     touch2_y : out unsigned(11 downto 0);
     
     viciii_iomode : in std_logic_vector(1 downto 0);
-    
-    kickstart_address : in std_logic_vector(13 downto 0);
-        
+            
     colourram_at_dc00 : in std_logic
     
     );
@@ -312,8 +309,6 @@ architecture behavioral of iomapper is
   signal potr_x : unsigned(7 downto 0);
   signal potr_y : unsigned(7 downto 0);
   
-  signal kickstartcs : std_logic;
-
   signal reset_high : std_logic;
 
   signal capslock_from_keymapper : std_logic := '1';
@@ -441,11 +436,9 @@ architecture behavioral of iomapper is
   attribute keep : string;
   attribute mark_debug : string;
   
-  --attribute mark_debug of kickstartcs: signal is "true";
   --attribute mark_debug of data_i: signal is "true";
   --attribute mark_debug of w: signal is "true";
   --attribute mark_debug of address: signal is "true";
-  --attribute mark_debug of kickstart_address: signal is "true";
   --attribute mark_debug of sdcardio_cs: signal is "true";
   --attribute mark_debug of sdcardio_en: signal is "true";
   --attribute mark_debug of f011_cs: signal is "true";
@@ -465,19 +458,6 @@ architecture behavioral of iomapper is
   --attribute mark_debug of chipselect_enables: signal is "true";
 begin
 
-  block1: block
-  begin
-  kickstartrom : entity work.kickstart port map (
-    clk     => clk,
-    address => kickstart_address,
-    address_i => address(13 downto 0),
-    we      => w,
-    cs      => kickstartcs,
-    data_o  => kickstart_rdata,
-    data_i  => data_i
-    );
-  end block;
-  
   -- IRQ line is wire-anded together as if it had a pullup.
   irq <= cia1_irq and ethernet_irq and uart_irq;
   
@@ -1202,13 +1182,6 @@ begin
       -- @IO:GS $FFF8110 Hypervisor entry point on FDC read (when virtualised) (trap $44)
       -- @IO:GS $FFF8114 Hypervisor entry point on FDC write (when virtualised) (trap $45)
       
-      -- FIXME - gs4510 already knows when kickstart is being accessed.
-      if address(19 downto 14)&"00" = x"F8" then
-        kickstartcs <= cpu_hypervisor_mode;
-      else
-        kickstartcs <='0';
-      end if;
-
       c64mode := not (viciii_iomode(1) or viciii_iomode(0));
       c65gsmode := (viciii_iomode(1) and viciii_iomode(0));
       
@@ -1346,7 +1319,7 @@ begin
       end if;
 
     report "CS lines: "
-      & to_string(cia1cs&cia2cs&kickstartcs&sectorbuffercs&leftsid_cs&rightsid_cs&c65uart_cs&sdcardio_cs&thumbnail_cs);
+      & to_string(cia1cs&cia2cs&sectorbuffercs&leftsid_cs&rightsid_cs&c65uart_cs&sdcardio_cs&thumbnail_cs);
   end process;
 
 end behavioral;

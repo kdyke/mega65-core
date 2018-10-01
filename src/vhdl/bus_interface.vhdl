@@ -336,10 +336,15 @@ entity bus_interface is
     memory_ready_out : out std_logic;
 
     -- Temporary external shadow ram bus
+    bus_wdata_next : out  std_logic_vector(7 downto 0)  := (others => '0');
+
     shadow_address_out : out integer range 0 to 1048575 := 0;
     shadow_write_next : out std_logic := '0';
-    shadow_wdata_next : out  unsigned(7 downto 0)  := (others => '0');
-    shadow_rdata : in unsigned(7 downto 0)  := (others => '0');
+    shadow_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+
+    kickstart_address_out : out std_logic_vector(13 downto 0);
+    kickstart_write_next : out std_logic := '0';
+    kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
         
     cpu_leds : out std_logic_vector(3 downto 0);
     
@@ -352,8 +357,6 @@ entity bus_interface is
     fastio_write : inout std_logic := '0';
     fastio_wdata : out std_logic_vector(7 downto 0);
     fastio_rdata : in std_logic_vector(7 downto 0);
-    kickstart_rdata : in std_logic_vector(7 downto 0);
-    kickstart_address_out : out std_logic_vector(13 downto 0);
     io_sel_next_out : out std_logic := '0';
     io_sel_out : inout std_logic := '0';
     ext_sel_next_out : out std_logic := '0';
@@ -403,8 +406,13 @@ entity bus_interface is
     --attribute mark_debug of ext_sel_out: signal is "true";
     --attribute mark_debug of io_sel_out: signal is "true";
     --
-    --attribute mark_debug of kickstart_rdata: signal is "true";
+    --attribute mark_debug of bus_wdata_next: signal is "true";
+    --
     --attribute mark_debug of kickstart_address_out: signal is "true";
+    --attribute mark_debug of kickstart_rdata: signal is "true";
+    --attribute mark_debug of kickstart_write_next: signal is "true";
+    --
+    --attribute mark_debug of shadow_address_out: signal is "true";
     --attribute mark_debug of shadow_write_next: signal is "true";
     --attribute mark_debug of shadow_rdata: signal is "true";
     --
@@ -465,7 +473,7 @@ architecture Behavioural of bus_interface is
   signal shadow_address : integer range 0 to 1048575 := 0;
   signal shadow_address_next : integer range 0 to 1048575 := 0;
 
-  signal shadow_wdata : unsigned(7 downto 0)  := (others => '0');
+  signal bus_wdata : std_logic_vector(7 downto 0)  := (others => '0');
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_write : std_logic := '0';
@@ -564,7 +572,7 @@ architecture Behavioural of bus_interface is
   signal memory_access_read_next : std_logic;
   signal memory_access_write_next : std_logic;
   signal memory_access_resolve_address_next : std_logic;
-  signal memory_access_wdata_next : unsigned(7 downto 0);
+  signal memory_access_wdata_next : std_logic_vector(7 downto 0);
   
 --    attribute mark_debug : string;
 
@@ -572,6 +580,7 @@ architecture Behavioural of bus_interface is
   --
   --attribute mark_debug of read_source: signal is "true";
   --attribute mark_debug of kickstart_address_next: signal is "true";
+  --attribute mark_debug of kickstart_address: signal is "true";
   --attribute mark_debug of fastio_addr_next: signal is "true";
   --attribute mark_debug of read_data_copy : signal is "true";
   --
@@ -579,7 +588,7 @@ architecture Behavioural of bus_interface is
   --attribute mark_debug of pre_resolve_memory_access_address: signal is "true";
   --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
-  --attribute mark_debug of shadow_wdata: signal is "true";
+  --attribute mark_debug of bus_wdata: signal is "true";
   --attribute mark_debug of shadow_address_next: signal is "true";
   --attribute mark_debug of shadow_address: signal is "true";
   --
@@ -748,19 +757,9 @@ begin
         fastio_read <= '0';
         read_source <= Kickstart;
         kickstart_address <= kickstart_address_next;          
-        bus_proceed <= '0';
+        bus_proceed <= '1';
+        wait_states_non_zero <= '0';
         
-        -- XXX Some fastio (that referencing ioclocked registers) does require
-        -- io_wait_states, while some can use fewer waitstates because the
-        -- memories involved can be clocked at the CPU clock, and have just 1
-        -- wait state due to the dual-port memories.
-        -- But for now, just apply the wait state to all fastio addresses.
-        wait_states <= io_read_wait_states;
-        if io_read_wait_states /= x"00" then
-          wait_states_non_zero <= '1';
-        else
-          wait_states_non_zero <= '0';
-        end if;
       elsif io_sel_next='1' or long_address(19 downto 16) = x"8" then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
@@ -884,7 +883,7 @@ begin
           return x"FF";
         when Shadow =>
           report "reading from shadow RAM" severity note;
-          return shadow_rdata;
+          return unsigned(shadow_rdata);
         when ColourRAM =>
           report "reading colour RAM fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
           return unsigned(fastio_colour_ram_rdata);
@@ -908,7 +907,7 @@ begin
 
     procedure write_long_byte(
       real_long_address       : in unsigned(19 downto 0);
-      value              : in unsigned(7 downto 0);
+      value              : in std_logic_vector(7 downto 0);
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
@@ -916,7 +915,7 @@ begin
     begin
       -- Schedule the memory write to the appropriate destination.
 
-      last_value <= value; last_address <= real_long_address;
+      last_value <= unsigned(value); last_address <= real_long_address;
       
       accessing_slowram <= '0';
       slow_access_write_drive <= '0';
@@ -945,7 +944,7 @@ begin
       -- This ensures that shadow ram is consistent with the shadowed address space
       -- when the CPU reads from shadow ram.
       -- Get the shadow RAM address on the bus fast to improve timing.
-      shadow_wdata <= value;
+      --bus_wdata <= value;
       
       if io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then      
         report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
@@ -984,7 +983,7 @@ begin
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
       elsif io_sel_next='1' 
-            or (hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8") 
+            --or (hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8") 
             or long_address(19 downto 16) = x"8"
             or long_address(19 downto 12) = x"7E" then --
         shadow_write <= '0';
@@ -1001,7 +1000,7 @@ begin
         -- registers (except $D67F) has the effect delayed by one cycle. Should
         -- only matter if you run self-modifying code in these registers from the
         -- hypervisor. If you do that, then you probably deserve to see problems.
-        last_write_value <= value;
+        last_write_value <= unsigned(value);
         last_write_pending <= '1';
         last_write_fastio <= '1';
         
@@ -1052,7 +1051,7 @@ begin
         -- from appropriate slow devices, e.g., for expansion memory).
         slow_access_address_drive <= long_address(19 downto 0);
         slow_access_write_drive <= '1';
-        slow_access_wdata_drive <= value;
+        slow_access_wdata_drive <= unsigned(value);
         slow_access_pending_write <= '1';
         slow_access_data_ready <= '0';
 
@@ -1075,7 +1074,7 @@ begin
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
-    variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
+    variable memory_access_wdata : std_logic_vector(7 downto 0) := x"FF";
 
     variable temp_addr : unsigned(15 downto 0);    
     
@@ -1214,7 +1213,7 @@ begin
     viciii_iomode,
     shadow_rdata,bus_proceed,cpu_proceed,
     cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next,
-    shadow_wdata,shadow_address,kickstart_address,
+    bus_wdata,shadow_address,kickstart_address,
     rom_writeprotect,fastio_addr,
     kickstart_address_next, post_resolve_memory_access_address_next,
     shadow_address_next, read_source, fastio_addr_next, io_sel_next, ext_sel_next
@@ -1223,15 +1222,17 @@ begin
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
-    variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
+    variable memory_access_wdata : std_logic_vector(7 downto 0) := x"FF";
     
     variable shadow_address_var : integer range 0 to 1048575 := 0;
     variable shadow_write_var : std_logic := '0';
-    variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
+    variable bus_wdata_var : std_logic_vector(7 downto 0) := x"FF";
     variable io_sel_next_var : std_logic := '0';
     variable ext_sel_next_var : std_logic := '0';
     
     variable kickstart_address_var : std_logic_vector(13 downto 0);
+    variable kickstart_write_var : std_logic := '0';
+    
     variable fastio_addr_var : std_logic_vector(19 downto 0);
 
     variable long_address_read_var : unsigned(19 downto 0) := x"FFFFF";
@@ -1259,14 +1260,15 @@ begin
     
     -- These always reset after each cycle though (no feedback loop)
     shadow_write_var := '0';
+    kickstart_write_var := '0';
     
     fastio_addr_var := fastio_addr;
     fastio_addr_next <= fastio_addr;
     
     -- By default these hold their old value while CPU is halted
-    shadow_wdata_var := shadow_wdata;
+    bus_wdata_var := bus_wdata;
     shadow_address_next <= shadow_address;
-    shadow_wdata_next <= shadow_wdata;
+    bus_wdata_next <= bus_wdata;
     kickstart_address_next <= kickstart_address;
         
     shadow_address_var := shadow_address;
@@ -1298,11 +1300,11 @@ begin
       memory_access_write := cpu_memory_access_write_next;
       memory_access_address := cpu_memory_access_address_next;
       memory_access_resolve_address := cpu_memory_access_resolve_address_next;
-      memory_access_wdata := cpu_memory_access_wdata_next;
+      memory_access_wdata := std_logic_vector(cpu_memory_access_wdata_next);
       
       fastio_addr_var := x"FFFFF";
 
-  		shadow_wdata_var := cpu_memory_access_wdata_next;
+  		bus_wdata_var := std_logic_vector(cpu_memory_access_wdata_next);
 
       pre_resolve_memory_access_write <= memory_access_write = '1';
 
@@ -1351,10 +1353,14 @@ begin
           end if;
         end if;
         
+        if (hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8") then
+          kickstart_write_var := '1';
+        end if;
+        
         -- Fast I/O and kickstart/charrom write accesses need to drive fastio address bus (for now, at least)
         -- Eventually we should always be able to drive the fastIO address bus signal and rely on chip select
         -- logic to avoid false writes.   The CPU core shouldn't know about *any* of this stuff.
-        if io_sel_next_var='1' or long_address(19 downto 14)&"00" = x"F8" or long_address(19 downto 12) = x"7E" then
+        if io_sel_next_var='1' or long_address(19 downto 12) = x"7E" then
           fastio_addr_var := std_logic_vector(long_address(19 downto 0));
         end if;
         
@@ -1383,8 +1389,9 @@ begin
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
 
+    bus_wdata_next <= memory_access_wdata;
+
     shadow_address_out <= shadow_address_next;
-    shadow_wdata_next <= memory_access_wdata;
     shadow_write_next <= shadow_write_var;
     
     -- FIXME - There's not really a good reason for these to be different.
@@ -1392,6 +1399,8 @@ begin
     long_address_write <= long_address_write_var;
 
     kickstart_address_out <= kickstart_address_next;
+    kickstart_write_next <= kickstart_write_var;
+    
     fastio_addr_fast <= fastio_addr_next;
     io_sel_next_out <= io_sel_next;
     ext_sel_next_out <= ext_sel_next;
@@ -1403,7 +1412,9 @@ begin
   process (read_source, shadow_rdata, read_data_copy)
   begin
     if(read_source = Shadow) then
-      cpu_memory_read_data <= shadow_rdata;
+      cpu_memory_read_data <= unsigned(shadow_rdata);
+    elsif(read_source = Kickstart) then
+      cpu_memory_read_data <= unsigned(kickstart_rdata);
     else
       cpu_memory_read_data <= read_data_copy;
     end if;  

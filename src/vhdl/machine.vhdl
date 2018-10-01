@@ -420,16 +420,20 @@ architecture Behavioral of machine is
   signal fastio_write : std_logic;
   signal fastio_wdata : std_logic_vector(7 downto 0);
   signal fastio_rdata : std_logic_vector(7 downto 0);
-  signal kickstart_rdata : std_logic_vector(7 downto 0);
-  signal kickstart_address : std_logic_vector(13 downto 0);
+
   signal io_sel_next : std_logic;
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
 
+  signal bus_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
+
   signal shadow_address_next : integer range 0 to 1048575 := 0;
   signal shadow_write_next : std_logic := '0';
-  signal shadow_wdata_next : unsigned(7 downto 0)  := (others => '0');
-  signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
+  signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
+
+  signal kickstart_address_next : std_logic_vector(13 downto 0);
+  signal kickstart_write_next : std_logic := '0';
+  signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
   signal fastio_vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
@@ -856,12 +860,21 @@ begin
     clkA      => cpuclock,
     addressa  => shadow_address_next,
     wea       => shadow_write_next,
-    dia       => shadow_wdata_next,
+    dia       => bus_wdata_next,
     doa       => shadow_rdata,
     clkB      => pixelclock,
     addressb  => chipram_address,
     dob       => chipram_data
     );
+  
+  kickstartrom : entity work.kickstart port map (
+    clk     => cpuclock,
+    address => kickstart_address_next,
+    we      => kickstart_write_next,
+    data_o  => kickstart_rdata,
+    data_i  => bus_wdata_next
+    );
+  
   
   cpu0: entity work.gs4510
     generic map(
@@ -1009,10 +1022,15 @@ begin
           slow_access_wdata => slow_access_wdata,
           slow_access_rdata => slow_access_rdata,
       
+          bus_wdata_next  => bus_wdata_next,
+
           shadow_address_out => shadow_address_next,
-          shadow_write_next   => shadow_write_next,
-          shadow_wdata_next   => shadow_wdata_next,
-          shadow_rdata        => shadow_rdata,
+          shadow_write_next  => shadow_write_next,
+          shadow_rdata       => shadow_rdata,
+      
+          kickstart_address_out => kickstart_address_next,
+          kickstart_write_next  => kickstart_write_next,
+          kickstart_rdata       => kickstart_rdata,
       
           fastio_addr => fastio_addr,
           fastio_addr_fast => fastio_addr_fast,
@@ -1023,8 +1041,7 @@ begin
           sector_buffer_mapped => sector_buffer_mapped,
           fastio_vic_rdata => fastio_vic_rdata,
           fastio_colour_ram_rdata => colour_ram_fastio_rdata,
-          kickstart_rdata => kickstart_rdata,
-          kickstart_address_out => kickstart_address,
+
           colour_ram_cs => colour_ram_cs,
           charrom_write_cs => charrom_write_cs,
           io_sel_next_out => io_sel_next,
@@ -1330,8 +1347,6 @@ begin
       
       r => fastio_read, w => fastio_write,
       data_i => fastio_wdata, data_o => fastio_rdata,
-      kickstart_rdata => kickstart_rdata,
-      kickstart_address => kickstart_address,
       colourram_at_dc00 => colourram_at_dc00,
       drive_led => drive_led,
       motor => motor,

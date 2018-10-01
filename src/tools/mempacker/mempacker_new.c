@@ -93,8 +93,8 @@ int main(int argc,char **argv)
 	  "  port (ClkA : in std_logic;\n"
 	  "        addressa : in integer range 0 to 1048575;\n"
 	  "        wea : in std_logic;\n"
-	  "        dia : in unsigned(7 downto 0);\n"
-	  "        doa : out unsigned(7 downto 0);\n"
+	  "        dia : in std_logic_vector(7 downto 0);\n"
+	  "        doa : out std_logic_vector(7 downto 0);\n"
 	  "        ClkB : in std_logic;\n"
           "        addressb : in unsigned(19 downto 0);\n"
           "        dob : out unsigned(7 downto 0)\n"
@@ -104,7 +104,7 @@ int main(int argc,char **argv)
 	  "architecture Behavioral of %s is\n"
 	  "\n"
 	  "  \n"
-	  "  type ram_t is array (0 to %d) of unsigned(7 downto 0);\n"
+	  "  type ram_t is array (0 to %d) of std_logic_vector(7 downto 0);\n"
 	  "  shared variable ram : ram_t := (\n",
 	  name,name,name,bytes);
 
@@ -130,7 +130,7 @@ int main(int argc,char **argv)
           "PROCESS(ClkB)\n"
           "BEGIN\n"
           "  if(rising_edge(ClkB)) then\n"
-	  "      dob <= ram(to_integer(addressb));\n"
+	  "      dob <= unsigned(ram(to_integer(addressb)));\n"
           "  end if;\n"
           "END PROCESS;\n"
 	  "\n"
