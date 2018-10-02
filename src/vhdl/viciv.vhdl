@@ -146,10 +146,16 @@ entity viciv is
     fastio_addr : in std_logic_vector(19 downto 0);
     fastio_read : in std_logic;
     fastio_write : in std_logic;
+    
+    io_sel_next : in std_logic;
+    system_write_next : in std_logic;
+    system_address_next : in std_logic_vector(19 downto 0);
+    system_wdata_next : in std_logic_vector(7 downto 0);
+    
     fastio_wdata : in std_logic_vector(7 downto 0);
     fastio_rdata : out std_logic_vector(7 downto 0);
     colour_ram_fastio_rdata : out std_logic_vector(7 downto 0);
-    colour_ram_cs : in std_logic;
+    colour_ram_cs_next : in std_logic;
     charrom_write_cs : in std_logic;
 
     viciii_iomode : inout std_logic_vector(1 downto 0) := "11";
@@ -974,18 +980,17 @@ begin
   begin
     colourram1 : entity work.ram8x32k
       PORT MAP (
-         clka => cpuclock,
-         ena => colour_ram_cs,
-        wea(0) => fastio_write,
---        wea => fastio_write,
-         addra => std_logic_vector(colour_ram_fastio_address(14 downto 0)),
-         dina => fastio_wdata,
-         douta => colour_ram_fastio_rdata,
-         -- video controller use port b of the dual-port colour ram.
-         -- The CPU uses port a via the fastio interface
-         clkb => pixelclock,
+        clka => cpuclock,
+        ena => colour_ram_cs_next,
+        wea(0) => system_write_next,
+        addra => std_logic_vector(colour_ram_fastio_address(14 downto 0)),
+        dina => system_wdata_next,
+        douta => colour_ram_fastio_rdata,
+
+        -- video controller use port b of the dual-port colour ram.
+        -- The CPU uses port a via the fastio interface
+        clkb => pixelclock,
         web => (others => '0'),
---        web => '0',
         addrb => std_logic_vector(colourramaddress(14 downto 0)),
         dinb => (others => '0'),
         unsigned(doutb) => colourramdata
@@ -1471,13 +1476,13 @@ begin
       if fastio_addr(19) = '0' or fastio_addr(19) = '1' then
         register_bank := unsigned(fastio_addr(19 downto 12));
         register_page := unsigned(fastio_addr(11 downto 8));
-        register_num := unsigned(fastio_addr(7 downto 0));
+        register_num  := unsigned(fastio_addr(7 downto 0));
       else
         -- Give values when inputs are bad to supress warnings cluttering output
         -- when simulating
         register_bank := x"FF";
         register_page := x"F";
-        register_num := x"FF";
+        register_num  := x"FF";
       end if;    
       
       if (register_bank=x"0D" and viciii_iomode="00") and register_page<4 then
@@ -1515,19 +1520,13 @@ begin
       -- The colour RAM has to be dual-port since the video controller needs to
       -- access it as well, so all these have to be mapped on a single port.
       colour_ram_fastio_address <= (others => '1');
-      if register_bank = x"0D" then
-        if register_page>=8 and register_page<12 then
-                                        -- colour ram read $D800 - $DBFF
-          colour_ram_fastio_address <= unsigned("000000" & fastio_addr(9 downto 0));
-        elsif register_page>=12 and register_page<=15 then
-                                        -- colour ram read $DC00 - $DFFF
-          colour_ram_fastio_address <= unsigned("000001" & fastio_addr(9 downto 0));
-        else
-          colour_ram_fastio_address <= (others => '0');
-        end if;
+      if io_sel_next='1' then
+        -- Any I/O based color ram address is just the bottom 11 bits.  Whether we actually
+        -- write or read from the upper half is controlled by the color_ram_cs_next signal.
+        colour_ram_fastio_address <= unsigned("00000" & system_address_next(10 downto 0));
       elsif register_bank(7 downto 4)=x"8" then
                                         -- colour RAM all 64KB
-        colour_ram_fastio_address <= unsigned(fastio_addr(15 downto 0));
+        colour_ram_fastio_address <= unsigned(system_address_next(15 downto 0));
       end if;
       
       if fastio_read='0' then

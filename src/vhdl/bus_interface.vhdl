@@ -338,7 +338,8 @@ entity bus_interface is
     -- Temporary external shadow ram bus
     system_address_out : out std_logic_vector(19 downto 0);
     system_wdata_next : out  std_logic_vector(7 downto 0)  := (others => '0');
-
+    system_write_next : out std_logic;
+    
     shadow_write_next : out std_logic := '0';
     shadow_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
 
@@ -365,6 +366,7 @@ entity bus_interface is
     fastio_vic_rdata : in std_logic_vector(7 downto 0);
     fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
     colour_ram_cs : out std_logic := '0';
+    colour_ram_cs_next : inout std_logic := '0';
     charrom_write_cs : out std_logic := '0';
 
     ---------------------------------------------------------------------------
@@ -398,27 +400,31 @@ entity bus_interface is
     
     --attribute mark_debug of fastio_rdata: signal is "true";
     --attribute mark_debug of fastio_wdata: signal is "true";
-    --attribute mark_debug of fastio_write: signal is "true";
+    attribute mark_debug of fastio_write: signal is "true";
     --
     --attribute mark_debug of ext_sel_next_out: signal is "true";
-    --attribute mark_debug of io_sel_next_out: signal is "true";
+    attribute mark_debug of io_sel_next_out: signal is "true";
     --attribute mark_debug of ext_sel_out: signal is "true";
     --attribute mark_debug of io_sel_out: signal is "true";
     --
     --attribute mark_debug of  system_wdata_next: signal is "true";
     --
-    --attribute mark_debug of kickstart_rdata: signal is "true";
-    --attribute mark_debug of kickstart_write_next: signal is "true";
+    attribute mark_debug of kickstart_rdata: signal is "true";
+    attribute mark_debug of kickstart_write_next: signal is "true";
     --
-    --attribute mark_debug of system_address_out: signal is "true";
-    --attribute mark_debug of shadow_write_next: signal is "true";
-    --attribute mark_debug of shadow_rdata: signal is "true";
+    attribute mark_debug of system_address_out: signal is "true";
+    attribute mark_debug of system_write_next: signal is "true";
+    attribute mark_debug of system_wdata_next: signal is "true";
+    
+    attribute mark_debug of shadow_write_next: signal is "true";
+    attribute mark_debug of shadow_rdata: signal is "true";
     --
     --attribute mark_debug of reset: signal is "true";
     --attribute keep of cpu_memory_read_data : signal is "true";
     --attribute dont_touch of cpu_memory_read_data : signal is "true";
     --attribute mark_debug of cpu_memory_read_data : signal is "true";
-    --attribute mark_debug of cpu_proceed : signal is "true";
+    attribute mark_debug of cpu_proceed : signal is "true";
+    attribute mark_debug of memory_ready_out : signal is "true";
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
     
@@ -575,22 +581,22 @@ architecture Behavioural of bus_interface is
 
   --attribute mark_debug of map_en: signal is "true";
   --
-  --attribute mark_debug of read_source: signal is "true";
+  attribute mark_debug of read_source: signal is "true";
   --attribute mark_debug of fastio_addr_next: signal is "true";
   --attribute mark_debug of read_data_copy : signal is "true";
   --
   --attribute mark_debug of map_en_next: signal is "true";
   --attribute mark_debug of pre_resolve_memory_access_address: signal is "true";
-  --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
+  attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
   --attribute mark_debug of  system_wdata: signal is "true";
   --attribute mark_debug of system_address_next: signal is "true";
   --attribute mark_debug of system_address: signal is "true";
   --
-  --attribute mark_debug of memory_access_address_next: signal is "true";
-  --attribute mark_debug of memory_access_wdata_next: signal is "true";
-  --attribute mark_debug of memory_access_read_next: signal is "true";
-  --attribute mark_debug of memory_access_write_next: signal is "true";
+  attribute mark_debug of memory_access_address_next: signal is "true";
+  attribute mark_debug of memory_access_wdata_next: signal is "true";
+  attribute mark_debug of memory_access_read_next: signal is "true";
+  attribute mark_debug of memory_access_write_next: signal is "true";
   --
   --attribute mark_debug of bus_proceed: signal is "true";
   --attribute mark_debug of memory_access_resolve_address_next: signal is "true";
@@ -600,6 +606,8 @@ architecture Behavioural of bus_interface is
 --    attribute mark_debug of colour_ram_cs : signal is "true";
 --    attribute mark_debug of colourram_at_dc00 : signal is "true";
 --    attribute mark_debug of sector_buffer_mapped : signal is "true";
+  attribute mark_debug of kickstart_cs_next : signal is "true";
+  attribute mark_debug of colour_ram_cs_next : signal is "true";
     
 begin
   
@@ -746,8 +754,12 @@ begin
         read_source <= Kickstart;
         bus_proceed <= '1';
         wait_states_non_zero <= '0';
-        
-      elsif io_sel_next='1' or long_address(19 downto 16) = x"8" then
+      elsif colour_ram_cs_next='1' then
+        fastio_read <= '0';
+        read_source <= ColourRAM;
+        bus_proceed <= '1';
+        wait_states_non_zero <= '0';
+      elsif io_sel_next='1' then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
 
@@ -781,43 +793,14 @@ begin
         -- registers from all other IO registers, partly to work around some bugs,
         -- and partly because the banking of the VIC registers is the fiddliest part.
 
-        -- @IO:GS $8xxxx - Colour RAM (32KB or 64KB) -- FIXME
-        if long_address(19 downto 16) = x"8" then
-          report "VIC 64KB colour RAM access from VIC fastio" severity note;
-          report "Preparing to read from ColourRAM";
-          read_source <= ColourRAM;
-          colour_ram_cs <= '1';
-          wait_states <= colourram_read_wait_states;
-          if colourram_read_wait_states /= x"00" then
-            wait_states_non_zero <= '1';
-          else
-            wait_states_non_zero <= '0';
+        if io_sel_next='1' then
+          if long_address(11 downto 10) = "00" then  --   $D{0,1,2,3}{0,1,2,3}XX
+            if long_address(11 downto 7) /= "00001" then  -- ! $D.0{8-F}X (FDC, RAM EX)
+              report "VIC register from VIC fastio" severity note;
+              report "Preparing to read from VICIV";
+              read_source <= VICIV;
+            end if;            
           end if;
-        end if;
-        if long_address(19 downto 12) = x"0D" then
-            if long_address(11 downto 10) = "00" then  --   $D{0,1,2,3}{0,1,2,3}XX
-              if long_address(11 downto 7) /= "00001" then  -- ! $D.0{8-F}X (FDC, RAM EX)
-                report "VIC register from VIC fastio" severity note;
-                report "Preparing to read from VICIV";
-                read_source <= VICIV;
-              end if;            
-            end if;
-
-            -- Colour RAM at $D800-$DBFF and optionally $DC00-$DFFF
-            if long_address(11)='1' then
-              if (long_address(10)='0') or (colourram_at_dc00='1') then
-                report "RAM: D800-DBFF/DC00-DFFF colour ram access from VIC fastio" severity note;
-                report "Preparing to read from ColourRAM";
-                read_source <= ColourRAM;
-                colour_ram_cs <= '1';
-                wait_states <= colourram_read_wait_states;
-                if colourram_read_wait_states /= x"00" then
-                  wait_states_non_zero <= '1';
-                else
-                  wait_states_non_zero <= '0';
-                end if;
-              end if;
-            end if;
         end if;                           -- $DXXXX
       elsif ext_sel_next='1' then
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
@@ -907,7 +890,6 @@ begin
       slow_access_write_drive <= '0';
       charrom_write_cs <= '0';
       
-      -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
       
@@ -929,7 +911,6 @@ begin
       -- Always write to shadow ram if in scope, even if we also write elsewhere.
       -- This ensures that shadow ram is consistent with the shadowed address space
       -- when the CPU reads from shadow ram.
-      -- Get the shadow RAM address on the bus fast to improve timing.
       -- system_wdata <= value;
       
       if io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then      
@@ -969,7 +950,6 @@ begin
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
       elsif io_sel_next='1' 
-            --or (hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8") 
             or long_address(19 downto 16) = x"8"
             or long_address(19 downto 12) = x"7E" then --
         shadow_write <= '0';
@@ -994,29 +974,7 @@ begin
         if long_address(19 downto 12) = x"7E" then
           charrom_write_cs <= '1';
         end if;
-        
-        if long_address(19 downto 16) = x"8" then
-          colour_ram_cs <= '1';
-        end if;
-        if long_address(15 downto 12) = x"D" then    --   $D{0,1,2,3}XXX
-          -- Colour RAM at $D800-$DBFF and optionally $DC00-$DFFF
-          if long_address(11)='1' then
-            if (long_address(10)='0') or (colourram_at_dc00='1') then
-              report "D800-DBFF/DC00-DFFF colour ram access from VIC fastio" severity note;
-              colour_ram_cs <= '1';
-
-              -- Write also to CHIP RAM, so that $1F800-FFF works as chipRAM
-              -- as well as colour RAM, when accessed via $D800+ portal
-              --chipram_address(16 downto 11) <= "111111"; -- $1F8xx
-              --chipram_address(10 downto 0) <= long_address(10 downto 0);
-              --chipram_we <= '1';
-              --chipram_datain <= value;
-              --report "writing to chipram..." severity note;
-              
-            end if;
-          end if;
-        end if;                         -- $D{0,1,2,3}XXX
-        
+                
         wait_states <= io_write_wait_states;
         if io_write_wait_states /= x"00" then
           wait_states_non_zero <= '1';
@@ -1066,7 +1024,7 @@ begin
     
   begin    
 
-                                        -- BEGINNING OF MAIN PROCESS FOR CPU
+  -- Bus interface state machine update.
     if rising_edge(clock) then
       
       dat_bitplane_addresses_drive <= dat_bitplane_addresses;
@@ -1181,7 +1139,6 @@ begin
                                         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
-                                        -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
           
@@ -1195,6 +1152,7 @@ begin
   end process;
   
   -- output all monitor values based on current state, not one clock delayed.
+  -- TODO - This should just be whatever the system memory address value is.
   monitor_memory_access_address <= x"000" & memory_access_address_next;
               
   -- alternate (new) combinatorial core memory address generation.
@@ -1257,9 +1215,9 @@ begin
     -- may be totally redundant and just adds more logic/switching to the address output
     -- path that could be eliminated entirely, and in theory since this is just a passthrough
     -- of the CPU address, *should* be more or less meaningless anyway.
-    system_wdata_var :=  system_wdata;
+    system_wdata_var := system_wdata;
     system_address_next <= system_address;
-    system_wdata_next <=  system_wdata;
+    system_wdata_next <= system_wdata;
     
     system_address_var := system_address;
 
@@ -1319,6 +1277,7 @@ begin
       -- which probably involes making sure the CPU generates the right signals when paused).
 	    system_address_var := std_logic_vector(memory_access_address(19 downto 0));
       
+      -- Maybe have this look at io_sel_next being to avoid it up above?
       if (hypervisor_mode='1' and memory_access_address(19 downto 14)&"00" = x"F8") then
         kickstart_cs_var := '1';
       end if;
@@ -1383,9 +1342,11 @@ begin
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
 
-     system_wdata_next <= memory_access_wdata;
-
+    -- Global write signal, only used by blocks with their own chip selects
+    system_write_next <= memory_access_write;
+    system_wdata_next <= memory_access_wdata;
     system_address_out <= system_address_next;
+    
     shadow_write_next <= shadow_write_var;
     
     -- FIXME - There's not really a good reason for these to be different.
@@ -1394,11 +1355,31 @@ begin
 
     kickstart_write_next <= kickstart_write_var;
     kickstart_cs_next <= kickstart_cs_var;
-    
+        
     fastio_addr_fast <= fastio_addr_next;
     io_sel_next_out <= io_sel_next;
     ext_sel_next_out <= ext_sel_next;
     memory_ready_out <= bus_proceed;
+    
+    -- Color ram chip select (next)
+    colour_ram_cs_next <= '0';
+    if system_address_next(19 downto 16) = x"8" then
+      colour_ram_cs_next <= '1';
+    end if;
+    -- Additional colour ram write area on C65 from 0x1f800 to 0x1ffff
+    -- We only do this for writes because for reads we just get it from shadow.
+    if memory_access_write='1' and system_address_next(19 downto 12) = x"1F" and system_address_next(11) = '1' then
+      colour_ram_cs_next <= '1';
+    end if;
+    if io_sel_next='1' then    --   $D{0,1,2,3}XXX
+      -- Colour RAM at $D800-$DBFF and optionally $DC00-$DFFF
+      if system_address_next(11)='1' then
+        if (system_address_next(10)='0') or (colourram_at_dc00='1') then
+          report "D800-DBFF/DC00-DFFF colour ram access from VIC fastio" severity note;
+          colour_ram_cs_next <= '1';
+        end if;
+      end if;
+    end if;                         -- $D{0,1,2,3}XXX
     
   end process;
 
@@ -1409,6 +1390,8 @@ begin
       cpu_memory_read_data <= unsigned(shadow_rdata);
     elsif(read_source = Kickstart) then
       cpu_memory_read_data <= unsigned(kickstart_rdata);
+    elsif(read_source = ColourRAM) then
+      cpu_memory_read_data <= unsigned(fastio_colour_ram_rdata);
     else
       cpu_memory_read_data <= read_data_copy;
     end if;  

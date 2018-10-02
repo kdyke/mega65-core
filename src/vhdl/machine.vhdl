@@ -425,9 +425,11 @@ architecture Behavioral of machine is
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
 
-  signal  system_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
+  signal system_write_next : std_logic;
+  signal system_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
 
   signal system_address_next : std_logic_vector(19 downto 0);
+  
   signal shadow_write_next : std_logic := '0';
   signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
 
@@ -448,7 +450,7 @@ architecture Behavioral of machine is
   signal rom_at_8000 : std_logic := '0';
 
   signal colourram_at_dc00 : std_logic := '0';
-  signal colour_ram_cs : std_logic := '0';
+  signal colour_ram_cs_next : std_logic := '0';
   signal charrom_write_cs : std_logic := '0';
 
   signal monitor_pc : unsigned(15 downto 0);
@@ -860,7 +862,7 @@ begin
     clkA      => cpuclock,
     addressa  => system_address_next,
     wea       => shadow_write_next,
-    dia       =>  system_wdata_next,
+    dia       => system_wdata_next,
     doa       => shadow_rdata,
     clkB      => pixelclock,
     addressb  => chipram_address,
@@ -1021,10 +1023,11 @@ begin
           slow_access_wdata => slow_access_wdata,
           slow_access_rdata => slow_access_rdata,
       
-           system_wdata_next  =>  system_wdata_next,
-
+          system_wdata_next  => system_wdata_next,
           system_address_out => system_address_next,
-          shadow_write_next  => shadow_write_next,
+          system_write_next  => system_write_next,
+          
+          shadow_write_next  => shadow_write_next,          
           shadow_rdata       => shadow_rdata,
       
           --kickstart_address_out => kickstart_address_next,
@@ -1041,7 +1044,7 @@ begin
           fastio_vic_rdata => fastio_vic_rdata,
           fastio_colour_ram_rdata => colour_ram_fastio_rdata,
 
-          colour_ram_cs => colour_ram_cs,
+          colour_ram_cs_next => colour_ram_cs_next,
           charrom_write_cs => charrom_write_cs,
           io_sel_next_out => io_sel_next,
           io_sel_out => io_sel,
@@ -1200,7 +1203,7 @@ begin
       chipram_address => chipram_address,
       chipram_datain => chipram_data,
       colour_ram_fastio_rdata => colour_ram_fastio_rdata,
-      colour_ram_cs => colour_ram_cs,
+      colour_ram_cs_next => colour_ram_cs_next,
       charrom_write_cs => charrom_write_cs,
 
       fastio_addr     => fastio_addr,
@@ -1208,6 +1211,11 @@ begin
       fastio_write    => fastio_write,
       fastio_wdata    => fastio_wdata,
       fastio_rdata    => fastio_vic_rdata,
+      
+      io_sel_next         => io_sel_next,
+      system_wdata_next   => system_wdata_next,
+      system_address_next => system_address_next,
+      system_write_next   => system_write_next,
       
       viciii_iomode => viciii_iomode,
       iomode_set_toggle => iomode_set_toggle,

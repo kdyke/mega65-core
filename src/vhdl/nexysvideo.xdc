@@ -387,3 +387,62 @@ set_property -dict {PACKAGE_PIN V20 IOSTANDARD LVCMOS33} [get_ports sdReset]
 #set_property -dict { PACKAGE_PIN A16   IOSTANDARD LVCMOS12 } [get_ports { fmc_la_n[32] }]; #IO_L9N_T1_DQS_16 Sch=fmc_la_n[32]
 #set_property -dict { PACKAGE_PIN F13   IOSTANDARD LVCMOS12 } [get_ports { fmc_la_p[33] }]; #IO_L1P_T0_16 Sch=fmc_la_p[33]
 #set_property -dict { PACKAGE_PIN F14   IOSTANDARD LVCMOS12 } [get_ports { fmc_la_n[33] }]; #IO_L1N_T0_16 Sch=fmc_la_n[33]
+
+create_debug_core u_ila_0 ila
+set_property ALL_PROBE_SAME_MU true [get_debug_cores u_ila_0]
+set_property ALL_PROBE_SAME_MU_CNT 1 [get_debug_cores u_ila_0]
+set_property C_ADV_TRIGGER false [get_debug_cores u_ila_0]
+set_property C_DATA_DEPTH 1024 [get_debug_cores u_ila_0]
+set_property C_EN_STRG_QUAL false [get_debug_cores u_ila_0]
+set_property C_INPUT_PIPE_STAGES 1 [get_debug_cores u_ila_0]
+set_property C_TRIGIN_EN false [get_debug_cores u_ila_0]
+set_property C_TRIGOUT_EN false [get_debug_cores u_ila_0]
+set_property port_width 1 [get_debug_ports u_ila_0/clk]
+connect_debug_port u_ila_0/clk [get_nets [list dotclock1/cpuclock]]
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe0]
+set_property port_width 20 [get_debug_ports u_ila_0/probe0]
+connect_debug_port u_ila_0/probe0 [get_nets [list {machine0/bus0/memory_access_address_next[0]} {machine0/bus0/memory_access_address_next[1]} {machine0/bus0/memory_access_address_next[2]} {machine0/bus0/memory_access_address_next[3]} {machine0/bus0/memory_access_address_next[4]} {machine0/bus0/memory_access_address_next[5]} {machine0/bus0/memory_access_address_next[6]} {machine0/bus0/memory_access_address_next[7]} {machine0/bus0/memory_access_address_next[8]} {machine0/bus0/memory_access_address_next[9]} {machine0/bus0/memory_access_address_next[10]} {machine0/bus0/memory_access_address_next[11]} {machine0/bus0/memory_access_address_next[12]} {machine0/bus0/memory_access_address_next[13]} {machine0/bus0/memory_access_address_next[14]} {machine0/bus0/memory_access_address_next[15]} {machine0/bus0/memory_access_address_next[16]} {machine0/bus0/memory_access_address_next[17]} {machine0/bus0/memory_access_address_next[18]} {machine0/bus0/memory_access_address_next[19]}]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe1]
+set_property port_width 20 [get_debug_ports u_ila_0/probe1]
+connect_debug_port u_ila_0/probe1 [get_nets [list {machine0/bus0/post_resolve_memory_access_address_next[0]} {machine0/bus0/post_resolve_memory_access_address_next[1]} {machine0/bus0/post_resolve_memory_access_address_next[2]} {machine0/bus0/post_resolve_memory_access_address_next[3]} {machine0/bus0/post_resolve_memory_access_address_next[4]} {machine0/bus0/post_resolve_memory_access_address_next[5]} {machine0/bus0/post_resolve_memory_access_address_next[6]} {machine0/bus0/post_resolve_memory_access_address_next[7]} {machine0/bus0/post_resolve_memory_access_address_next[8]} {machine0/bus0/post_resolve_memory_access_address_next[9]} {machine0/bus0/post_resolve_memory_access_address_next[10]} {machine0/bus0/post_resolve_memory_access_address_next[11]} {machine0/bus0/post_resolve_memory_access_address_next[12]} {machine0/bus0/post_resolve_memory_access_address_next[13]} {machine0/bus0/post_resolve_memory_access_address_next[14]} {machine0/bus0/post_resolve_memory_access_address_next[15]} {machine0/bus0/post_resolve_memory_access_address_next[16]} {machine0/bus0/post_resolve_memory_access_address_next[17]} {machine0/bus0/post_resolve_memory_access_address_next[18]} {machine0/bus0/post_resolve_memory_access_address_next[19]}]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe2]
+set_property port_width 4 [get_debug_ports u_ila_0/probe2]
+connect_debug_port u_ila_0/probe2 [get_nets [list {machine0/bus0/read_source[0]} {machine0/bus0/read_source[1]} {machine0/bus0/read_source[2]} {machine0/bus0/read_source[3]}]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe3]
+set_property port_width 20 [get_debug_ports u_ila_0/probe3]
+connect_debug_port u_ila_0/probe3 [get_nets [list {machine0/bus0/system_address_out[0]} {machine0/bus0/system_address_out[1]} {machine0/bus0/system_address_out[2]} {machine0/bus0/system_address_out[3]} {machine0/bus0/system_address_out[4]} {machine0/bus0/system_address_out[5]} {machine0/bus0/system_address_out[6]} {machine0/bus0/system_address_out[7]} {machine0/bus0/system_address_out[8]} {machine0/bus0/system_address_out[9]} {machine0/bus0/system_address_out[10]} {machine0/bus0/system_address_out[11]} {machine0/bus0/system_address_out[12]} {machine0/bus0/system_address_out[13]} {machine0/bus0/system_address_out[14]} {machine0/bus0/system_address_out[15]} {machine0/bus0/system_address_out[16]} {machine0/bus0/system_address_out[17]} {machine0/bus0/system_address_out[18]} {machine0/bus0/system_address_out[19]}]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe4]
+set_property port_width 8 [get_debug_ports u_ila_0/probe4]
+connect_debug_port u_ila_0/probe4 [get_nets [list {machine0/bus0/system_wdata_next[0]} {machine0/bus0/system_wdata_next[1]} {machine0/bus0/system_wdata_next[2]} {machine0/bus0/system_wdata_next[3]} {machine0/bus0/system_wdata_next[4]} {machine0/bus0/system_wdata_next[5]} {machine0/bus0/system_wdata_next[6]} {machine0/bus0/system_wdata_next[7]}]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe5]
+set_property port_width 1 [get_debug_ports u_ila_0/probe5]
+connect_debug_port u_ila_0/probe5 [get_nets [list machine0/bus0/colour_ram_cs_next]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe6]
+set_property port_width 1 [get_debug_ports u_ila_0/probe6]
+connect_debug_port u_ila_0/probe6 [get_nets [list machine0/bus0/kickstart_cs_next]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe7]
+set_property port_width 1 [get_debug_ports u_ila_0/probe7]
+connect_debug_port u_ila_0/probe7 [get_nets [list machine0/bus0/memory_access_read_next]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe8]
+set_property port_width 1 [get_debug_ports u_ila_0/probe8]
+connect_debug_port u_ila_0/probe8 [get_nets [list machine0/bus0/memory_access_write_next]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe9]
+set_property port_width 1 [get_debug_ports u_ila_0/probe9]
+connect_debug_port u_ila_0/probe9 [get_nets [list machine0/monitor0/monitorctrl/read]]
+create_debug_port u_ila_0 probe
+set_property PROBE_TYPE DATA_AND_TRIGGER [get_debug_ports u_ila_0/probe10]
+set_property port_width 1 [get_debug_ports u_ila_0/probe10]
+connect_debug_port u_ila_0/probe10 [get_nets [list machine0/bus0/system_write_next]]
+set_property C_CLK_INPUT_FREQ_HZ 300000000 [get_debug_cores dbg_hub]
+set_property C_ENABLE_CLK_DIVIDER false [get_debug_cores dbg_hub]
+set_property C_USER_SCAN_CHAIN 1 [get_debug_cores dbg_hub]
+connect_debug_port dbg_hub/clk [get_nets cpuclock]

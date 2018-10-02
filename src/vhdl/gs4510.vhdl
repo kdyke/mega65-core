@@ -4120,7 +4120,6 @@ begin
                                         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
-                                        -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D700" then
             report "DMAgic: DMA pending";
             dma_pending <= '1';
