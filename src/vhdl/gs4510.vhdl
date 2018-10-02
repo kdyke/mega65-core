@@ -4270,7 +4270,7 @@ begin
         
     -- Hold previous bus values by default unless we know we are making forward progress.
     memory_access_read := memory_access_read_hold;
-    memory_access_write := '0'; --memory_access_write_hold;
+    memory_access_write := '0';
     memory_access_resolve_address := memory_access_resolve_address_hold;
     memory_access_address := memory_access_address_hold;
     memory_access_wdata := memory_access_wdata_hold;

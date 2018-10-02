@@ -425,13 +425,13 @@ architecture Behavioral of machine is
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
 
-  signal bus_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
+  signal  system_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
 
-  signal shadow_address_next : integer range 0 to 1048575 := 0;
+  signal system_address_next : std_logic_vector(19 downto 0);
   signal shadow_write_next : std_logic := '0';
   signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
 
-  signal kickstart_address_next : std_logic_vector(13 downto 0);
+  --signal kickstart_address_next : std_logic_vector(13 downto 0);
   signal kickstart_write_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
@@ -656,7 +656,7 @@ architecture Behavioral of machine is
   signal amiga_mouse_assume_b : std_logic;
 
   -- local debug signals from CPU
-  signal shadow_address_state_dbg_out : std_logic_vector(3 downto 0);
+  signal system_address_state_dbg_out : std_logic_vector(3 downto 0);
   signal pixelclock_select : std_logic_vector(7 downto 0);
   
   -- New CPU bus interface signals
@@ -858,9 +858,9 @@ begin
   
   shadowram0 : entity work.shadowram port map (
     clkA      => cpuclock,
-    addressa  => shadow_address_next,
+    addressa  => system_address_next,
     wea       => shadow_write_next,
-    dia       => bus_wdata_next,
+    dia       =>  system_wdata_next,
     doa       => shadow_rdata,
     clkB      => pixelclock,
     addressb  => chipram_address,
@@ -869,13 +869,12 @@ begin
   
   kickstartrom : entity work.kickstart port map (
     clk     => cpuclock,
-    address => kickstart_address_next,
+    address => system_address_next(13 downto 0),
     we      => kickstart_write_next,
     data_o  => kickstart_rdata,
-    data_i  => bus_wdata_next
+    data_i  =>  system_wdata_next
     );
-  
-  
+    
   cpu0: entity work.gs4510
     generic map(
       cpufrequency => cpufrequency)
@@ -1022,13 +1021,13 @@ begin
           slow_access_wdata => slow_access_wdata,
           slow_access_rdata => slow_access_rdata,
       
-          bus_wdata_next  => bus_wdata_next,
+           system_wdata_next  =>  system_wdata_next,
 
-          shadow_address_out => shadow_address_next,
+          system_address_out => system_address_next,
           shadow_write_next  => shadow_write_next,
           shadow_rdata       => shadow_rdata,
       
-          kickstart_address_out => kickstart_address_next,
+          --kickstart_address_out => kickstart_address_next,
           kickstart_write_next  => kickstart_write_next,
           kickstart_rdata       => kickstart_rdata,
       
