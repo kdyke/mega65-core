@@ -451,7 +451,7 @@ architecture Behavioral of machine is
 
   signal colourram_at_dc00 : std_logic := '0';
   signal colour_ram_cs_next : std_logic := '0';
-  signal charrom_write_cs : std_logic := '0';
+  signal charrom_write_cs_next : std_logic := '0';
 
   signal monitor_pc : unsigned(15 downto 0);
   signal monitor_hypervisor_mode : std_logic;
@@ -667,6 +667,7 @@ architecture Behavioral of machine is
   signal cpu_memory_access_write_next : std_logic;
   signal cpu_memory_access_resolve_address_next : std_logic;
   signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
+  signal cpu_memory_access_io_next : std_logic;
   signal cpu_memory_read_data : unsigned(7 downto 0);
   signal cpu_proceed : std_logic;
   signal cpu_map_en_next : std_logic;
@@ -978,6 +979,7 @@ begin
       cpu_memory_access_write_next           => cpu_memory_access_write_next,  
       cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
       cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
+      cpu_memory_access_io_next              => cpu_memory_access_io_next,
       cpu_memory_read_data                   => cpu_memory_read_data,
       cpu_proceed                            => cpu_proceed,
       cpu_map_en                             => cpu_map_en_next,
@@ -1003,6 +1005,7 @@ begin
           cpu_memory_access_write_next           => cpu_memory_access_write_next,  
           cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
           cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
+          cpu_memory_access_io_next              => cpu_memory_access_io_next,
           cpu_memory_read_data                   => cpu_memory_read_data,
           cpu_proceed                            => cpu_proceed,
           cpu_map_en_next                        => cpu_map_en_next,
@@ -1045,7 +1048,7 @@ begin
           fastio_colour_ram_rdata => colour_ram_fastio_rdata,
 
           colour_ram_cs_next => colour_ram_cs_next,
-          charrom_write_cs => charrom_write_cs,
+          charrom_write_cs_next => charrom_write_cs_next,
           io_sel_next_out => io_sel_next,
           io_sel_out => io_sel,
           ext_sel_next_out => ext_sel_next,
@@ -1204,7 +1207,7 @@ begin
       chipram_datain => chipram_data,
       colour_ram_fastio_rdata => colour_ram_fastio_rdata,
       colour_ram_cs_next => colour_ram_cs_next,
-      charrom_write_cs => charrom_write_cs,
+      charrom_write_cs_next => charrom_write_cs_next,
 
       fastio_addr     => fastio_addr,
       fastio_read     => fastio_read,

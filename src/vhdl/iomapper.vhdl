@@ -1241,11 +1241,14 @@ begin
       -- except for any read values required to allow the C65 ROM to function.
       temp(15 downto 2) := unsigned(address(19 downto 6));
       temp(1 downto 0) := "00";
-      if address(7 downto 4) /= x"3" then
+      if address(11 downto 4)=x"60" or
+         address(11 downto 4)=x"61" or
+         address(11 downto 4)=x"62" then
         case temp(7 downto 0) is
           when x"60" => c65uart_cs <= c65uart_en and io_sel and not c64mode;
           when others => c65uart_cs <= '0';
         end case;
+        thumbnail_cs <= '0';
       else
         c65uart_cs <= '0';
         -- $D630-$D63F is thumbnail generator

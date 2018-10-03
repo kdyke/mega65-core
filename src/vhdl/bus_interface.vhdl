@@ -326,6 +326,7 @@ entity bus_interface is
     cpu_memory_access_write_next : in std_logic;
     cpu_memory_access_resolve_address_next : std_logic;
     cpu_memory_access_wdata_next : in unsigned(7 downto 0);
+    cpu_memory_access_io_next : in std_logic;
     cpu_memory_read_data : out unsigned(7 downto 0);
     cpu_proceed : in std_logic;
     cpu_map_en_next : in std_logic;
@@ -367,7 +368,7 @@ entity bus_interface is
     fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
     colour_ram_cs : out std_logic := '0';
     colour_ram_cs_next : inout std_logic := '0';
-    charrom_write_cs : out std_logic := '0';
+    charrom_write_cs_next : out std_logic := '0';
 
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
@@ -681,7 +682,6 @@ begin
       accessing_slowram <= '0';
       slow_access_pending_write <= '0';
       slow_access_write_drive <= '0';
-      charrom_write_cs <= '0';
 
       wait_states <= io_read_wait_states;
       if io_read_wait_states /= x"00" then
@@ -703,7 +703,7 @@ begin
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if io_sel_next='1' and long_address(15 downto 6)&"00" = x"D64" and hypervisor_mode='1' then
+      if io_sel_next='1' and long_address(11 downto 6)&"00" = x"64" and hypervisor_mode='1' then
         report "Preparing for reading hypervisor register";
         read_source <= HypervisorRegister;
         -- One cycle wait-state on hypervisor registers to remove the register
@@ -727,29 +727,8 @@ begin
         wait_states <= x"01";
         wait_states_non_zero <= '1';
         bus_proceed <= '0';
-      elsif io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then
-        -- Reading from chipram
-        -- @ IO:C64 $00002-$0FFFF - 64KB RAM
-        -- @ IO:C65 $10000-$1FFFF - 64KB RAM
-        -- @ IO:C65 $20000-$3FFFF - 128KB ROM (can be used as RAM in M65 mode)
-        -- @ IO:C65 $2A000-$2BFFF - 8KB C64 BASIC ROM
-        -- @ IO:C65 $2D000-$2DFFF - 4KB C64 CHARACTER ROM
-        -- @ IO:C65 $2E000-$2FFFF - 8KB C64 KERNAL ROM
-        -- @ IO:C65 $3E000-$3FFFF - 8KB C65 KERNAL ROM
-        -- @ IO:C65 $3C000-$3CFFF - 4KB C65 KERNAL/INTERFACE ROM
-        -- @ IO:C65 $38000-$3BFFF - 8KB C65 BASIC GRAPHICS ROM
-        -- @ IO:C65 $32000-$35FFF - 8KB C65 BASIC ROM
-        -- @ IO:C65 $30000-$31FFF - 16KB C65 DOS ROM
-        -- @ IO:M65 $40000-$5FFFF - 128KB RAM (in place of C65 cartridge support)
-        report "Preparing to read from Shadow";
-        read_source <= Shadow;
-        wait_states_non_zero <= '0';
-        bus_proceed <= '1';
-          report "Reading from shadowed chipram address $"
-          & to_hstring(long_address(19 downto 0)) severity note;
-                                        --Also mapped to 7F2 0000 - 7F3 FFFF
-      -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
-      elsif io_sel_next='0' and kickstart_cs_next='1' then
+        -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
+      elsif kickstart_cs_next='1' then
         fastio_read <= '0';
         read_source <= Kickstart;
         bus_proceed <= '1';
@@ -802,6 +781,27 @@ begin
             end if;            
           end if;
         end if;                           -- $DXXXX
+      elsif long_address(19)='0' and long_address(18)='0' then
+        -- Reading from chipram
+        -- @ IO:C64 $00002-$0FFFF - 64KB RAM
+        -- @ IO:C65 $10000-$1FFFF - 64KB RAM
+        -- @ IO:C65 $20000-$3FFFF - 128KB ROM (can be used as RAM in M65 mode)
+        -- @ IO:C65 $2A000-$2BFFF - 8KB C64 BASIC ROM
+        -- @ IO:C65 $2D000-$2DFFF - 4KB C64 CHARACTER ROM
+        -- @ IO:C65 $2E000-$2FFFF - 8KB C64 KERNAL ROM
+        -- @ IO:C65 $3E000-$3FFFF - 8KB C65 KERNAL ROM
+        -- @ IO:C65 $3C000-$3CFFF - 4KB C65 KERNAL/INTERFACE ROM
+        -- @ IO:C65 $38000-$3BFFF - 8KB C65 BASIC GRAPHICS ROM
+        -- @ IO:C65 $32000-$35FFF - 8KB C65 BASIC ROM
+        -- @ IO:C65 $30000-$31FFF - 16KB C65 DOS ROM
+        -- @ IO:M65 $40000-$5FFFF - 128KB RAM (in place of C65 cartridge support)
+        report "Preparing to read from Shadow";
+        read_source <= Shadow;
+        wait_states_non_zero <= '0';
+        bus_proceed <= '1';
+          report "Reading from shadowed chipram address $"
+          & to_hstring(long_address(19 downto 0)) severity note;
+                                        --Also mapped to 7F2 0000 - 7F3 FFFF
       elsif ext_sel_next='1' then
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF Slow Device memory (127MB)
@@ -888,7 +888,6 @@ begin
       
       accessing_slowram <= '0';
       slow_access_write_drive <= '0';
-      charrom_write_cs <= '0';
       
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
@@ -936,22 +935,7 @@ begin
           wait_states_non_zero <= '0';
         end if;
 
-        -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
-        -- when writing here.
-        if long_address(19 downto 12) = x"1F" and long_address(11) = '1' then
-          report "writing to colour RAM via $001F8xx" severity note;
-
-          -- And also to colour RAM
-          colour_ram_cs <= '1';
-          fastio_write <= '1';
-          fastio_wdata <= std_logic_vector(value);
-          fastio_addr(19 downto 16) <= x"8";
-          fastio_addr(15 downto 11) <= (others => '0');
-          fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
-        end if;
-      elsif io_sel_next='1' 
-            or long_address(19 downto 16) = x"8"
-            or long_address(19 downto 12) = x"7E" then --
+      elsif io_sel_next='1' then
         shadow_write <= '0';
         shadow_write_flags(2) <= '1';
         fastio_addr <= fastio_addr_next;
@@ -970,11 +954,6 @@ begin
         last_write_pending <= '1';
         last_write_fastio <= '1';
         
-        -- @IO:GS $FF7Exxx VIC-IV CHARROM write area
-        if long_address(19 downto 12) = x"7E" then
-          charrom_write_cs <= '1';
-        end if;
-                
         wait_states <= io_write_wait_states;
         if io_write_wait_states /= x"00" then
           wait_states_non_zero <= '1';
@@ -1159,8 +1138,8 @@ begin
   process (hypervisor_mode,mem_reading,
     viciii_iomode,
     shadow_rdata,bus_proceed,cpu_proceed,
-    cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next,
-     system_wdata,system_address,
+    cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
+    system_wdata,system_address,
     rom_writeprotect,fastio_addr,
     post_resolve_memory_access_address_next,
     system_address_next, read_source, fastio_addr_next, io_sel_next, ext_sel_next
@@ -1168,6 +1147,7 @@ begin
     variable memory_access_address : unsigned(19 downto 0) := x"FFFFF";
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
+    variable memory_access_io : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
     variable memory_access_wdata : std_logic_vector(7 downto 0) := x"FF";
     
@@ -1196,6 +1176,7 @@ begin
     -- Don't do anything by default...
     memory_access_read := '0';
     memory_access_write := '0';
+    memory_access_io := '0';
     memory_access_resolve_address := '0';
     kickstart_cs_var := '0';
     
@@ -1238,6 +1219,8 @@ begin
     map_en_next <= map_en;
     map_en_var := '0';
 
+    charrom_write_cs_next <= '0';
+
     if cpu_proceed = '1' then
     
       -- By default read next byte in instruction stream.
@@ -1251,6 +1234,7 @@ begin
       memory_access_address := cpu_memory_access_address_next;
       memory_access_resolve_address := cpu_memory_access_resolve_address_next;
       memory_access_wdata := std_logic_vector(cpu_memory_access_wdata_next);
+      memory_access_io := cpu_memory_access_io_next;
       
       fastio_addr_var := x"FFFFF";
 
@@ -1267,7 +1251,7 @@ begin
         io_sel_next_var := io_sel_resolved;
         ext_sel_next_var := ext_sel_resolved;
       else
-        io_sel_next_var := '0';
+        io_sel_next_var := memory_access_io;
         ext_sel_next_var := '0';
       end if;      
 
@@ -1295,25 +1279,16 @@ begin
           if io_sel_next_var='0' then
             shadow_write_var := '1';
           end if;
-
-          -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
-          -- when writing here.
-          if memory_access_address(19 downto 12) = x"1F" and memory_access_address(11) = '1' then
-            report "writing to colour RAM via $001F8xx" severity note;
-
-            -- And also to colour RAM
-            fastio_addr_var(19 downto 16) := x"8";
-            fastio_addr_var(15 downto 11) := (others => '0');
-            fastio_addr_var(10 downto 0) := std_logic_vector(memory_access_address(10 downto 0));
-          end if;
         end if;
         
+        -- @IO:GS $FF7Exxx VIC-IV CHARROM write area
+        if memory_access_address(19 downto 12) = x"7E" then
+          charrom_write_cs_next <= '1';
+        end if;
+                        
         kickstart_write_var := kickstart_cs_var;
         
-        -- Fast I/O and charrom write accesses need to drive fastio address bus (for now, at least)
-        -- Eventually we should always be able to drive the fastIO address bus signal and rely on chip select
-        -- logic to avoid false writes.   The CPU core shouldn't know about *any* of this stuff.
-        if io_sel_next_var='1' or memory_access_address(19 downto 12) = x"7E" then
+        if io_sel_next_var='1' then
           fastio_addr_var := std_logic_vector(memory_access_address(19 downto 0));
         end if;
         

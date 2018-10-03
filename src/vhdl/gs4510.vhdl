@@ -177,6 +177,7 @@ entity gs4510 is
     cpu_memory_access_write_next : out std_logic;
     cpu_memory_access_resolve_address_next : out std_logic;
     cpu_memory_access_wdata_next : out unsigned(7 downto 0);
+    cpu_memory_access_io_next : out std_logic;
     cpu_memory_read_data : in unsigned(7 downto 0);
     cpu_memory_ready : in std_logic;
     cpu_proceed : out std_logic;
@@ -822,6 +823,7 @@ architecture Behavioural of gs4510 is
   signal memory_access_write_next : std_logic;
   signal memory_access_resolve_address_next : std_logic;
   signal memory_access_wdata_next : unsigned(7 downto 0);
+  signal memory_access_io_next : std_logic;
   
   -- These signals are the clocked versions of the above signals, primarily used
   -- to hold the signals in cases where we are paused for any reason (wait states, etc.)
@@ -830,6 +832,7 @@ architecture Behavioural of gs4510 is
   signal memory_access_write_hold : std_logic;
   signal memory_access_resolve_address_hold : std_logic;
   signal memory_access_wdata_hold : unsigned(7 downto 0);
+  signal memory_access_io_hold : std_logic;
   
   signal cycle_counter : unsigned(15 downto 0) := (others => '0');
 
@@ -4064,6 +4067,7 @@ begin
           memory_access_write_hold <= memory_access_write_next;
           memory_access_resolve_address_hold <= memory_access_resolve_address;
           memory_access_wdata_hold <= memory_access_wdata_next;
+          memory_access_io_hold <= memory_access_io_next;
           map_en <= map_en_next;
         
         end if;
@@ -4215,6 +4219,8 @@ begin
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
     variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
+    variable memory_access_io : std_logic := '0';
+    
     variable dmagic_address : unsigned(19 downto 0) := x"FFFFF";
     
     variable io_sel_next_var : std_logic := '0';
@@ -4273,7 +4279,7 @@ begin
     memory_access_resolve_address := memory_access_resolve_address_hold;
     memory_access_address := memory_access_address_hold;
     memory_access_wdata := memory_access_wdata_hold;
-
+    memory_access_io := memory_access_io_hold;
     -- By default, shadow/rom addresses hold previous values    
     long_address_write_var := x"FFFFF";
     long_address_read_var := x"FFFFF";
@@ -4319,6 +4325,7 @@ begin
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
       memory_access_write := '0';
+      memory_access_io := '0';
       memory_access_resolve_address := '1';
       address_op := addr_op_pc;
             
@@ -4399,11 +4406,9 @@ begin
   		    dmagic_address := dmagic_dest_addr(27 downto 8);
 
   		    -- redirect memory write to IO block if required
-  		    --if dmagic_dest_addr(23 downto 20) = x"d" and dmagic_dest_io='1' then
-  		    --  dmagic_address(23 downto 16) := x"FD";
-  		    --  dmagic_address(15 downto 14) := "00";
-  		    --  dmagic_address(13 downto 12)  := unsigned(viciii_iomode);
-  		    --end if;
+		      if dmagic_dest_addr(27 downto 20) = x"0d" and dmagic_dest_io='1' then
+            memory_access_io := '1';
+		      end if;
 		    
   		  when DMAgicCopyRead =>
   		    -- Do memory read
@@ -4413,11 +4418,9 @@ begin
   		    dmagic_address := dmagic_src_addr(27 downto 8);
 
   		    -- redirect memory write to IO block if required
-  		    --if dmagic_src_addr(23 downto 20) = x"d" and dmagic_src_io='1' then
-  		    --  dmagic_address(23 downto 16) := x"FD";
-  		    --  dmagic_address(15 downto 14) := "00";
-  		    --  dmagic_address(13 downto 12)  := unsigned(viciii_iomode);
-  		    --end if;
+  		    if dmagic_src_addr(27 downto 20) = x"0d" and dmagic_src_io='1' then
+            memory_access_io := '1';
+  		    end if;
 		    
   		  when DMAgicCopyWrite =>
 		    
@@ -4435,11 +4438,9 @@ begin
   		      dmagic_address := dmagic_dest_addr(27 downto 8);
 
   		      -- redirect memory write to IO block if required
-  		      --if dmagic_dest_addr(15 downto 12) = x"d" and dmagic_dest_io='1' then
-  		      --  dmagic_address(23 downto 16) := x"FD";
-  		      --  dmagic_address(15 downto 14) := "00";
-  		      --  dmagic_address(13 downto 12)  := unsigned(viciii_iomode);
-  		      --end if;
+  		      if dmagic_dest_addr(27 downto 20) = x"0d" and dmagic_dest_io='1' then
+              memory_access_io := '1';
+  		      end if;
   		    end if;
   		  when Cycle2 =>
   		    -- Fetch arg2 if required (only for 3 byte addressing modes)
@@ -4686,6 +4687,7 @@ begin
     memory_access_write_next <= memory_access_write;
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
+    memory_access_io_next <= memory_access_io;
     
     -- For now, do the same for the new bus_interface module
     cpu_memory_access_address_next <= memory_access_address;
@@ -4693,6 +4695,7 @@ begin
     cpu_memory_access_write_next <= memory_access_write;
     cpu_memory_access_resolve_address_next <= memory_access_resolve_address;
     cpu_memory_access_wdata_next <= memory_access_wdata;
+    cpu_memory_access_io_next <= memory_access_io;
     cpu_map_en <= map_en_next;
 
     -- FIXME - There's not really a reason for these to be different.
