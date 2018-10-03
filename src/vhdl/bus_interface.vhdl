@@ -1221,7 +1221,7 @@ begin
 
     charrom_write_cs_next <= '0';
 
-    if cpu_proceed = '1' then
+    if true or cpu_proceed = '1' then
     
       -- By default read next byte in instruction stream.
       -- TODO - See if the memory address/resolve/etc signals (everything but read/write)
