@@ -1209,11 +1209,11 @@ begin
       colour_ram_cs_next => colour_ram_cs_next,
       charrom_write_cs_next => charrom_write_cs_next,
 
-      fastio_addr     => fastio_addr,
-      fastio_read     => fastio_read,
-      fastio_write    => fastio_write,
-      fastio_wdata    => fastio_wdata,
-      fastio_rdata    => fastio_vic_rdata,
+      fastio_addr     => fastio_addr_fast, -- TODO, switch this to system_address_next at some point.
+      fastio_read     => cpu_memory_access_read_next,  -- TODO This could be derived internally by matching register read and ~write.
+      fastio_write    => system_write_next,
+      fastio_wdata    => system_wdata_next,
+      vic_fastio_rdata    => fastio_vic_rdata,
       
       io_sel_next         => io_sel_next,
       system_wdata_next   => system_wdata_next,

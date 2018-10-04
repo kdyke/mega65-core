@@ -153,7 +153,9 @@ entity viciv is
     system_wdata_next : in std_logic_vector(7 downto 0);
     
     fastio_wdata : in std_logic_vector(7 downto 0);
-    fastio_rdata : out std_logic_vector(7 downto 0);
+    
+    vic_fastio_rdata : out std_logic_vector(7 downto 0);
+    
     colour_ram_fastio_rdata : out std_logic_vector(7 downto 0);
     colour_ram_cs_next : in std_logic;
     charrom_write_cs_next : in std_logic;
@@ -169,6 +171,11 @@ entity viciv is
     rom_at_a000 : out std_logic;
     rom_at_8000 : out std_logic
     );
+    
+    attribute mark_debug : string;
+    attribute keep : string;
+    attribute dont_touch : string;
+    
 end viciv;
 
 architecture Behavioral of viciv is
@@ -899,6 +906,19 @@ architecture Behavioral of viciv is
   signal ssy_table_counter_200 : integer := 0;
   signal ssy_table_counter_400 : integer := 0;
   signal ssy_table_phase : integer := 0;
+
+  -- This is now a holding register.
+  signal fastio_rdata : std_logic_vector(7 downto 0);
+
+  type vic_output_source is (
+    VicRegister,         -- 0x00
+    VicPaletteRed,
+    VicPaletteGreen,
+    VicPaletteBlue
+    );
+
+  -- This controls the output mux state.
+  signal vic_fastio_source : vic_output_source;
   
   signal viciv_flyback : std_logic := '0';
 
@@ -944,13 +964,10 @@ architecture Behavioral of viciv is
   -- Indicates if the next 16 bit screen token will be a GOTO/GOSUB token
   signal next_token_is_goto : std_logic := '0';
 
-  attribute keep_hierarchy : string;
-  attribute keep : string;
-  attribute mark_debug : string;
+  --attribute mark_debug of vic_fastio_source : signal is "true";
+  --attribute mark_debug of fastio_rdata : signal is "true";
   
-  --attribute mark_debug of border_colour : signal is "true";
-  
---  attribute keep_hierarchy of Behavioral : architecture is "yes";
+  --attribute keep_hierarchy of Behavioral : architecture is "yes";
 
 begin
   
@@ -1469,21 +1486,13 @@ begin
     -- Export this and bitplane addresses to the CPU
     dat_offset <= dat_bitplane_offset;
     dat_bitplane_addresses <= bitplane_addresses;
-    
+        
     if true then
       -- Calculate register number asynchronously
       register_number := x"FFF";
-      if fastio_addr(19) = '0' or fastio_addr(19) = '1' then
-        register_bank := unsigned(fastio_addr(19 downto 12));
-        register_page := unsigned(fastio_addr(11 downto 8));
-        register_num  := unsigned(fastio_addr(7 downto 0));
-      else
-        -- Give values when inputs are bad to supress warnings cluttering output
-        -- when simulating
-        register_bank := x"FF";
-        register_page := x"F";
-        register_num  := x"FF";
-      end if;    
+      register_bank := unsigned(fastio_addr(19 downto 12));
+      register_page := unsigned(fastio_addr(11 downto 8));
+      register_num  := unsigned(fastio_addr(7 downto 0));
       
       if (register_bank=x"0D" and viciii_iomode="00") and register_page<4 then
         -- First 1KB of normal C64 IO space maps to r$0 - r$3F
@@ -1529,15 +1538,29 @@ begin
         colour_ram_fastio_address <= unsigned(system_address_next(15 downto 0));
       end if;
       
-      if fastio_read='0' then
-        fastio_rdata <= (others => 'Z');
-      else
-                                        --report "read from fastio detect in video controller. " &
-                                        -- "register number = " & integer'image(to_integer(register_number)) &
-                                        -- ", fastio_addr = " & to_hstring(fastio_addr) &
-                                        -- ", register_bank = " & to_hstring(register_bank) &
-                                        -- ", register_page = " & to_hstring(register_page)
-                                        --  severity note;
+      -- This is always being driven.
+      palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+
+      if rising_edge(ioclock) then
+        -- Default is output register.
+        vic_fastio_source <= VicRegister;
+      
+        -- There are two sources of data we need to provide.  One is from the set of internal registers,
+        -- the other is from the palette memory.  For the former we can provide those in a clocked manner,
+        -- but for the latter the memories themselves require a clock cycle.   If we always used a clocked
+        -- update for both then the palette data would have a full extra cycle of readback delay.   So the
+        -- solution will be to have a 4-way output mux that either sources from our "output register", or
+        -- sources directly from one of the palette ram outputs.  What we'll do is similar to what the
+        -- bus interface module does, which is to remember where the next data is going to come from, and
+        -- then update that on each clock to control the mux routing.
+        fastio_rdata <= x"FF";
+
+                                          --report "read from fastio detect in video controller. " &
+                                          -- "register number = " & integer'image(to_integer(register_number)) &
+                                          -- ", fastio_addr = " & to_hstring(fastio_addr) &
+                                          -- ", register_bank = " & to_hstring(register_bank) &
+                                          -- ", register_page = " & to_hstring(register_page)
+                                          --  severity note;
         if register_number>=0 and register_number<8 then
                                         -- compatibility sprite coordinates
           fastio_rdata <= std_logic_vector(sprite_x(to_integer(register_num(2 downto 0))));
@@ -1648,8 +1671,8 @@ begin
             & reg_h1280                         -- H1280
             & "0"                         -- MONO
             & "1";                        -- INT(erlaced?)
-          
-          
+        
+        
                                         -- Skip $D02F - $D03F to avoid real C65/C128 programs trying to
                                         -- fiddle with registers in this range.
                                         -- NEW VIDEO REGISTERS
@@ -1688,34 +1711,10 @@ begin
         -- @IO:C65 $D03F - Vertical position (screen verniers?)
         elsif register_number=63 then
           fastio_rdata <= std_logic_vector(bitplanes_y_start);
-          
+        
         -- $D040 - $D047 DAT memory ports for bitplanes 0 through 7
         -- XXX: Deprecated old addresses for some VIC-IV features currently occupy
         -- these addresses
-        elsif register_number=64 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=65 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=66 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=67 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=68 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=69 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=70 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
-        elsif register_number=71 then
-          -- Unimplemented VIC-III DAC
-          fastio_rdata <= x"FF";
         elsif register_number=72 then
           fastio_rdata <= std_logic_vector(border_y_top(7 downto 0));
         elsif register_number=73 then
@@ -1833,15 +1832,13 @@ begin
         elsif register_number=119 then  -- $D3077
           fastio_rdata(3 downto 0) <= std_logic_vector(display_width(13 downto 10));
           fastio_rdata(7 downto 4) <= std_logic_vector(frame_width(13 downto 10));
-
         elsif register_number=120 then  -- $D3078
-	  fastio_rdata <= std_logic_vector(display_height(7 downto 0));
+          fastio_rdata <= std_logic_vector(display_height(7 downto 0));
         elsif register_number=121 then  -- $D3079
           fastio_rdata <= std_logic_vector(frame_height(7 downto 0));
         elsif register_number=122 then  -- $D307A
           fastio_rdata(3 downto 0) <= std_logic_vector(display_height(11 downto 8));
-	  fastio_rdata(7 downto 4) <= std_logic_vector(frame_height(11 downto 8));
-          
+          fastio_rdata(7 downto 4) <= std_logic_vector(frame_height(11 downto 8));          
         elsif register_number=123 then  -- $D307B
           fastio_rdata <= std_logic_vector(hsync_start(9 downto 2));
         elsif register_number=124 then  -- $D307C
@@ -1857,28 +1854,32 @@ begin
           -- fastio_rdata <= "0000"
           -- & std_logic_vector(debug_charaddress_drive2(11 downto 8));
           fastio_rdata <= std_logic_vector(to_unsigned(ssx_table_phase,8));
-        elsif register_number=127 then
-          fastio_rdata <= x"FF";
-        elsif register_number<256 then
-                                        -- Fill in unused register space
-          fastio_rdata <= (others => 'Z');
                                         -- C65 style palette registers
         elsif register_number>=256 and register_number<512 then
           -- red palette
-          palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          fastio_rdata <= palette_fastio_rdata(31 downto 24);
+          vic_fastio_source <= VicPaletteRed;
+          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_fastio_rdata(31 downto 24);
         elsif register_number>=512 and register_number<768 then
           -- green palette
-          palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          fastio_rdata <= palette_fastio_rdata(23 downto 16);
+          vic_fastio_source <= VicPaletteGreen;
+          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_fastio_rdata(23 downto 16);
         elsif register_number>=768 and register_number<1024 then
           -- blue palette
-          palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          fastio_rdata <= palette_fastio_rdata(15 downto 8);
-        else
-          fastio_rdata <= "ZZZZZZZZ";
+          vic_fastio_source <= VicPaletteBlue;
+          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_fastio_rdata(15 downto 8);
         end if;
       end if;
+      
+      case vic_fastio_source is
+          when VicPaletteRed   => vic_fastio_rdata <= palette_fastio_rdata(31 downto 24);
+          when VicPaletteGreen => vic_fastio_rdata <= palette_fastio_rdata(23 downto 16);
+          when VicPaletteBlue  => vic_fastio_rdata <= palette_fastio_rdata(15 downto 8);
+          when others =>          vic_fastio_rdata <= fastio_rdata;
+        end case;
+
     end if;
     
     if rising_edge(ioclock) then
