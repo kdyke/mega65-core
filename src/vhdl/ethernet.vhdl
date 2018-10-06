@@ -71,7 +71,7 @@ entity ethernet is
     fastio_write : in std_logic;
     fastio_read : in std_logic;
     fastio_wdata : in unsigned(7 downto 0);
-    fastio_rdata : out unsigned(7 downto 0);
+    ether_rdata : out unsigned(7 downto 0);
 
     ---------------------------------------------------------------------------
     -- compressed video stream from the VIC-IV frame packer for autonomous dispatch
@@ -166,6 +166,8 @@ architecture behavioural of ethernet is
   signal frame_is_multicast : std_logic := '0';
   signal frame_is_for_me : std_logic := '0';
  
+  signal fastio_rdata : unsigned(7 downto 0);
+  
   signal rx_keyinput : std_logic := '0';
   signal eth_keycode_toggle_internal : std_logic := '0';
  
@@ -299,6 +301,9 @@ begin  -- behavioural
   -- RX buffer is written from ethernet side, so use 50MHz clock.
   -- reads are fully asynchronous, so no need for a read-side clock for the CPU
   -- side.
+  
+  -- FIXME - This should be updated (with some additional output muxing) to use a block RAM. There's
+  -- no reason for it to need to be a distributed RAM at this point any more.
   rxbuffer0: entity work.ram8x4096 port map (
     clk => clock50mhz,
     cs => rxbuffer_cs,
@@ -903,6 +908,11 @@ begin  -- behavioural
 
   begin
 
+    -- Synchronous output.
+    if rising_edge(clock) then
+      ether_rdata <= fastio_rdata;
+    end if;
+    
     fastio_rdata <= (others => 'Z');
     
     if fastio_read='1' then

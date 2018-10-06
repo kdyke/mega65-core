@@ -400,16 +400,16 @@ entity bus_interface is
     attribute dont_touch : string;
     attribute keep : string;
     
-    --attribute mark_debug of fastio_rdata: signal is "true";
-    --attribute mark_debug of fastio_wdata: signal is "true";
-    --attribute mark_debug of fastio_write: signal is "true";
+    attribute mark_debug of fastio_rdata: signal is "true";
+    attribute mark_debug of fastio_wdata: signal is "true";
+    attribute mark_debug of fastio_write: signal is "true";
     --
     --attribute mark_debug of ext_sel_next_out: signal is "true";
-    --attribute mark_debug of io_sel_next_out: signal is "true";
+    attribute mark_debug of io_sel_next_out: signal is "true";
     --attribute mark_debug of ext_sel_out: signal is "true";
-    --attribute mark_debug of io_sel_out: signal is "true";
+    attribute mark_debug of io_sel_out: signal is "true";
     --
-    --attribute mark_debug of  system_wdata_next: signal is "true";
+    attribute mark_debug of  system_wdata_next: signal is "true";
     --
     --attribute mark_debug of kickstart_rdata: signal is "true";
     --attribute mark_debug of kickstart_write_next: signal is "true";
@@ -424,9 +424,9 @@ entity bus_interface is
     --attribute mark_debug of reset: signal is "true";
     --attribute keep of cpu_memory_read_data : signal is "true";
     --attribute dont_touch of cpu_memory_read_data : signal is "true";
-    --attribute mark_debug of cpu_memory_read_data : signal is "true";
-    --attribute mark_debug of cpu_proceed : signal is "true";
-    --attribute mark_debug of memory_ready_out : signal is "true";
+    attribute mark_debug of cpu_memory_read_data : signal is "true";
+    attribute mark_debug of cpu_proceed : signal is "true";
+    attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of fastio_vic_rdata : signal is "true";
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
@@ -559,9 +559,9 @@ architecture Behavioural of bus_interface is
   
   --attribute mark_debug : string;
 
-  --attribute mark_debug of read_source: signal is "true";
+  attribute mark_debug of read_source: signal is "true";
   --attribute mark_debug of fastio_addr_next: signal is "true";
-  --attribute mark_debug of read_data_copy : signal is "true";
+  attribute mark_debug of read_data_copy : signal is "true";
   --
   --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
@@ -569,16 +569,16 @@ architecture Behavioural of bus_interface is
   --attribute mark_debug of system_address_next: signal is "true";
   --attribute mark_debug of system_address: signal is "true";
   --
-  --attribute mark_debug of bus_proceed: signal is "true";
-  --attribute mark_debug of wait_states: signal is "true";
-  --attribute mark_debug of wait_states_non_zero: signal is "true";
+  attribute mark_debug of bus_proceed: signal is "true";
+  attribute mark_debug of wait_states: signal is "true";
+  attribute mark_debug of wait_states_non_zero: signal is "true";
     
   --attribute mark_debug of colour_ram_cs : signal is "true";
   --attribute mark_debug of colourram_at_dc00 : signal is "true";
-  --attribute mark_debug of sector_buffer_mapped : signal is "true";
+  attribute mark_debug of sector_buffer_mapped : signal is "true";
   --attribute mark_debug of kickstart_cs_next : signal is "true";
   --attribute mark_debug of colour_ram_cs_next : signal is "true";
-  --attribute mark_debug of vic_cs_next : signal is "true";
+  attribute mark_debug of vic_cs_next : signal is "true";
   
 begin
   
@@ -713,6 +713,7 @@ begin
         fastio_addr <= fastio_addr_next;        
         fastio_read <= '1';
         bus_proceed <= '0';
+        --wait_states_non_zero <= '0';          
         
         -- XXX Some fastio (that referencing ioclocked registers) does require
         -- io_wait_states, while some can use fewer waitstates because the
@@ -1077,6 +1078,8 @@ begin
     -- prevents extra reads/writes from happening. Eventually we should be able to find a better way to
     -- deal with that.
     fastio_addr_var := x"FFFFF";
+
+    --fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
     
 		if cpu_memory_access_write_next='1' then
       
@@ -1194,7 +1197,8 @@ begin
   -- read_data input mux
   -- This controls which data is being fed into the CPU (and/or eventually DMAgic) at any given
   -- time.  Because the internal FPGA interfaces are in general clocked instead of asynchronous,
-  -- the mux will switch one clock cycle after the address has been driven onto the bus.
+  -- the mux will switch one clock cycle after the address has been driven onto the bus and will
+  -- be held until the read finishes.
   process (read_source, shadow_rdata, read_data_copy)
   begin
     if(read_source = Shadow) then
@@ -1205,8 +1209,10 @@ begin
       cpu_memory_read_data <= unsigned(fastio_colour_ram_rdata);
     elsif(read_source = VICIV) then
       cpu_memory_read_data <= unsigned(fastio_vic_rdata);
+    elsif(read_source = FastIO) then
+      cpu_memory_read_data <= unsigned(fastio_rdata);
     else
-      cpu_memory_read_data <= read_data_copy;
+      cpu_memory_read_data <= slow_access_rdata;
     end if;  
   end process;
   

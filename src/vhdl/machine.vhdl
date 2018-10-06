@@ -1350,13 +1350,30 @@ begin
       irq => io_irq, -- (but we might like to AND this with the hardware IRQ button)
       nmi => io_nmi, -- (but we might like to AND this with the hardware IRQ button)
       restore_nmi => restore_nmi,
-      address => fastio_addr,
-      addr_fast => fastio_addr_fast,
-      io_sel_next => io_sel_next,
-      io_sel => io_sel,
       
-      r => fastio_read, w => fastio_write,
-      data_i => fastio_wdata, data_o => fastio_rdata,
+      -- For now FastIO is complicated enough to read from that we need an extra
+      -- cycle.   FIXME - Have the extra cycle stuff be buried in the places where
+      -- we need it, and have proper "ready" signal handling from from the device
+      -- we are trying to talk to so the bus interface logic doesn't need to have
+      -- special knowledge.  That's just not how hardware should get built.
+      
+      -- Or probably to really simplify things if I can do the ready signal stuff...
+      -- Just run all FastIO devices at 25Mhz instead of 50Mhz.  There's no reason
+      -- we need a 50Mhz I/O clock, really.
+      address_next => fastio_addr,
+      io_sel_next => io_sel,      
+      r_next => fastio_read, 
+      w_next => fastio_write,
+      data_i_next => fastio_wdata, 
+
+--      address_next => fastio_addr_fast,
+--      io_sel_next => io_sel_next,
+--      r_next => cpu_memory_access_read_next,
+--      w_next => cpu_memory_access_write_next,
+--      data_i_next => std_logic_vector(cpu_memory_access_wdata_next),
+      
+      data_o => fastio_rdata,
+      
       colourram_at_dc00 => colourram_at_dc00,
       drive_led => drive_led,
       motor => motor,

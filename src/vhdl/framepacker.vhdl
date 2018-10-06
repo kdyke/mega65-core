@@ -195,6 +195,7 @@ begin  -- behavioural
     -- last read of the reset register.  This will allow the hypervisor to
     -- detect if the thumbnail is valid, or if it is still showing data from
     -- another process.
+  if rising_edge(ioclock) then
     if fastio_read='1' and (thumbnail_cs='1') then
       if fastio_addr(3 downto 0) = x"2" then
         -- @IO:GS $D632 - Lower 8 bits of thumbnail buffer read address (TEMPORARY DEBUG REGISTER)
@@ -208,22 +209,22 @@ begin  -- behavioural
         -- @IO:GS $D630 - Read to obtain status of thumbnail generator.
         -- @IO:GS $D630.7 - Thumbnail is valid if 1.  Else there has not been a complete frame since elapsed without a trap to hypervisor mode, in which case the thumbnail may not reflect the current process.
         -- @IO:GS $D630.6 - Thumbnail drawing was in progress.
-        thumbnail_read_address <= (others => '0');
         fastio_rdata(7) <= thumbnail_valid;
         fastio_rdata(6) <= thumbnail_started;
         fastio_rdata(5 downto 0) <= (others => '0');
       else
-        fastio_rdata <= (others => 'Z');
+        fastio_rdata <= (others => '1');
       end if;
-    else
-      fastio_rdata <= (others => 'Z');
     end if;
-    
+  end if;
+  
     if rising_edge(ioclock) then
       
       -- Logic to control port address for thumbnail buffer
       if (fastio_read='1') and (thumbnail_cs='1') then
-        if fastio_addr(3 downto 0) = x"1" then
+        if fastio_addr(3 downto 0) = x"0" then
+          thumbnail_read_address <= (others => '0');
+        elsif fastio_addr(3 downto 0) = x"1" then
           last_access_is_thumbnail <= '1';
           if last_access_is_thumbnail = '0' then
             thumbnail_read_address <= thumbnail_read_address + 1;

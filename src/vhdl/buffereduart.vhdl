@@ -258,7 +258,7 @@ begin  -- behavioural
     irq <= '1';
 
     -- Register reading is asynchronous to avoid wait states
-    if fastio_read='1' then
+    if rising_edge(clock) then
       if buffereduart_cs='1' then
         case fastio_addr(3 downto 0) is
           -- Use this notation to create entries for auto-populating iomap.txt
@@ -287,7 +287,7 @@ begin  -- behavioural
           -- @IO:GS $D0E9.0 Buffered UART2 enable interrupt on TX buffer low-water mark
           -- @IO:GS $D0EE Buffered UART2 frequency divisor (LSB)
           -- @IO:GS $D0EF Buffered UART2 frequency divisor (MSB)
-          
+      
           when x"0" => fastio_rdata <= uart0_rx_byte;
           when x"1" =>
             fastio_rdata(7) <= uart0_irq;
@@ -323,15 +323,11 @@ begin  -- behavioural
           when x"F" =>
             fastio_rdata <= uart2_bit_rate_divisor_internal(15 downto 8);
           when others =>
-            fastio_rdata <= (others => 'Z');
+            fastio_rdata <= (others => '1');
         end case;
-      else
-        fastio_rdata <= (others => 'Z');
       end if;
-    else
-      fastio_rdata <= (others => 'Z');
     end if;
-
+    
     if rising_edge(clock) then
 
       rx0_acknowledge <= '0';

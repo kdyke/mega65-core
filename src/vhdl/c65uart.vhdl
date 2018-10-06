@@ -372,185 +372,185 @@ begin  -- behavioural
       end if;
     end if;
     
-    -- make sure this doesn't infer a latch
-    fastio_rdata <= (others => 'Z');
-    
-    -- Reading of registers
-    if (fastio_read='1') and (c65uart_cs='1') then
-      report "Reading C65 UART controller register";
-      case register_number is
-        when x"00" =>
-          -- @IO:C65 $D600 C65 UART data register (read or write)
-          fastio_rdata <= unsigned(reg_data_rx_drive);            
-        when x"01" =>
-          -- @IO:C65 $D601 C65 UART status register
-          -- @IO:C65 $D601.0 C65 UART RX byte ready flag (clear by reading $D600)
-          -- @IO:C65 $D601.1 C65 UART RX overrun flag (clear by reading $D600)
-          -- @IO:C65 $D601.2 C65 UART RX parity error flag (clear by reading $D600)
-          -- @IO:C65 $D601.3 C65 UART RX framing error flag (clear by reading $D600)
-          fastio_rdata(0) <= reg_status0_rx_full;
-          fastio_rdata(1) <= reg_status1_rx_overrun;
-          fastio_rdata(2) <= reg_status2_rx_parity_error;
-          fastio_rdata(3) <= reg_status3_rx_framing_error;
-          fastio_rdata(4) <= reg_status4_rx_idle_mode;
-          fastio_rdata(5) <= reg_status5_tx_eot;
-          fastio_rdata(6) <= reg_status6_tx_empty;
-          fastio_rdata(7) <= reg_status7_xmit_on;              
-        when x"02" =>
-          -- @IO:C65 $D602 C65 UART control register
-          fastio_rdata(0) <= reg_ctrl0_parity_even;
-          fastio_rdata(1) <= reg_ctrl1_parity_enable;
-          fastio_rdata(3 downto 2) <= reg_ctrl23_char_length_deduct;
-          fastio_rdata(5 downto 4) <= unsigned(reg_ctrl45_sync_mode_flags);
-          fastio_rdata(6) <= reg_ctrl6_rx_enable;
-          fastio_rdata(7) <= reg_ctrl7_tx_enable;
-        when x"03" =>
-          -- @IO:C65 $D603 C65 UART baud rate divisor (low byte)
-          fastio_rdata <= reg_divisor(7 downto 0);
-        when x"04" =>
-          -- @IO:C65 $D604 C65 UART baud rate divisor (high byte)
-          fastio_rdata <= reg_divisor(15 downto 8);
-        when x"05" =>
-          -- @IO:C65 $D605 C65 UART interrupt mask register              
-          fastio_rdata <= unsigned(reg_intmask);
-        when x"06" =>
-          -- @IO:C65 $D606 C65 UART interrupt flag register              
-          fastio_rdata <= unsigned(reg_intflag);
-        when x"07" =>
-          -- @IO:C65 $D607 C65 UART 2-bit port data register (used for C65 keyboard)
-          -- @IO:GS $D607.1 C65 keyboard column 8 select
-          -- @IO:GS $D607.0 C65 capslock key sense
-          fastio_rdata(7 downto 0) <= reg_porte_read;
-        when x"08" =>
-          -- @IO:C65 $D607 C65 UART data direction register (used for C65 keyboard, HDMI and SD card I2C/SPI)
-          fastio_rdata(7 downto 0) <= unsigned(reg_porte_ddr);
-        when x"09" =>
-          -- @IO:GS $D609 MEGA65 extended UART control register
-          -- @IO:GS $D609.0 UART BAUD clock source: 1 = 7.09375MHz, 0 = 150MHz
-          fastio_rdata(0) <= clock709375;
-          fastio_rdata(7 downto 1) <= (others => '1');
-        when x"0b" =>
-          -- @IO:GS $D60B.7 Display hardware zoom of region under first touch point for on-screen keyboard
-          -- @IO:GS $D60B.6 Display hardware zoom of region under first touch point always
-          -- @IO:GS $D60B.5-0 PMOD port A on FPGA board (data)
-          fastio_rdata(7 downto 0) <= unsigned(reg_portf_read);
-        when x"0c" =>
-          -- @IO:GS $D60C PMOD port A on FPGA board (DDR)
-          fastio_rdata(7 downto 0) <= unsigned(reg_portf_ddr);
-        when x"0d" =>
-          -- @IO:GS $D60D Bit bashing port
-          -- @IO:GS $D60D.7 HDMI SPI control interface SCL clock 
-          -- @IO:GS $D60D.6 HDMI SPI control interface SDA data line 
-          -- @IO:GS $D60D.5 Enable SD card bitbash mode
-          -- @IO:GS $D60D.4 SD card CS_BO
-          -- @IO:GS $D60D.3 SD card SCLK
-          -- @IO:GS $D60D.2 SD card MOSI/MISO
-          -- @IO:GS $D60D.1-0 Physical keyboard scanning: Float inputs to 0/L/H/1
+    if rising_edge(cpuclock) then
+
+      -- Reading of registers -- TODO - Should we ignore fastio_read and only look at cs?
+      if (fastio_read='1') and (c65uart_cs='1') then
+        report "Reading C65 UART controller register";
+        case register_number is
+          when x"00" =>
+            -- @IO:C65 $D600 C65 UART data register (read or write)
+            fastio_rdata <= unsigned(reg_data_rx_drive);            
+          when x"01" =>
+            -- @IO:C65 $D601 C65 UART status register
+            -- @IO:C65 $D601.0 C65 UART RX byte ready flag (clear by reading $D600)
+            -- @IO:C65 $D601.1 C65 UART RX overrun flag (clear by reading $D600)
+            -- @IO:C65 $D601.2 C65 UART RX parity error flag (clear by reading $D600)
+            -- @IO:C65 $D601.3 C65 UART RX framing error flag (clear by reading $D600)
+            fastio_rdata(0) <= reg_status0_rx_full;
+            fastio_rdata(1) <= reg_status1_rx_overrun;
+            fastio_rdata(2) <= reg_status2_rx_parity_error;
+            fastio_rdata(3) <= reg_status3_rx_framing_error;
+            fastio_rdata(4) <= reg_status4_rx_idle_mode;
+            fastio_rdata(5) <= reg_status5_tx_eot;
+            fastio_rdata(6) <= reg_status6_tx_empty;
+            fastio_rdata(7) <= reg_status7_xmit_on;              
+          when x"02" =>
+            -- @IO:C65 $D602 C65 UART control register
+            fastio_rdata(0) <= reg_ctrl0_parity_even;
+            fastio_rdata(1) <= reg_ctrl1_parity_enable;
+            fastio_rdata(3 downto 2) <= reg_ctrl23_char_length_deduct;
+            fastio_rdata(5 downto 4) <= unsigned(reg_ctrl45_sync_mode_flags);
+            fastio_rdata(6) <= reg_ctrl6_rx_enable;
+            fastio_rdata(7) <= reg_ctrl7_tx_enable;
+          when x"03" =>
+            -- @IO:C65 $D603 C65 UART baud rate divisor (low byte)
+            fastio_rdata <= reg_divisor(7 downto 0);
+          when x"04" =>
+            -- @IO:C65 $D604 C65 UART baud rate divisor (high byte)
+            fastio_rdata <= reg_divisor(15 downto 8);
+          when x"05" =>
+            -- @IO:C65 $D605 C65 UART interrupt mask register              
+            fastio_rdata <= unsigned(reg_intmask);
+          when x"06" =>
+            -- @IO:C65 $D606 C65 UART interrupt flag register              
+            fastio_rdata <= unsigned(reg_intflag);
+          when x"07" =>
+            -- @IO:C65 $D607 C65 UART 2-bit port data register (used for C65 keyboard)
+            -- @IO:GS $D607.1 C65 keyboard column 8 select
+            -- @IO:GS $D607.0 C65 capslock key sense
+            fastio_rdata(7 downto 0) <= reg_porte_read;
+          when x"08" =>
+            -- @IO:C65 $D607 C65 UART data direction register (used for C65 keyboard, HDMI and SD card I2C/SPI)
+            fastio_rdata(7 downto 0) <= unsigned(reg_porte_ddr);
+          when x"09" =>
+            -- @IO:GS $D609 MEGA65 extended UART control register
+            -- @IO:GS $D609.0 UART BAUD clock source: 1 = 7.09375MHz, 0 = 150MHz
+            fastio_rdata(0) <= clock709375;
+            fastio_rdata(7 downto 1) <= (others => '1');
+          when x"0b" =>
+            -- @IO:GS $D60B.7 Display hardware zoom of region under first touch point for on-screen keyboard
+            -- @IO:GS $D60B.6 Display hardware zoom of region under first touch point always
+            -- @IO:GS $D60B.5-0 PMOD port A on FPGA board (data)
+            fastio_rdata(7 downto 0) <= unsigned(reg_portf_read);
+          when x"0c" =>
+            -- @IO:GS $D60C PMOD port A on FPGA board (DDR)
+            fastio_rdata(7 downto 0) <= unsigned(reg_portf_ddr);
+          when x"0d" =>
+            -- @IO:GS $D60D Bit bashing port
+            -- @IO:GS $D60D.7 HDMI SPI control interface SCL clock 
+            -- @IO:GS $D60D.6 HDMI SPI control interface SDA data line 
+            -- @IO:GS $D60D.5 Enable SD card bitbash mode
+            -- @IO:GS $D60D.4 SD card CS_BO
+            -- @IO:GS $D60D.3 SD card SCLK
+            -- @IO:GS $D60D.2 SD card MOSI/MISO
+            -- @IO:GS $D60D.1-0 Physical keyboard scanning: Float inputs to 0/L/H/1
           
-          fastio_rdata(7 downto 0) <= reg_portg_read;
-        when x"0e" =>
-          -- @IO:GS $D60E Bit bashing port DDR
-          fastio_rdata(7 downto 0) <= unsigned(reg_portg_ddr);
-        when x"0f" =>
-          -- @IO:GS $D60F.0 C65 Cursor left key
-          -- @IO:GS $D60F.0 C65 Cursor up key
-          fastio_rdata(0) <= key_left;
-          fastio_rdata(1) <= key_up;
-        when x"10" =>
-          -- @IO:GS $D610 Last key press as ASCII (hardware accelerated keyboard scanner). Write to clear event ready for next.
-          fastio_rdata(7 downto 0) <= unsigned(porth);
-        when x"11" =>
-          -- @IO:GS $D611 Modifier key state (hardware accelerated keyboard scanner).
-          fastio_rdata(7 downto 0) <= unsigned(porti);
-        when x"12" =>
-          -- @IO:GS $D612.0 Enable widget board keyboard/joystick input
-          fastio_rdata(0) <= widget_enable_internal;
-          -- @IO:GS $D612.1 Enable ps2 keyboard/joystick input
-          fastio_rdata(1) <= ps2_enable_internal;
-          -- @IO:GS $D612.2 Enable physical keyboard input
-          fastio_rdata(2) <= physkey_enable_internal;
-          -- @IO:GS $D612.3 Enable virtual keyboard input
-          fastio_rdata(3) <= virtual_enable_internal;
-          -- @IO:GS $D612.4 Enable PS/2 / USB keyboard simulated joystick input
-          fastio_rdata(4) <= joykey_enable_internal;
-          -- @IO:GS $D612.5 Enable physical joystick input
-          fastio_rdata(5) <= joyreal_enable_internal;
-          -- @IO:GS $D612.6 Rotate inputs of joystick A by 180 degrees
-          fastio_rdata(6) <= joya_rotate_internal;
-          -- @IO:GS $D612.7 Rotate inputs of joystick B by 180 degrees
-          fastio_rdata(7) <= joyb_rotate_internal;
-        when x"13" =>
-          -- @IO:GS $D613 DEBUG: Count of cartridge port memory accesses (read only)
-          fastio_rdata <= unsigned(portj_in);
-        when x"14" =>
-          -- @IO:GS $D614 DEBUG: 8-bit segment of combined keyboard matrix (READ)
-          fastio_rdata <= unsigned(portj_internal);
-        when x"15" =>
-          -- @IO:GS $D615.0-6 ID of key #1 held down on virtual keyboard
-          -- @IO:GS $D615.7 Enable visual keyboard composited overlay
-          fastio_rdata <= unsigned(portk_internal);
-        when x"16" =>
-          -- @IO:GS $D616 ID of key #2 held down on virtual keyboard
-          fastio_rdata <= unsigned(portl_internal);
-        when x"17" =>
-          -- @IO:GS $D617 ID of key #3 held down on virtual keyboard
-          fastio_rdata <= unsigned(portm_internal);
-        when x"18" =>
-          -- @IO:GS $D618 Keyboard scan rate ($00=50MHz, $FF=~200KHz)
-          fastio_rdata <= unsigned(portn_internal);
-        when x"19" =>
-          -- @IO:GS $D619 On-screen keyboard X position (x4 640H pixels)
-          fastio_rdata <= unsigned(porto_internal);
-        when x"1a" =>
-          -- @IO:GS $D61A On-screen keyboard Y position (x4 physical pixels)
-          fastio_rdata <= unsigned(portp_internal);
-        when x"1b" =>
-          -- @IO:GS $D61B READ 1351/amiga mouse auto detection DEBUG
-          fastio_rdata <= mouse_debug;
-          -- @IO:GS $D620 Read Port A paddle X
-          -- @IO:GS $D621 Read Port A paddle Y
-          -- @IO:GS $D622 Read Port B paddle X
-          -- @IO:GS $D623 Read Port B paddle Y          
-        when x"1c" =>
-          -- @IO:GS $D61C DEBUG DUPLICATE Last key press as ASCII (hardware accelerated keyboard scanner). Write to clear event ready for next.
-          fastio_rdata(7 downto 0) <= unsigned(porth);
-        when x"1d" =>
-          -- @IO:GS $D61D DEBUG ASCII key event counter LSB
-          -- @IO:GS $D61E DEBUG ASCII key event counter LSB
-          fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
-        when x"1e" =>
-          fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
-        when x"1F" =>
-          -- @IO:GS $D61F DUPLICATE Modifier key state (hardware accelerated keyboard scanner).
-          fastio_rdata(7 downto 0) <= unsigned(porti);
-        when x"20" => fastio_rdata <= pota_x;
-        when x"21" => fastio_rdata <= pota_y;
-        when x"22" => fastio_rdata <= potb_x;
-        when x"23" => fastio_rdata <= potb_y;
-        when x"24" =>
-          -- @IO:GS $D624 READ ONLY
-          -- @IO:GS $D624.0 Paddles connected via IEC port (rev1 PCB debug)
-          -- @IO:GS $D624.1 pot_drain signal
-          -- @IO:GS $D624.3-2 CIA porta bits 7-6 for POT multiplexor
-          -- @IO:GS $D624.4 fa_potx line
-          -- @IO:GS $D624.5 fa_poty line
-          -- @IO:GS $D624.6 fb_potx line
-          -- @IO:GS $D624.7 fb_poty line          
-          fastio_rdata(0) <= pot_via_iec;
-          fastio_rdata(1) <= pot_drain;
-          fastio_rdata(3 downto 2) <= unsigned(cia1portb_out(7 downto 6));
-          fastio_rdata(4) <= fa_potx;
-          fastio_rdata(5) <= fa_poty;
-          fastio_rdata(6) <= fb_potx;
-          fastio_rdata(7) <= fb_poty;                        
-        when others =>
-          report "Reading untied register, result = Z";
-          fastio_rdata <= (others => 'Z');
-      end case;
-    else
-      fastio_rdata <= (others => 'Z');
-    end if;    
-        
+            fastio_rdata(7 downto 0) <= reg_portg_read;
+          when x"0e" =>
+            -- @IO:GS $D60E Bit bashing port DDR
+            fastio_rdata(7 downto 0) <= unsigned(reg_portg_ddr);
+          when x"0f" =>
+            -- @IO:GS $D60F.0 C65 Cursor left key
+            -- @IO:GS $D60F.0 C65 Cursor up key
+            fastio_rdata(0) <= key_left;
+            fastio_rdata(1) <= key_up;
+          when x"10" =>
+            -- @IO:GS $D610 Last key press as ASCII (hardware accelerated keyboard scanner). Write to clear event ready for next.
+            fastio_rdata(7 downto 0) <= unsigned(porth);
+          when x"11" =>
+            -- @IO:GS $D611 Modifier key state (hardware accelerated keyboard scanner).
+            fastio_rdata(7 downto 0) <= unsigned(porti);
+          when x"12" =>
+            -- @IO:GS $D612.0 Enable widget board keyboard/joystick input
+            fastio_rdata(0) <= widget_enable_internal;
+            -- @IO:GS $D612.1 Enable ps2 keyboard/joystick input
+            fastio_rdata(1) <= ps2_enable_internal;
+            -- @IO:GS $D612.2 Enable physical keyboard input
+            fastio_rdata(2) <= physkey_enable_internal;
+            -- @IO:GS $D612.3 Enable virtual keyboard input
+            fastio_rdata(3) <= virtual_enable_internal;
+            -- @IO:GS $D612.4 Enable PS/2 / USB keyboard simulated joystick input
+            fastio_rdata(4) <= joykey_enable_internal;
+            -- @IO:GS $D612.5 Enable physical joystick input
+            fastio_rdata(5) <= joyreal_enable_internal;
+            -- @IO:GS $D612.6 Rotate inputs of joystick A by 180 degrees
+            fastio_rdata(6) <= joya_rotate_internal;
+            -- @IO:GS $D612.7 Rotate inputs of joystick B by 180 degrees
+            fastio_rdata(7) <= joyb_rotate_internal;
+          when x"13" =>
+            -- @IO:GS $D613 DEBUG: Count of cartridge port memory accesses (read only)
+            fastio_rdata <= unsigned(portj_in);
+          when x"14" =>
+            -- @IO:GS $D614 DEBUG: 8-bit segment of combined keyboard matrix (READ)
+            fastio_rdata <= unsigned(portj_internal);
+          when x"15" =>
+            -- @IO:GS $D615.0-6 ID of key #1 held down on virtual keyboard
+            -- @IO:GS $D615.7 Enable visual keyboard composited overlay
+            fastio_rdata <= unsigned(portk_internal);
+          when x"16" =>
+            -- @IO:GS $D616 ID of key #2 held down on virtual keyboard
+            fastio_rdata <= unsigned(portl_internal);
+          when x"17" =>
+            -- @IO:GS $D617 ID of key #3 held down on virtual keyboard
+            fastio_rdata <= unsigned(portm_internal);
+          when x"18" =>
+            -- @IO:GS $D618 Keyboard scan rate ($00=50MHz, $FF=~200KHz)
+            fastio_rdata <= unsigned(portn_internal);
+          when x"19" =>
+            -- @IO:GS $D619 On-screen keyboard X position (x4 640H pixels)
+            fastio_rdata <= unsigned(porto_internal);
+          when x"1a" =>
+            -- @IO:GS $D61A On-screen keyboard Y position (x4 physical pixels)
+            fastio_rdata <= unsigned(portp_internal);
+          when x"1b" =>
+            -- @IO:GS $D61B READ 1351/amiga mouse auto detection DEBUG
+            fastio_rdata <= mouse_debug;
+            -- @IO:GS $D620 Read Port A paddle X
+            -- @IO:GS $D621 Read Port A paddle Y
+            -- @IO:GS $D622 Read Port B paddle X
+            -- @IO:GS $D623 Read Port B paddle Y          
+          when x"1c" =>
+            -- @IO:GS $D61C DEBUG DUPLICATE Last key press as ASCII (hardware accelerated keyboard scanner). Write to clear event ready for next.
+            fastio_rdata(7 downto 0) <= unsigned(porth);
+          when x"1d" =>
+            -- @IO:GS $D61D DEBUG ASCII key event counter LSB
+            -- @IO:GS $D61E DEBUG ASCII key event counter LSB
+            fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
+          when x"1e" =>
+            fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
+          when x"1F" =>
+            -- @IO:GS $D61F DUPLICATE Modifier key state (hardware accelerated keyboard scanner).
+            fastio_rdata(7 downto 0) <= unsigned(porti);
+          when x"20" => fastio_rdata <= pota_x;
+          when x"21" => fastio_rdata <= pota_y;
+          when x"22" => fastio_rdata <= potb_x;
+          when x"23" => fastio_rdata <= potb_y;
+          when x"24" =>
+            -- @IO:GS $D624 READ ONLY
+            -- @IO:GS $D624.0 Paddles connected via IEC port (rev1 PCB debug)
+            -- @IO:GS $D624.1 pot_drain signal
+            -- @IO:GS $D624.3-2 CIA porta bits 7-6 for POT multiplexor
+            -- @IO:GS $D624.4 fa_potx line
+            -- @IO:GS $D624.5 fa_poty line
+            -- @IO:GS $D624.6 fb_potx line
+            -- @IO:GS $D624.7 fb_poty line          
+            fastio_rdata(0) <= pot_via_iec;
+            fastio_rdata(1) <= pot_drain;
+            fastio_rdata(3 downto 2) <= unsigned(cia1portb_out(7 downto 6));
+            fastio_rdata(4) <= fa_potx;
+            fastio_rdata(5) <= fa_poty;
+            fastio_rdata(6) <= fb_potx;
+            fastio_rdata(7) <= fb_poty;                        
+          when others =>
+            report "Reading untied register, result = Z";
+            fastio_rdata <= (others => '1');
+        end case;
+      else
+        fastio_rdata <= (others => '1');
+      end if;    
+    end if;
+    
     if rising_edge(pixelclock) then
 
       if rx_clear_flags='1' then

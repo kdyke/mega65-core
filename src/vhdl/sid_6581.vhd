@@ -223,22 +223,24 @@ begin
 
         process (do_buf,cs)
         begin
-          -- Tristate data lines
-          if cs='1' then
-            -- Read from SID-register
-            -------------------------
-            case addr is
-              -------------------------------------- Misc
-              when "11001" => do <= pot_x;
-              when "11010" => do <= pot_Y;
-              when "11011" => do <= Misc_Osc3_Random;
-              when "11100" => do <= Misc_Env3;
-              --------------------------------------
-              when others => do <= x"FF";
-            end case;		
-          else
-            do <= (others => 'Z');
-          end if;
+                if rising_edge(clk32) then
+                        -- Tristate data lines
+                        if cs='1' then
+                          -- Read from SID-register
+                          -------------------------
+                          case addr is
+                            -------------------------------------- Misc
+                            when "11001" => do <= pot_x;
+                            when "11010" => do <= pot_Y;
+                            when "11011" => do <= Misc_Osc3_Random;
+                            when "11100" => do <= Misc_Env3;
+                            --------------------------------------
+                            when others => do <= x"FF";
+                          end case;		
+                        else
+                          do <= (others => '1');
+                        end if;
+                end if;
         end process;
 
         

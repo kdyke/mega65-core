@@ -220,7 +220,7 @@ architecture Behavioural of gs4510 is
   signal force_exrom : std_logic := '1'; 
   signal force_game : std_logic := '1';
 
-  signal force_fast : std_logic := '1';
+  signal force_fast : std_logic := '0';
   signal speed_gate_enable_internal : std_logic := '1';
   signal speed_gate_drive : std_logic := '1';
 
@@ -2125,7 +2125,7 @@ begin
           rom_writeprotect <= last_value(2);
           speed_gate_enable <= last_value(3);
           speed_gate_enable_internal <= last_value(3);
-          --force_fast <= last_value(4);
+          force_fast <= last_value(4);
           force_4502 <= last_value(5);
           irq_defer_request <= last_value(6);
           
@@ -2302,14 +2302,13 @@ begin
             monitor_mem_reading <= '0';
           end if;
 
-          proceed <= '1';
         end if;
         
-        monitor_proceed <= proceed;
+        monitor_proceed <= cpu_memory_ready and not phi_pause;
         monitor_request_reflected <= monitor_mem_attention_request_drive;
 
         report "CPU state : proceed=" & std_logic'image(proceed);
-        if proceed='1' and cpu_memory_ready='1' then
+        if phi_pause='0' and cpu_memory_ready='1' then
                                         -- Main state machine for CPU
           report "CPU state = " & processor_state'image(state) & ", PC=$" & to_hstring(reg_pc) severity note;
 
@@ -2443,7 +2442,7 @@ begin
                                         -- otherwise just read from memory
                     monitor_mem_reading <= '1';
                     mem_reading <= '1';
-                    proceed <= '0';
+                    --proceed <= '0';
                     state <= MonitorMemoryAccess;
                   end if;
                 end if;
@@ -4293,7 +4292,8 @@ begin
     map_en_next <= map_en;
     map_en_var := '0';
 
-    cpu_proceed <= proceed and cpu_memory_ready and not phi_pause;
+    --cpu_proceed <= proceed and cpu_memory_ready and not phi_pause;
+    cpu_proceed <= cpu_memory_ready and not phi_pause;
 
     -- Don't output next address unless we are unblocked.    Unfortunately some of the different
     -- signals can be out of phase and so we have to test multiple of them.  In particular, phi_pause
@@ -4320,7 +4320,7 @@ begin
     -- could use to detect a "real" read versus just a random "bus still has old address".
     
     -- TODO - Recombine the different "ready" signals into a single "ready" signal that's used everywhere.
-    if proceed='1' and cpu_memory_ready='1' and phi_pause='0' then
+    if cpu_memory_ready='1' and phi_pause='0' then
     
       -- By default read next byte in instruction stream.
       memory_access_read := '1';

@@ -159,11 +159,11 @@ begin  -- behavioural
           ) is
     variable register_number : unsigned(7 downto 0);
   begin
-    if cs='0' then
-      -- Tri-state read lines if not selected
-      fastio_rdata <= (others => 'Z');
-    else
---      if rising_edge(cpuclock) then
+    if rising_edge(cpuclock) then
+      if cs='0' then
+        -- Tri-state read lines if not selected
+        fastio_rdata <= (others => '1');
+      else
         -- XXX For debugging have 32 registers, and map
         -- reg_porta_read and portain (and same for port b)
         -- to extra registers for debugging.
@@ -171,10 +171,7 @@ begin  -- behavioural
         register_number(4 downto 0) := fastio_address(4 downto 0);
 
         -- Reading of registers
-        if fastio_write='1' then
-          -- Tri-state read lines if writing
-          fastio_rdata <= (others => 'Z');
-        else
+        if true then
           case register_number is
             -- @IO:64 $DC00 CIA1 Port A 
             -- @IO:64 $DC01 CIA1 Port B
@@ -270,11 +267,11 @@ begin  -- behavioural
                                        & reg_timerb_toggle_or_pulse
                                        & reg_timerb_pb7_out
                                        & reg_timerb_start);
-            when others => fastio_rdata <= (others => 'Z');
+            when others => fastio_rdata <= (others => '1');
           end case;
         end if;
       end if;
---    end if;
+    end if;
   end process;
 
   process(cpuclock) is

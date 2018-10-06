@@ -77,11 +77,10 @@ entity sdcardio is
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
     fastio_addr : in unsigned(19 downto 0);
-    fastio_addr_fast : in unsigned(19 downto 0);  -- The "quick" version that arrives one clock earlier
     fastio_write : in std_logic;
     fastio_read : in std_logic;
     fastio_wdata : in unsigned(7 downto 0);
-    fastio_rdata_sel : out unsigned(7 downto 0);
+    fastio_rdata_sel : out std_logic_vector(7 downto 0);
     
     virtualise_f011 : in std_logic;
     
@@ -91,7 +90,6 @@ entity sdcardio is
     sectorbuffermapped : out std_logic := '0';
     sectorbuffermapped2 : out std_logic := '0';
     sectorbuffercs : in std_logic;
-    sectorbuffercs_fast : in std_logic;
 
     last_scan_code : in std_logic_vector(12 downto 0);
     
@@ -170,6 +168,14 @@ entity sdcardio is
     QspiCSn : out std_logic            
 
     );
+
+    attribute mark_debug : string;    
+    attribute mark_debug of fastio_rdata_sel: signal is "true";
+    attribute mark_debug of fastio_addr: signal is "true";
+    attribute mark_debug of fastio_read: signal is "true";
+    attribute mark_debug of fastio_write: signal is "true";
+    attribute mark_debug of fastio_wdata: signal is "true";
+    
 end sdcardio;
 
 architecture behavioural of sdcardio is
@@ -193,6 +199,15 @@ architecture behavioural of sdcardio is
   
   signal fastio_rdata_ram : unsigned(7 downto 0);
   signal fastio_rdata : unsigned(7 downto 0);
+  
+  type sdcardio_output_source is (
+    SdNone,
+    SdRegister,
+    SdBuffer
+    );
+
+  -- This controls the output mux state.
+  signal sdcardio_fastio_source : sdcardio_output_source;
   
   signal skip : integer range 0 to 2;
   signal read_data_byte : std_logic := '0';
@@ -437,15 +452,19 @@ architecture behavioural of sdcardio is
   signal gesture_event_id : unsigned(3 downto 0) := x"0";
   signal gesture_event : unsigned(3 downto 0) := x"0";
 
+  attribute mark_debug of fastio_rdata: signal is "true";
+  attribute mark_debug of fastio_rdata_ram: signal is "true";
+  attribute mark_debug of sectorbuffercs: signal is "true";
+  attribute mark_debug of sdcardio_cs: signal is "true";
+  attribute mark_debug of f011_cs: signal is "true";
+  attribute mark_debug of sdcardio_fastio_source: signal is "true";
+
   function resolve_sector_buffer_address(f011orsd : std_logic; addr : unsigned(8 downto 0))
     return integer is
   begin
     return to_integer("11" & f011orsd & addr);
   end function;
-  
-  attribute mark_debug : string;
-  --attribute mark_debug of sector_buffer_mapped: signal is "true";
-  
+    
 begin  -- behavioural
 
 --**********************************************************************
@@ -553,7 +572,7 @@ begin  -- behavioural
       clk => clock,
 
       -- CPU side read access
-      cs => sectorbuffercs_fast,
+      cs => sectorbuffercs,
 --      cs => sectorbuffercs,
       address => sector_buffer_fastio_address,
       rdata => fastio_rdata_ram,
@@ -648,470 +667,470 @@ begin  -- behavioural
     -- ==================================================================
 
     if hypervisor_mode='0' then
-      sector_buffer_fastio_address <= resolve_sector_buffer_address(f011sd_buffer_select,fastio_addr_fast(8 downto 0));
+      sector_buffer_fastio_address <= resolve_sector_buffer_address(f011sd_buffer_select,fastio_addr(8 downto 0));
     else
-      sector_buffer_fastio_address <= to_integer(fastio_addr_fast(11 downto 0));
-    end if;
-    
-    fastio_rdata <= x"00";
-    
-    if fastio_read='1' and sectorbuffercs='0' then
-
-      if f011_cs='1' and sdcardio_cs='0' then
-        -- F011 FDC emulation registers
---        report "Preparing to read F011 emulation register @ $" & to_hstring(fastio_addr);
-
-        case fastio_addr(4 downto 0) is
-          when "00000" =>
-            -- CONTROL |  IRQ  |  LED  | MOTOR | SWAP  | SIDE  |  DS2  |  DS1  |  DS0  | 0 RW
-            --IRQ     When set, enables interrupts to occur,  when reset clears and
-            --        disables interrupts.
-            --LED     These  two  bits  control  the  state  of  the  MOTOR and LED
-            --MOTOR   outputs. When both are clear, both MOTOR and LED outputs will
-            --        be off. When MOTOR is set, both MOTOR and LED Outputs will be
-            --        on. When LED is set, the LED will "blink".
-            --SWAP    swaps upper and lower halves of the data buffer
-            --        as seen by the CPU.
-            --SIDE    when set, sets the SIDE output to 0, otherwise 1.
-            --DS2-DS0 these three bits select a drive (drive 0 thru drive 7).  When
-            --        DS0-DS2  are  low  and  the LOCAL input is true (low) the DR0
-            --        output will go true (low).
-            fastio_rdata <=
-              f011_irqenable & f011_led & f011_motor & f011_swap &
-              f011_head_side(0) & f011_ds;
-          when "00001" =>
-            -- COMMAND | WRITE | READ  | FREE  | STEP  |  DIR  | ALGO  |  ALT  | NOBUF | 1 RW
-            --WRITE   must be set to perform write operations.
-            --READ    must be set for all read operations.
-            --FREE    allows free-format read or write vs formatted
-            --STEP    write to 1 to cause a head stepping pulse.
-            --DIR     sets head stepping direction
-            --ALGO    selects read and write algorithm. 0=FC read, 1=DPLL read,
-            --        0=normal write, 1=precompensated write.
-            
-            --ALT     selects alternate DPLL read recovery method. The ALG0 bit
-            --        must be set for ALT to work.
-            --NOBUF   clears the buffer read/write pointers
-            fastio_rdata <= f011_cmd;
-
-          when "00010" =>             -- READ $D082
-            -- @IO:C65 $D082 - F011 FDC Status A port (read only)
-            -- STAT A  | BUSY  |  DRQ  |  EQ   |  RNF  |  CRC  | LOST  | PROT  |  TKQ  | 2 R
-            --BUSY    command is being executed
-            --DRQ     disk interface has transferred a byte
-            --EQ      buffer CPU/Disk pointers are equal
-            --RNF     sector not found during formatted write or read
-            --CRC     CRC check failed
-            --LOST    data was lost during transfer
-            --PROT    disk is write protected
-            --TK0     head is positioned over track zero
-            fastio_rdata <= f011_busy & f011_drq & f011_flag_eq & f011_rnf
-                            & f011_crc & f011_lost & f011_write_protected
-                            & f011_track0;
-
-          when "00011" =>             -- READ $D083 
-            -- @IO:C65 $D083 - F011 FDC Status B port (read only)
-            -- STAT B  | RDREQ | WTREQ |  RUN  | NGATE | DSKIN | INDEX |  IRQ  | DSKCHG| 3 R
-            -- RDREQ   sector found during formatted read
-            -- WTREQ   sector found during formatted write
-            -- RUN     indicates successive matches during find operation
-            --         (that so far, the found sector matches the requested sector)
-            -- WGATE   write gate is on
-            -- DSKIN   indicates that a disk is inserted in the drive
-            -- INDEX   disk index is currently over sensor
-            -- IRQ     an interrupt has occurred
-            -- DSKCHG  the DSKIN line has changed
-            --         this is cleared by deselecting drive
-            fastio_rdata <= f011_rsector_found & f011_wsector_found &
-                            f011_rsector_found & f011_write_gate & f011_disk_present &
-                            f011_over_index & f011_irq & f011_disk_changed;
-
-          when "00100" =>
-            -- TRACK   |  T7   |  T6   |  T5   |  T4   |  T3   |  T2   |  T1   |  T0   | 4 RW
-            fastio_rdata <= f011_track;
-
-          when "00101" =>
-            -- SECTOR  |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 5 RW
-            fastio_rdata <= f011_sector;
-
-          when "00110" =>
-            -- SIDE    |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 6 RW
-            fastio_rdata <= f011_side;
-
-          when "00111" =>  -- $D087
-            -- DATA    |  D7   |  D6   |  D5   |  D4   |  D3   |  D2   |  D1   |  D0   | 7 RW
-            fastio_rdata <= sb_cpu_rdata;
-            
-          when "01000" =>
-            -- CLOCK   |  C7   |  C6   |  C5   |  C4   |  C3   |  C2   |  C1   |  C0   | 8 RW
-            fastio_rdata <= f011_reg_clock;
-            
-          when "01001" =>
-            -- @IO:65 $D089 - F011 FDC step time (x62.5 micro seconds)
-            -- STEP    |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 9 RW
-            fastio_rdata <= f011_reg_step;
-            
-          when "01010" =>
-            -- P CODE  |  P7   |  P6   |  P5   |  P4   |  P3   |  P2   |  P1   |  P0   | A R
-            fastio_rdata <= f011_reg_pcode;
-          when "11011" => -- @IO:GS $D09B - Most recent SD card command sent
-            fastio_rdata <= last_sd_state;
-          when "11100" => -- @IO:GS $D09C - FDC-side buffer pointer low bits (DEBUG)
-            fastio_rdata <= f011_buffer_disk_address(7 downto 0);
-          when "11101" => -- @IO:GS $D09D - FDC-side buffer pointer high bit (DEBUG)
-            fastio_rdata(0) <= f011_buffer_disk_address(8);
-            fastio_rdata(7 downto 1) <= (others => '0');
-          when "11110" => -- @IO:GS $D09E - CPU-side buffer pointer low bits (DEBUG)
-            fastio_rdata <= f011_buffer_cpu_address(7 downto 0);
-          when "11111" =>
-            -- @IO:GS $D09F.0 - CPU-side buffer pointer high bit (DEBUG)
-            -- @IO:GS $D09F.1 - EQ flag (DEBUG)
-            -- @IO:GS $D09F.2 - EQ flag inhibit state (DEBUG)
-            fastio_rdata(0) <= f011_buffer_cpu_address(8);
-            fastio_rdata(1) <= f011_flag_eq;
-            fastio_rdata(2) <= f011_eq_inhibit;
-            fastio_rdata(7 downto 3) <= (others => '0');
-
-          when others =>
-            fastio_rdata <= (others => '0');
-        end case;
-
-        -- ==================================================================
-
-      elsif sdcardio_cs='1' and f011_cs='0' then
-        -- microSD controller registers
-        report "reading SDCARD registers" severity note;
-        case fastio_addr(7 downto 0) is
-          -- @IO:GS $D680.0 - SD controller BUSY flag
-          -- @IO:GS $D680.1 - SD controller BUSY flag
-          -- @IO:GS $D680.2 - SD controller RESET flag
-          -- @IO:GS $D680.3 - SD controller sector buffer mapped flag
-          -- @IO:GS $D680.4 - SD controller SDHC mode flag
-          -- @IO:GS $D680.5 - SD controller SDIO FSM ERROR flag
-          -- @IO:GS $D680.6 - SD controller SDIO error flag
-          -- @IO:GS $D680.7 - SD controller half speed flag
-          when x"80" =>
-            -- status / command register
-            -- error status in bit 6 so that V flag can be used for check
-            report "reading $D680 SDCARD status register" severity note;
-            fastio_rdata(7) <= '0';
-            fastio_rdata(6) <= sdio_error;
-            fastio_rdata(5) <= sdio_fsm_error;
-            fastio_rdata(4) <= sdhc_mode;
-            fastio_rdata(3) <= sector_buffer_mapped;
-            fastio_rdata(2) <= sd_reset;
-            fastio_rdata(1) <= sdcard_busy;  -- Whether the SD card thinks it is busy
-            fastio_rdata(0) <= sdio_busy;  -- Whether we think we are busy
-
-          when x"81" => fastio_rdata <= sd_sector(7 downto 0); -- SD-control, LSByte of address
-          when x"82" => fastio_rdata <= sd_sector(15 downto 8); -- SD-control
-          when x"83" => fastio_rdata <= sd_sector(23 downto 16); -- SD-controll
-          when x"84" => fastio_rdata <= sd_sector(31 downto 24); -- SD-control, MSByte of address
-
-          -- @IO:GS $D685 - DEBUG Show current state ID of SD card interface
-          when x"85" => fastio_rdata <= to_unsigned(sd_state_t'pos(sd_state),8);
-          -- @IO:GS $D686 - DEBUG SD card data token
-          when x"86" => fastio_rdata <= sd_datatoken;                        
-          -- @IO:GS $D687 - DEBUG SD card most recent byte read
-          when x"87" => fastio_rdata <= unsigned(sd_rdata);
-          -- @IO:GS $D688 - Low-byte of F011 buffer pointer (disk side) (read only)
-          when x"88" => fastio_rdata <= f011_buffer_disk_address(7 downto 0);
-          -- @IO:GS $D689.0 - High bit of F011 buffer pointer (disk side) (read only)
-          -- @IO:GS $D689.1 - Sector read from SD/F011/FDC, but not yet read by CPU (i.e., EQ and DRQ)
-          -- @IO:GS $D689.3 - (read only) sd_data_ready signal.
-          -- @IO:GS $D689.7 - Memory mapped sector buffer select: 1=SD-Card, 0=F011/FDC
-          when x"89" =>
-            fastio_rdata(0) <= f011_buffer_disk_address(8);
-            fastio_rdata(1) <= f011_flag_eq and f011_drq;
-            fastio_rdata(6 downto 2) <= (others => '0');
-            fastio_rdata(2) <= sd_handshake;
-            fastio_rdata(3) <= sd_data_ready;
-            fastio_rdata(7) <= f011sd_buffer_select;
-          when x"8a" =>
-            -- @IO:GS $D68A - DEBUG check signals that can inhibit sector buffer mapping
-            fastio_rdata(0) <= colourram_at_dc00;
-            fastio_rdata(1) <= viciii_iomode(1);
-            
-          when x"8b" =>
-            -- BG the description seems in conflict with the assignment in the write section (below)
-            -- @IO:GS $D68B - Diskimage control flags
-            fastio_rdata(0) <= diskimage1_enable;
-            fastio_rdata(1) <= f011_disk1_present;
-            fastio_rdata(2) <= not f011_disk1_write_protected;
-            fastio_rdata(3) <= diskimage2_enable;
-            fastio_rdata(4) <= f011_disk2_present;
-            fastio_rdata(5) <= not f011_disk2_write_protected;
-          when x"8c" =>
-            -- @IO:GS $D68C - Diskimage sector number (bits 0-7)
-            fastio_rdata <= diskimage_sector(7 downto 0);
-          when x"8d" =>
-            -- @IO:GS $D68D - Diskimage sector number (bits 8-15)
-            fastio_rdata <= diskimage_sector(15 downto 8);
-          when x"8e" =>
-            -- @IO:GS $D68E - Diskimage sector number (bits 16-23)
-            fastio_rdata <= diskimage_sector(23 downto 16);
-          when x"8f" =>
-            -- @IO:GS $D68F - Diskimage sector number (bits 24-31)
-            fastio_rdata <= diskimage_sector(31 downto 24);
-
-
-          when x"a0" =>
-            -- @IO:GS $D6A0 - DEBUG FDC read status lines
-            fastio_rdata(7) <= f_index;
-            fastio_rdata(6) <= f_track0;
-            fastio_rdata(5) <= f_writeprotect;
-            fastio_rdata(4) <= f_rdata;
-            fastio_rdata(3) <= f_diskchanged;
-            fastio_rdata(2 downto 0) <= (others => '1');
-          when x"a1" =>
-            -- @IO:GS $D6A1.0 - Use real floppy drive instead of SD card
-            fastio_rdata(0) <= use_real_floppy;
-            -- @IO:GS $D6A1.1 - Match any sector on a real floppy read/write
-            fastio_rdata(1) <= target_any;
-            -- @IO:GS $D6A1.2-6 - FDC debug status flags
-            fastio_rdata(2) <= fdc_first_byte;
-            fastio_rdata(3) <= fdc_sector_end;
-            fastio_rdata(4) <= fdc_crc_error;
-            fastio_rdata(5) <= fdc_sector_found;
-            fastio_rdata(6) <= fdc_byte_valid;
-            fastio_rdata(7) <= fdc_read_request;
-          when x"a2" =>
-            -- @IO:GS $D6A2 - FDC clock cycles per MFM data bit
-            fastio_rdata <= cycles_per_interval;
-          when x"a3" =>
-            -- @IO:GS $D6A3 - FDC track number of last matching sector header
-            fastio_rdata <= found_track;
-          when x"a4" =>
-            -- @IO:GS $D6A4 - FDC sector number of last matching sector header
-            fastio_rdata <= found_sector;
-          when x"a5" =>
-            -- @IO:GS $D6A5 - FDC side number of last matching sector header
-            fastio_rdata <= found_side;
-          when x"a6" =>
-            -- @IO:GS $D6A6 - DEBUG FDC decoded MFM byte
-            fastio_rdata <= fdc_byte_out;
-          when x"a7" =>
-            -- @IO:GS $D6A7 - DEBUG FDC decoded MFM state
-            fastio_rdata <= fdc_mfm_state;
-          when x"a8" =>
-            -- @IO:GS $D6A8 - DEBUG FDC last decoded MFM byte
-            fastio_rdata <= fdc_mfm_byte;
-          when x"a9" =>
-            -- @IO:GS $D6A9 - DEBUG FDC last gap interval (LSB)
-            fastio_rdata <= fdc_last_gap(7 downto 0);
-          when x"aa" =>
-            -- @IO:GS $D6AA - DEBUG FDC last gap interval (MSB)
-            fastio_rdata <= fdc_last_gap(15 downto 8);
-          when x"ab" =>
-            -- @IO:GS $D6AB - DEBUG FDC last 7 rdata bits (packed by mfm_gaps)
-            fastio_rdata <= unsigned(packed_rdata);
-          when x"ac" =>
-            -- @IO:GS $D6AC - DEBUG FDC last quantised gap
-            fastio_rdata <= unsigned(fdc_quantised_gap);
-          when x"ad" =>
-            -- @IO:GS $D6AD - DEBUG FDC bytes read counter (LSB)
-            fastio_rdata <= unsigned(fdc_bytes_read(7 downto 0));
-          when x"ae" =>
-            -- @IO:GS $D6AE - DEBUG FDC bytes read counter (MSB)
-            fastio_rdata <= unsigned(fdc_bytes_read(15 downto 8));
-          when x"B0" =>
-            -- @IO:GS $D6B0 - Touch pad control / status
-            -- @IO:GS $D6B0.0 - Touch event 1 is valid
-            -- @IO:GS $D6B0.1 - Touch event 2 is valid
-            -- @IO:GS $D6B0.2-3 - Touch event 1 up/down state
-            -- @IO:GS $D6B0.5-4 - Touch event 2 up/down state
-            -- @IO:GS $D6B0.6 - Invert horizontal axis
-            -- @IO:GS $D6B0.7 - Invert vertical axis
-            fastio_rdata(0) <= touch1_active;
-            fastio_rdata(1) <= touch2_active;
-            fastio_rdata(3 downto 2) <= unsigned(touch1_status);
-            fastio_rdata(5 downto 4) <= unsigned(touch2_status);
-            fastio_rdata(6) <= touch_flip_x_internal;
-            fastio_rdata(7) <= touch_flip_y_internal;
-          when x"B1" =>
-            -- @IO:GS $D6B1 - Touch pad X scaling LSB
-            fastio_rdata <= touch_scale_x_internal(7 downto 0);
-          when x"B2" =>
-            -- @IO:GS $D6B2 - Touch pad X scaling MSB
-            fastio_rdata <= touch_scale_x_internal(15 downto 8);
-          when x"B3" =>
-            -- @IO:GS $D6B3 - Touch pad Y scaling LSB
-            fastio_rdata <= touch_scale_y_internal(7 downto 0);
-          when x"B4" =>
-            -- @IO:GS $D6B4 - Touch pad Y scaling MSB
-            fastio_rdata <= touch_scale_y_internal(15 downto 8);
-          when x"B5" =>
-            -- @IO:GS $D6B5 - Touch pad X delta LSB
-            fastio_rdata <= touch_delta_x_internal(7 downto 0);
-          when x"B6" =>
-            -- @IO:GS $D6B6 - Touch pad X delta MSB
-            fastio_rdata <= touch_delta_x_internal(15 downto 8);
-          when x"B7" =>
-            -- @IO:GS $D6B7 - Touch pad Y delta LSB
-            fastio_rdata <= touch_delta_y_internal(7 downto 0);
-          when x"B8" =>
-            -- @IO:GS $D6B8 - Touch pad Y delta MSB
-            fastio_rdata <= touch_delta_y_internal(15 downto 8);
-          when x"B9" =>
-            -- @IO:GS $D6B9 - Touch pad touch #1 X LSB
-            fastio_rdata <= touch_x1(7 downto 0);
-          when x"BA" =>
-            -- @IO:GS $D6BA - Touch pad touch #1 Y LSB
-            fastio_rdata <= touch_y1(7 downto 0);
-          when x"BB" =>
-            -- @IO:GS $D6BB.0-1 - Touch pad touch #1 X MSBs
-            -- @IO:GS $D6BB.5-4 - Touch pad touch #1 Y MSBs
-            fastio_rdata(1 downto 0) <= touch_x1(9 downto 8);
-            fastio_rdata(5 downto 4) <= touch_y1(9 downto 8);
-          when x"BC" =>
-            -- @IO:GS $D6BC - Touch pad touch #2 X LSB
-            fastio_rdata <= touch_x2(7 downto 0);
-          when x"BD" =>
-            -- @IO:GS $D6BD - Touch pad touch #2 Y LSB
-            fastio_rdata <= touch_y2(7 downto 0);
-          when x"BE" =>
-            -- @IO:GS $D6BE.0-1 - Touch pad touch #2 X MSBs
-            -- @IO:GS $D6BE.5-4 - Touch pad touch #2 Y MSBs
-            fastio_rdata(1 downto 0) <= touch_x2(9 downto 8);
-            fastio_rdata(5 downto 4) <= touch_y2(9 downto 8);
-          when x"BF" =>
-            fastio_rdata(7) <= touch_enabled_internal;
-            -- XXX DEBUG temporary
-            fastio_rdata(6 downto 0) <= touch_byte(6 downto 0);
-          when x"C0" =>
-            -- @IO:GS $D6C0.0-3 - Touch pad gesture directions (left,right,up,down)
-            -- @IO:GS $D6C0.7-4 - Touch pad gesture ID
-            fastio_rdata(3 downto 0) <= gesture_event;
-            fastio_rdata(7 downto 4) <= gesture_event_id;
-          when x"D0" =>
-            -- @IO:GS $D6D0 - I2C bus select (bus 0 = temp sensor on Nexys4 boardS)
-            fastio_rdata <= i2c_bus_id;
-          when x"D1" =>
-            fastio_rdata <= (others => '0');
-            if i2c_bus_id = x"00" then
-              fastio_rdata(0) <= i2c0_reset_internal;
-              fastio_rdata(1) <= i2c0_command_en_internal;
-              fastio_rdata(2) <= i2c0_rw_internal;
-              fastio_rdata(6) <= i2c0_busy;
-              fastio_rdata(7) <= i2c0_error;
-            elsif i2c_bus_id = x"01" then
-              fastio_rdata(0) <= i2c1_reset_internal;
-              fastio_rdata(1) <= i2c1_command_en_internal;
-              fastio_rdata(2) <= i2c1_rw_internal;
-              fastio_rdata(6) <= i2c1_busy;
-              fastio_rdata(7) <= i2c1_error;
-            end if;
-          when x"D2" =>
-            fastio_rdata <= (others => '0');
-            if i2c_bus_id = x"00" then
-              fastio_rdata(7 downto 1) <= i2c0_address_internal;
-            elsif i2c_bus_id = x"01" then
-              fastio_rdata(7 downto 1) <= i2c1_address_internal;
-            end if;
-          when x"D3" =>
-            fastio_rdata <= (others => '0');
-            if i2c_bus_id = x"00" then
-              fastio_rdata <= i2c0_wdata_internal;
-            elsif i2c_bus_id = x"01" then
-              fastio_rdata <= i2c1_wdata_internal;
-            end if;
-          when x"D4" =>
-            fastio_rdata <= (others => '0');
-            if i2c_bus_id = x"00" then
-              fastio_rdata <= i2c0_rdata;
-            elsif i2c_bus_id = x"01" then
-              fastio_rdata <= i2c1_rdata;
-            end if;
-          when x"da" =>
-            -- @IO:GS $D6DA - DEBUG SD card last error code LSB
-            fastio_rdata(7 downto 0) <= unsigned(last_sd_error(7 downto 0));
-          when x"db" =>
-            -- @IO:GS $D6DB - DEBUG SD card last error code MSB
-            fastio_rdata(7 downto 0) <= unsigned(last_sd_error(15 downto 8));
-          when x"DE" =>
-            -- @IO:GS $D6DE - FPGA die temperature sensor (lower nybl)
-            fastio_rdata <= unsigned("0000"&fpga_temperature(3 downto 0));
-          when x"DF" =>
-            -- @IO:GS $D6DF - FPGA die temperature sensor (upper byte)
-            fastio_rdata <= unsigned(fpga_temperature(11 downto 4));
-          -- XXX $D6Ex is decoded by ethernet controller, so don't use those
-            -- registers here!
-          when x"F0" =>
-            -- @IO:GS $D6F0 - LCD panel brightness control
-            fastio_rdata <= lcdpwm_value;
-          when x"F2" =>
-            -- @IO:GS $D6F2 - Read FPGA five-way buttons
-            fastio_rdata(7 downto 5) <= "000";
-            fastio_rdata(4 downto 0) <= unsigned(btn(4 downto 0));
-          when x"F3" =>
-            -- @IO:GS $D6F3 Accelerometer inputs
-            fastio_rdata(0) <= aclMISO;
-            fastio_rdata(1) <= aclMOSIinternal;
-            fastio_rdata(2) <= aclSSinternal;
-            fastio_rdata(3) <= aclSCKinternal;
-            fastio_rdata(4) <= '0';
-            fastio_rdata(5) <= aclInt1;
-            fastio_rdata(6) <= aclInt2;
-            fastio_rdata(7) <= aclInt1 or aclInt2;
-          when x"F4" =>
-            -- @IO:GS $D6F4 - Audio Mixer register select
-            fastio_rdata <= audio_mix_reg_int;
-          when x"F5" =>
-            -- @IO:GS $D6F5 - Audio Mixer register read port
-            if audio_mix_reg_int(0)='1' then
-              fastio_rdata <= audio_mix_rdata(15 downto 8);
-            else
-              fastio_rdata <= audio_mix_rdata(7 downto 0);
-            end if;
-          when x"F6" =>
-            -- @IO:GS $D6F6 - Keyboard scan code reader (lower byte)
-            fastio_rdata <= unsigned(last_scan_code(7 downto 0));
-          when x"F7" =>
-            -- @IO:GS $D6F7 - Keyboard scan code reader (upper nybl)
-            fastio_rdata <= unsigned("000"&last_scan_code(12 downto 8));
-          when x"F8" =>
-            -- @IO:GS $D6F8 - Digital audio, left channel, LSB
-            fastio_rdata <= pcm_left(7 downto 0);
-          when x"F9" =>
-            -- @IO:GS $D6F9 - Digital audio, left channel, MSB
-            fastio_rdata <= pcm_left(15 downto 8);
-          when x"FA" =>
-            -- @IO:GS $D6FA - Digital audio, left channel, LSB
-            fastio_rdata <= pcm_right(7 downto 0);
-          when x"FB" =>
-            -- @IO:GS $D6FB - Digital audio, left channel, MSB
-            fastio_rdata <= pcm_right(15 downto 8);
-          when x"FC" =>
-            -- @IO:GS $D6FC - audio MSB (source selected by $D6F4)
-            fastio_rdata <= audio_loopback(7 downto 0);
-          when x"FD" =>
-            -- @IO:GS $D6FD - audio MSB (source selected by $D6F4)
-            fastio_rdata <= audio_loopback(15 downto 8);
-          when x"FF" =>
-            -- Flash interface
-            fastio_rdata(3 downto 0) <= unsigned(QspiDB);
-            fastio_rdata(5 downto 4) <= "00";
-            fastio_rdata(6) <= QspiCSnInternal;
-            fastio_rdata(7) <= QspiSCKInternal;
-          when others =>
-            fastio_rdata <= (others => '0');
-        end case;
-      else
-        -- Otherwise tristate output
-        fastio_rdata <= (others => '0');
-      end if;
-    else
-      fastio_rdata <= (others => '0');
-    end if;
-
-    -- output select
-    fastio_rdata_sel <= (others => 'Z');
-    if fastio_read='1' and sectorbuffercs='0' then
-      fastio_rdata_sel <= fastio_rdata;
-    elsif sectorbuffercs='1' then
-      fastio_rdata_sel <= fastio_rdata_ram;
+      sector_buffer_fastio_address <= to_integer(fastio_addr(11 downto 0));
     end if;
         
+    -- Output data is now clocked (synchronous) to match the rest of the I/O devices (eventually).
+    if rising_edge(clock) then
+      sdcardio_fastio_source <= SdNone;
+      if fastio_read='1' then
+      
+        if sectorbuffercs='1' then
+            sdcardio_fastio_source <= SdBuffer;
+        elsif f011_cs='1' and sdcardio_cs='0' then
+          sdcardio_fastio_source <= SdRegister;
+          -- F011 FDC emulation registers
+  --        report "Preparing to read F011 emulation register @ $" & to_hstring(fastio_addr);
+
+          case fastio_addr(4 downto 0) is
+            when "00000" =>
+              -- CONTROL |  IRQ  |  LED  | MOTOR | SWAP  | SIDE  |  DS2  |  DS1  |  DS0  | 0 RW
+              --IRQ     When set, enables interrupts to occur,  when reset clears and
+              --        disables interrupts.
+              --LED     These  two  bits  control  the  state  of  the  MOTOR and LED
+              --MOTOR   outputs. When both are clear, both MOTOR and LED outputs will
+              --        be off. When MOTOR is set, both MOTOR and LED Outputs will be
+              --        on. When LED is set, the LED will "blink".
+              --SWAP    swaps upper and lower halves of the data buffer
+              --        as seen by the CPU.
+              --SIDE    when set, sets the SIDE output to 0, otherwise 1.
+              --DS2-DS0 these three bits select a drive (drive 0 thru drive 7).  When
+              --        DS0-DS2  are  low  and  the LOCAL input is true (low) the DR0
+              --        output will go true (low).
+              fastio_rdata <=
+                f011_irqenable & f011_led & f011_motor & f011_swap &
+                f011_head_side(0) & f011_ds;
+            when "00001" =>
+              -- COMMAND | WRITE | READ  | FREE  | STEP  |  DIR  | ALGO  |  ALT  | NOBUF | 1 RW
+              --WRITE   must be set to perform write operations.
+              --READ    must be set for all read operations.
+              --FREE    allows free-format read or write vs formatted
+              --STEP    write to 1 to cause a head stepping pulse.
+              --DIR     sets head stepping direction
+              --ALGO    selects read and write algorithm. 0=FC read, 1=DPLL read,
+              --        0=normal write, 1=precompensated write.
+            
+              --ALT     selects alternate DPLL read recovery method. The ALG0 bit
+              --        must be set for ALT to work.
+              --NOBUF   clears the buffer read/write pointers
+              fastio_rdata <= f011_cmd;
+
+            when "00010" =>             -- READ $D082
+              -- @IO:C65 $D082 - F011 FDC Status A port (read only)
+              -- STAT A  | BUSY  |  DRQ  |  EQ   |  RNF  |  CRC  | LOST  | PROT  |  TKQ  | 2 R
+              --BUSY    command is being executed
+              --DRQ     disk interface has transferred a byte
+              --EQ      buffer CPU/Disk pointers are equal
+              --RNF     sector not found during formatted write or read
+              --CRC     CRC check failed
+              --LOST    data was lost during transfer
+              --PROT    disk is write protected
+              --TK0     head is positioned over track zero
+              fastio_rdata <= f011_busy & f011_drq & f011_flag_eq & f011_rnf
+                              & f011_crc & f011_lost & f011_write_protected
+                              & f011_track0;
+
+            when "00011" =>             -- READ $D083 
+              -- @IO:C65 $D083 - F011 FDC Status B port (read only)
+              -- STAT B  | RDREQ | WTREQ |  RUN  | NGATE | DSKIN | INDEX |  IRQ  | DSKCHG| 3 R
+              -- RDREQ   sector found during formatted read
+              -- WTREQ   sector found during formatted write
+              -- RUN     indicates successive matches during find operation
+              --         (that so far, the found sector matches the requested sector)
+              -- WGATE   write gate is on
+              -- DSKIN   indicates that a disk is inserted in the drive
+              -- INDEX   disk index is currently over sensor
+              -- IRQ     an interrupt has occurred
+              -- DSKCHG  the DSKIN line has changed
+              --         this is cleared by deselecting drive
+              fastio_rdata <= f011_rsector_found & f011_wsector_found &
+                              f011_rsector_found & f011_write_gate & f011_disk_present &
+                              f011_over_index & f011_irq & f011_disk_changed;
+
+            when "00100" =>
+              -- TRACK   |  T7   |  T6   |  T5   |  T4   |  T3   |  T2   |  T1   |  T0   | 4 RW
+              fastio_rdata <= f011_track;
+
+            when "00101" =>
+              -- SECTOR  |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 5 RW
+              fastio_rdata <= f011_sector;
+
+            when "00110" =>
+              -- SIDE    |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 6 RW
+              fastio_rdata <= f011_side;
+
+            when "00111" =>  -- $D087
+              -- DATA    |  D7   |  D6   |  D5   |  D4   |  D3   |  D2   |  D1   |  D0   | 7 RW
+              fastio_rdata <= sb_cpu_rdata;
+            
+            when "01000" =>
+              -- CLOCK   |  C7   |  C6   |  C5   |  C4   |  C3   |  C2   |  C1   |  C0   | 8 RW
+              fastio_rdata <= f011_reg_clock;
+            
+            when "01001" =>
+              -- @IO:65 $D089 - F011 FDC step time (x62.5 micro seconds)
+              -- STEP    |  S7   |  S6   |  S5   |  S4   |  S3   |  S2   |  S1   |  S0   | 9 RW
+              fastio_rdata <= f011_reg_step;
+            
+            when "01010" =>
+              -- P CODE  |  P7   |  P6   |  P5   |  P4   |  P3   |  P2   |  P1   |  P0   | A R
+              fastio_rdata <= f011_reg_pcode;
+            when "11011" => -- @IO:GS $D09B - Most recent SD card command sent
+              fastio_rdata <= last_sd_state;
+            when "11100" => -- @IO:GS $D09C - FDC-side buffer pointer low bits (DEBUG)
+              fastio_rdata <= f011_buffer_disk_address(7 downto 0);
+            when "11101" => -- @IO:GS $D09D - FDC-side buffer pointer high bit (DEBUG)
+              fastio_rdata(0) <= f011_buffer_disk_address(8);
+              fastio_rdata(7 downto 1) <= (others => '0');
+            when "11110" => -- @IO:GS $D09E - CPU-side buffer pointer low bits (DEBUG)
+              fastio_rdata <= f011_buffer_cpu_address(7 downto 0);
+            when "11111" =>
+              -- @IO:GS $D09F.0 - CPU-side buffer pointer high bit (DEBUG)
+              -- @IO:GS $D09F.1 - EQ flag (DEBUG)
+              -- @IO:GS $D09F.2 - EQ flag inhibit state (DEBUG)
+              fastio_rdata(0) <= f011_buffer_cpu_address(8);
+              fastio_rdata(1) <= f011_flag_eq;
+              fastio_rdata(2) <= f011_eq_inhibit;
+              fastio_rdata(7 downto 3) <= (others => '0');
+
+            when others =>
+              fastio_rdata <= (others => '0');
+          end case;
+
+          -- ==================================================================
+
+        elsif sdcardio_cs='1' and f011_cs='0' then
+          sdcardio_fastio_source <= SdRegister;
+          -- microSD controller registers
+          report "reading SDCARD registers" severity note;
+          case fastio_addr(7 downto 0) is
+            -- @IO:GS $D680.0 - SD controller BUSY flag
+            -- @IO:GS $D680.1 - SD controller BUSY flag
+            -- @IO:GS $D680.2 - SD controller RESET flag
+            -- @IO:GS $D680.3 - SD controller sector buffer mapped flag
+            -- @IO:GS $D680.4 - SD controller SDHC mode flag
+            -- @IO:GS $D680.5 - SD controller SDIO FSM ERROR flag
+            -- @IO:GS $D680.6 - SD controller SDIO error flag
+            -- @IO:GS $D680.7 - SD controller half speed flag
+            when x"80" =>
+              -- status / command register
+              -- error status in bit 6 so that V flag can be used for check
+              report "reading $D680 SDCARD status register" severity note;
+              fastio_rdata(7) <= '0';
+              fastio_rdata(6) <= sdio_error;
+              fastio_rdata(5) <= sdio_fsm_error;
+              fastio_rdata(4) <= sdhc_mode;
+              fastio_rdata(3) <= sector_buffer_mapped;
+              fastio_rdata(2) <= sd_reset;
+              fastio_rdata(1) <= sdcard_busy;  -- Whether the SD card thinks it is busy
+              fastio_rdata(0) <= sdio_busy;  -- Whether we think we are busy
+
+            when x"81" => fastio_rdata <= sd_sector(7 downto 0); -- SD-control, LSByte of address
+            when x"82" => fastio_rdata <= sd_sector(15 downto 8); -- SD-control
+            when x"83" => fastio_rdata <= sd_sector(23 downto 16); -- SD-controll
+            when x"84" => fastio_rdata <= sd_sector(31 downto 24); -- SD-control, MSByte of address
+
+            -- @IO:GS $D685 - DEBUG Show current state ID of SD card interface
+            when x"85" => fastio_rdata <= to_unsigned(sd_state_t'pos(sd_state),8);
+            -- @IO:GS $D686 - DEBUG SD card data token
+            when x"86" => fastio_rdata <= sd_datatoken;                        
+            -- @IO:GS $D687 - DEBUG SD card most recent byte read
+            when x"87" => fastio_rdata <= unsigned(sd_rdata);
+            -- @IO:GS $D688 - Low-byte of F011 buffer pointer (disk side) (read only)
+            when x"88" => fastio_rdata <= f011_buffer_disk_address(7 downto 0);
+            -- @IO:GS $D689.0 - High bit of F011 buffer pointer (disk side) (read only)
+            -- @IO:GS $D689.1 - Sector read from SD/F011/FDC, but not yet read by CPU (i.e., EQ and DRQ)
+            -- @IO:GS $D689.3 - (read only) sd_data_ready signal.
+            -- @IO:GS $D689.7 - Memory mapped sector buffer select: 1=SD-Card, 0=F011/FDC
+            when x"89" =>
+              fastio_rdata(0) <= f011_buffer_disk_address(8);
+              fastio_rdata(1) <= f011_flag_eq and f011_drq;
+              fastio_rdata(6 downto 2) <= (others => '0');
+              fastio_rdata(2) <= sd_handshake;
+              fastio_rdata(3) <= sd_data_ready;
+              fastio_rdata(7) <= f011sd_buffer_select;
+            when x"8a" =>
+              -- @IO:GS $D68A - DEBUG check signals that can inhibit sector buffer mapping
+              fastio_rdata(0) <= colourram_at_dc00;
+              fastio_rdata(1) <= viciii_iomode(1);
+            
+            when x"8b" =>
+              -- BG the description seems in conflict with the assignment in the write section (below)
+              -- @IO:GS $D68B - Diskimage control flags
+              fastio_rdata(0) <= diskimage1_enable;
+              fastio_rdata(1) <= f011_disk1_present;
+              fastio_rdata(2) <= not f011_disk1_write_protected;
+              fastio_rdata(3) <= diskimage2_enable;
+              fastio_rdata(4) <= f011_disk2_present;
+              fastio_rdata(5) <= not f011_disk2_write_protected;
+            when x"8c" =>
+              -- @IO:GS $D68C - Diskimage sector number (bits 0-7)
+              fastio_rdata <= diskimage_sector(7 downto 0);
+            when x"8d" =>
+              -- @IO:GS $D68D - Diskimage sector number (bits 8-15)
+              fastio_rdata <= diskimage_sector(15 downto 8);
+            when x"8e" =>
+              -- @IO:GS $D68E - Diskimage sector number (bits 16-23)
+              fastio_rdata <= diskimage_sector(23 downto 16);
+            when x"8f" =>
+              -- @IO:GS $D68F - Diskimage sector number (bits 24-31)
+              fastio_rdata <= diskimage_sector(31 downto 24);
+
+
+            when x"a0" =>
+              -- @IO:GS $D6A0 - DEBUG FDC read status lines
+              fastio_rdata(7) <= f_index;
+              fastio_rdata(6) <= f_track0;
+              fastio_rdata(5) <= f_writeprotect;
+              fastio_rdata(4) <= f_rdata;
+              fastio_rdata(3) <= f_diskchanged;
+              fastio_rdata(2 downto 0) <= (others => '1');
+            when x"a1" =>
+              -- @IO:GS $D6A1.0 - Use real floppy drive instead of SD card
+              fastio_rdata(0) <= use_real_floppy;
+              -- @IO:GS $D6A1.1 - Match any sector on a real floppy read/write
+              fastio_rdata(1) <= target_any;
+              -- @IO:GS $D6A1.2-6 - FDC debug status flags
+              fastio_rdata(2) <= fdc_first_byte;
+              fastio_rdata(3) <= fdc_sector_end;
+              fastio_rdata(4) <= fdc_crc_error;
+              fastio_rdata(5) <= fdc_sector_found;
+              fastio_rdata(6) <= fdc_byte_valid;
+              fastio_rdata(7) <= fdc_read_request;
+            when x"a2" =>
+              -- @IO:GS $D6A2 - FDC clock cycles per MFM data bit
+              fastio_rdata <= cycles_per_interval;
+            when x"a3" =>
+              -- @IO:GS $D6A3 - FDC track number of last matching sector header
+              fastio_rdata <= found_track;
+            when x"a4" =>
+              -- @IO:GS $D6A4 - FDC sector number of last matching sector header
+              fastio_rdata <= found_sector;
+            when x"a5" =>
+              -- @IO:GS $D6A5 - FDC side number of last matching sector header
+              fastio_rdata <= found_side;
+            when x"a6" =>
+              -- @IO:GS $D6A6 - DEBUG FDC decoded MFM byte
+              fastio_rdata <= fdc_byte_out;
+            when x"a7" =>
+              -- @IO:GS $D6A7 - DEBUG FDC decoded MFM state
+              fastio_rdata <= fdc_mfm_state;
+            when x"a8" =>
+              -- @IO:GS $D6A8 - DEBUG FDC last decoded MFM byte
+              fastio_rdata <= fdc_mfm_byte;
+            when x"a9" =>
+              -- @IO:GS $D6A9 - DEBUG FDC last gap interval (LSB)
+              fastio_rdata <= fdc_last_gap(7 downto 0);
+            when x"aa" =>
+              -- @IO:GS $D6AA - DEBUG FDC last gap interval (MSB)
+              fastio_rdata <= fdc_last_gap(15 downto 8);
+            when x"ab" =>
+              -- @IO:GS $D6AB - DEBUG FDC last 7 rdata bits (packed by mfm_gaps)
+              fastio_rdata <= unsigned(packed_rdata);
+            when x"ac" =>
+              -- @IO:GS $D6AC - DEBUG FDC last quantised gap
+              fastio_rdata <= unsigned(fdc_quantised_gap);
+            when x"ad" =>
+              -- @IO:GS $D6AD - DEBUG FDC bytes read counter (LSB)
+              fastio_rdata <= unsigned(fdc_bytes_read(7 downto 0));
+            when x"ae" =>
+              -- @IO:GS $D6AE - DEBUG FDC bytes read counter (MSB)
+              fastio_rdata <= unsigned(fdc_bytes_read(15 downto 8));
+            when x"B0" =>
+              -- @IO:GS $D6B0 - Touch pad control / status
+              -- @IO:GS $D6B0.0 - Touch event 1 is valid
+              -- @IO:GS $D6B0.1 - Touch event 2 is valid
+              -- @IO:GS $D6B0.2-3 - Touch event 1 up/down state
+              -- @IO:GS $D6B0.5-4 - Touch event 2 up/down state
+              -- @IO:GS $D6B0.6 - Invert horizontal axis
+              -- @IO:GS $D6B0.7 - Invert vertical axis
+              fastio_rdata(0) <= touch1_active;
+              fastio_rdata(1) <= touch2_active;
+              fastio_rdata(3 downto 2) <= unsigned(touch1_status);
+              fastio_rdata(5 downto 4) <= unsigned(touch2_status);
+              fastio_rdata(6) <= touch_flip_x_internal;
+              fastio_rdata(7) <= touch_flip_y_internal;
+            when x"B1" =>
+              -- @IO:GS $D6B1 - Touch pad X scaling LSB
+              fastio_rdata <= touch_scale_x_internal(7 downto 0);
+            when x"B2" =>
+              -- @IO:GS $D6B2 - Touch pad X scaling MSB
+              fastio_rdata <= touch_scale_x_internal(15 downto 8);
+            when x"B3" =>
+              -- @IO:GS $D6B3 - Touch pad Y scaling LSB
+              fastio_rdata <= touch_scale_y_internal(7 downto 0);
+            when x"B4" =>
+              -- @IO:GS $D6B4 - Touch pad Y scaling MSB
+              fastio_rdata <= touch_scale_y_internal(15 downto 8);
+            when x"B5" =>
+              -- @IO:GS $D6B5 - Touch pad X delta LSB
+              fastio_rdata <= touch_delta_x_internal(7 downto 0);
+            when x"B6" =>
+              -- @IO:GS $D6B6 - Touch pad X delta MSB
+              fastio_rdata <= touch_delta_x_internal(15 downto 8);
+            when x"B7" =>
+              -- @IO:GS $D6B7 - Touch pad Y delta LSB
+              fastio_rdata <= touch_delta_y_internal(7 downto 0);
+            when x"B8" =>
+              -- @IO:GS $D6B8 - Touch pad Y delta MSB
+              fastio_rdata <= touch_delta_y_internal(15 downto 8);
+            when x"B9" =>
+              -- @IO:GS $D6B9 - Touch pad touch #1 X LSB
+              fastio_rdata <= touch_x1(7 downto 0);
+            when x"BA" =>
+              -- @IO:GS $D6BA - Touch pad touch #1 Y LSB
+              fastio_rdata <= touch_y1(7 downto 0);
+            when x"BB" =>
+              -- @IO:GS $D6BB.0-1 - Touch pad touch #1 X MSBs
+              -- @IO:GS $D6BB.5-4 - Touch pad touch #1 Y MSBs
+              fastio_rdata(1 downto 0) <= touch_x1(9 downto 8);
+              fastio_rdata(5 downto 4) <= touch_y1(9 downto 8);
+            when x"BC" =>
+              -- @IO:GS $D6BC - Touch pad touch #2 X LSB
+              fastio_rdata <= touch_x2(7 downto 0);
+            when x"BD" =>
+              -- @IO:GS $D6BD - Touch pad touch #2 Y LSB
+              fastio_rdata <= touch_y2(7 downto 0);
+            when x"BE" =>
+              -- @IO:GS $D6BE.0-1 - Touch pad touch #2 X MSBs
+              -- @IO:GS $D6BE.5-4 - Touch pad touch #2 Y MSBs
+              fastio_rdata(1 downto 0) <= touch_x2(9 downto 8);
+              fastio_rdata(5 downto 4) <= touch_y2(9 downto 8);
+            when x"BF" =>
+              fastio_rdata(7) <= touch_enabled_internal;
+              -- XXX DEBUG temporary
+              fastio_rdata(6 downto 0) <= touch_byte(6 downto 0);
+            when x"C0" =>
+              -- @IO:GS $D6C0.0-3 - Touch pad gesture directions (left,right,up,down)
+              -- @IO:GS $D6C0.7-4 - Touch pad gesture ID
+              fastio_rdata(3 downto 0) <= gesture_event;
+              fastio_rdata(7 downto 4) <= gesture_event_id;
+            when x"D0" =>
+              -- @IO:GS $D6D0 - I2C bus select (bus 0 = temp sensor on Nexys4 boardS)
+              fastio_rdata <= i2c_bus_id;
+            when x"D1" =>
+              fastio_rdata <= (others => '0');
+              if i2c_bus_id = x"00" then
+                fastio_rdata(0) <= i2c0_reset_internal;
+                fastio_rdata(1) <= i2c0_command_en_internal;
+                fastio_rdata(2) <= i2c0_rw_internal;
+                fastio_rdata(6) <= i2c0_busy;
+                fastio_rdata(7) <= i2c0_error;
+              elsif i2c_bus_id = x"01" then
+                fastio_rdata(0) <= i2c1_reset_internal;
+                fastio_rdata(1) <= i2c1_command_en_internal;
+                fastio_rdata(2) <= i2c1_rw_internal;
+                fastio_rdata(6) <= i2c1_busy;
+                fastio_rdata(7) <= i2c1_error;
+              end if;
+            when x"D2" =>
+              fastio_rdata <= (others => '0');
+              if i2c_bus_id = x"00" then
+                fastio_rdata(7 downto 1) <= i2c0_address_internal;
+              elsif i2c_bus_id = x"01" then
+                fastio_rdata(7 downto 1) <= i2c1_address_internal;
+              end if;
+            when x"D3" =>
+              fastio_rdata <= (others => '0');
+              if i2c_bus_id = x"00" then
+                fastio_rdata <= i2c0_wdata_internal;
+              elsif i2c_bus_id = x"01" then
+                fastio_rdata <= i2c1_wdata_internal;
+              end if;
+            when x"D4" =>
+              fastio_rdata <= (others => '0');
+              if i2c_bus_id = x"00" then
+                fastio_rdata <= i2c0_rdata;
+              elsif i2c_bus_id = x"01" then
+                fastio_rdata <= i2c1_rdata;
+              end if;
+            when x"da" =>
+              -- @IO:GS $D6DA - DEBUG SD card last error code LSB
+              fastio_rdata(7 downto 0) <= unsigned(last_sd_error(7 downto 0));
+            when x"db" =>
+              -- @IO:GS $D6DB - DEBUG SD card last error code MSB
+              fastio_rdata(7 downto 0) <= unsigned(last_sd_error(15 downto 8));
+            when x"DE" =>
+              -- @IO:GS $D6DE - FPGA die temperature sensor (lower nybl)
+              fastio_rdata <= unsigned("0000"&fpga_temperature(3 downto 0));
+            when x"DF" =>
+              -- @IO:GS $D6DF - FPGA die temperature sensor (upper byte)
+              fastio_rdata <= unsigned(fpga_temperature(11 downto 4));
+            -- XXX $D6Ex is decoded by ethernet controller, so don't use those
+              -- registers here!
+            when x"F0" =>
+              -- @IO:GS $D6F0 - LCD panel brightness control
+              fastio_rdata <= lcdpwm_value;
+            when x"F2" =>
+              -- @IO:GS $D6F2 - Read FPGA five-way buttons
+              fastio_rdata(7 downto 5) <= "000";
+              fastio_rdata(4 downto 0) <= unsigned(btn(4 downto 0));
+            when x"F3" =>
+              -- @IO:GS $D6F3 Accelerometer inputs
+              fastio_rdata(0) <= aclMISO;
+              fastio_rdata(1) <= aclMOSIinternal;
+              fastio_rdata(2) <= aclSSinternal;
+              fastio_rdata(3) <= aclSCKinternal;
+              fastio_rdata(4) <= '0';
+              fastio_rdata(5) <= aclInt1;
+              fastio_rdata(6) <= aclInt2;
+              fastio_rdata(7) <= aclInt1 or aclInt2;
+            when x"F4" =>
+              -- @IO:GS $D6F4 - Audio Mixer register select
+              fastio_rdata <= audio_mix_reg_int;
+            when x"F5" =>
+              -- @IO:GS $D6F5 - Audio Mixer register read port
+              if audio_mix_reg_int(0)='1' then
+                fastio_rdata <= audio_mix_rdata(15 downto 8);
+              else
+                fastio_rdata <= audio_mix_rdata(7 downto 0);
+              end if;
+            when x"F6" =>
+              -- @IO:GS $D6F6 - Keyboard scan code reader (lower byte)
+              fastio_rdata <= unsigned(last_scan_code(7 downto 0));
+            when x"F7" =>
+              -- @IO:GS $D6F7 - Keyboard scan code reader (upper nybl)
+              fastio_rdata <= unsigned("000"&last_scan_code(12 downto 8));
+            when x"F8" =>
+              -- @IO:GS $D6F8 - Digital audio, left channel, LSB
+              fastio_rdata <= pcm_left(7 downto 0);
+            when x"F9" =>
+              -- @IO:GS $D6F9 - Digital audio, left channel, MSB
+              fastio_rdata <= pcm_left(15 downto 8);
+            when x"FA" =>
+              -- @IO:GS $D6FA - Digital audio, left channel, LSB
+              fastio_rdata <= pcm_right(7 downto 0);
+            when x"FB" =>
+              -- @IO:GS $D6FB - Digital audio, left channel, MSB
+              fastio_rdata <= pcm_right(15 downto 8);
+            when x"FC" =>
+              -- @IO:GS $D6FC - audio MSB (source selected by $D6F4)
+              fastio_rdata <= audio_loopback(7 downto 0);
+            when x"FD" =>
+              -- @IO:GS $D6FD - audio MSB (source selected by $D6F4)
+              fastio_rdata <= audio_loopback(15 downto 8);
+            when x"FF" =>
+              -- Flash interface
+              fastio_rdata(3 downto 0) <= unsigned(QspiDB);
+              fastio_rdata(5 downto 4) <= "00";
+              fastio_rdata(6) <= QspiCSnInternal;
+              fastio_rdata(7) <= QspiSCKInternal;
+            when others =>
+              fastio_rdata <= (others => '0');
+          end case;
+        end if;
+      end if;
+    end if;
+    
+    -- output select, based on clocked mux selection
+    case sdcardio_fastio_source is
+      when SdBuffer => fastio_rdata_sel <= std_logic_vector(fastio_rdata_ram);
+      when SdRegister => fastio_rdata_sel <= std_logic_vector(fastio_rdata);
+      when others => fastio_rdata_sel <= (others => 'Z');
+    end case;
+                
     -- ==================================================================
     -- ==================================================================
     
