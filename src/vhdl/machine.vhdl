@@ -1376,11 +1376,11 @@ begin
       -- Or probably to really simplify things if I can do the ready signal stuff...
       -- Just run all FastIO devices at 25Mhz instead of 50Mhz.  There's no reason
       -- we need a 50Mhz I/O clock, really.
-      address_next => fastio_addr,
+      address_next => system_address,
       io_sel_next => io_sel,      
-      r_next => fastio_read, 
-      w_next => fastio_write,
-      data_i_next => fastio_wdata, 
+      r_next => system_read, 
+      w_next => system_write,
+      data_i_next => system_wdata, 
 
 --      address_next => fastio_addr_fast,
 --      io_sel_next => io_sel_next,
