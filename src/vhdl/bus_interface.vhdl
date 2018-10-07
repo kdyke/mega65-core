@@ -359,12 +359,7 @@ entity bus_interface is
     ---------------------------------------------------------------------------
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
-    fastio_addr : inout std_logic_vector(19 downto 0);
-    fastio_addr_fast : out std_logic_vector(19 downto 0);
-    fastio_read : inout std_logic := '0';
-    fastio_write : inout std_logic := '0';
-    fastio_wdata : out std_logic_vector(7 downto 0);
-    fastio_rdata : in std_logic_vector(7 downto 0);
+    io_rdata : in std_logic_vector(7 downto 0);
     io_sel_next_out : out std_logic := '0';
     io_sel_out : inout std_logic := '0';
     ext_sel_next_out : out std_logic := '0';
@@ -407,16 +402,14 @@ entity bus_interface is
     attribute dont_touch : string;
     attribute keep : string;
     
-    attribute mark_debug of fastio_rdata: signal is "true";
-    attribute mark_debug of fastio_wdata: signal is "true";
-    attribute mark_debug of fastio_write: signal is "true";
+    --attribute mark_debug of io_rdata: signal is "true";
     --
     --attribute mark_debug of ext_sel_next_out: signal is "true";
-    attribute mark_debug of io_sel_next_out: signal is "true";
+    --attribute mark_debug of io_sel_next_out: signal is "true";
     --attribute mark_debug of ext_sel_out: signal is "true";
-    attribute mark_debug of io_sel_out: signal is "true";
+    --attribute mark_debug of io_sel_out: signal is "true";
     --
-    attribute mark_debug of  system_wdata_next: signal is "true";
+    --attribute mark_debug of  system_wdata_next: signal is "true";
     --
     --attribute mark_debug of kickstart_rdata: signal is "true";
     --attribute mark_debug of kickstart_write_next: signal is "true";
@@ -431,9 +424,9 @@ entity bus_interface is
     --attribute mark_debug of reset: signal is "true";
     --attribute keep of cpu_memory_read_data : signal is "true";
     --attribute dont_touch of cpu_memory_read_data : signal is "true";
-    attribute mark_debug of cpu_memory_read_data : signal is "true";
-    attribute mark_debug of cpu_proceed : signal is "true";
-    attribute mark_debug of memory_ready_out : signal is "true";
+    --attribute mark_debug of cpu_memory_read_data : signal is "true";
+    --attribute mark_debug of cpu_proceed : signal is "true";
+    --attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of fastio_vic_rdata : signal is "true";
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
@@ -486,8 +479,6 @@ architecture Behavioural of bus_interface is
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
 
   signal kickstart_cs_next : std_logic;
-  
-  signal fastio_addr_next : std_logic_vector(19 downto 0);
   
   signal io_sel_resolved : std_logic;
   signal io_sel_next : std_logic;
@@ -558,28 +549,25 @@ architecture Behavioural of bus_interface is
     
   signal post_resolve_memory_access_address_next : std_logic_vector(19 downto 0);
   
-  --attribute mark_debug : string;
-
-  attribute mark_debug of read_source: signal is "true";
-  --attribute mark_debug of fastio_addr_next: signal is "true";
-  attribute mark_debug of read_data_copy : signal is "true";
+  --attribute mark_debug of read_source: signal is "true";
+  --attribute mark_debug of read_data_copy : signal is "true";
   --
   --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
-  --attribute mark_debug of  system_wdata: signal is "true";
+  --attribute mark_debug of system_wdata: signal is "true";
   --attribute mark_debug of system_address_next: signal is "true";
   --attribute mark_debug of system_address: signal is "true";
   --
-  attribute mark_debug of bus_proceed: signal is "true";
-  attribute mark_debug of wait_states: signal is "true";
-  attribute mark_debug of wait_states_non_zero: signal is "true";
+  --attribute mark_debug of bus_proceed: signal is "true";
+  --attribute mark_debug of wait_states: signal is "true";
+  --attribute mark_debug of wait_states_non_zero: signal is "true";
     
   --attribute mark_debug of colour_ram_cs : signal is "true";
   --attribute mark_debug of colourram_at_dc00 : signal is "true";
-  attribute mark_debug of sector_buffer_mapped : signal is "true";
+  --attribute mark_debug of sector_buffer_mapped : signal is "true";
   --attribute mark_debug of kickstart_cs_next : signal is "true";
   --attribute mark_debug of colour_ram_cs_next : signal is "true";
-  attribute mark_debug of vic_cs_next : signal is "true";
+  --attribute mark_debug of vic_cs_next : signal is "true";
   
 begin
   
@@ -613,8 +601,6 @@ begin
 
       -- Stop memory accesses
       colour_ram_cs <= '0';
-      fastio_read <= '0';
-      fastio_write <= '0';
       --chipram_we <= '0';        
       --chipram_datain <= x"c0";    
 
@@ -637,7 +623,6 @@ begin
     begin
 
       -- Stop writing when reading.     
-      fastio_write <= '0';
 
       long_address := unsigned(system_address_next);
       
@@ -655,12 +640,7 @@ begin
       else
         wait_states_non_zero <= '0';
       end if; 
-      
-      -- Clear fastio access so that we don't keep reading/writing last IO address
-      -- (this is bad when it is $DC0D for example, as it will stop IRQs from
-      -- the CIA).
-      fastio_addr <= x"FFFFF"; fastio_write <= '0'; fastio_read <= '0';
-            
+                  
       the_read_address <= long_address;
 
       report "MEMORY long_address = $" & to_hstring(long_address);
@@ -692,26 +672,20 @@ begin
         bus_proceed <= '0';
         -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
       elsif kickstart_cs_next='1' then
-        fastio_read <= '0';
         read_source <= Kickstart;
         bus_proceed <= '1';
         wait_states_non_zero <= '0';
       elsif colour_ram_cs_next='1' then
-        fastio_read <= '0';
         read_source <= ColourRAM;
         bus_proceed <= '1';
         wait_states_non_zero <= '0';
       elsif vic_cs_next='1' then
-        fastio_read <= '0';
         read_source <= VICIV;
         bus_proceed <= '1';
         wait_states_non_zero <= '0';          
       elsif io_sel_next='1' then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
-
-        fastio_addr <= fastio_addr_next;        
-        fastio_read <= '1';
         bus_proceed <= '0';
         --wait_states_non_zero <= '0';          
         
@@ -808,8 +782,8 @@ begin
           report "reading VIC fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
           return unsigned(fastio_vic_rdata);
         when FastIO =>
-          report "reading normal fastio byte $" & to_hstring(fastio_rdata) severity note;
-          return unsigned(fastio_rdata);
+          report "reading normal io byte $" & to_hstring(io_rdata) severity note;
+          return unsigned(io_rdata);
         when Kickstart =>
           report "reading kickstart fastio byte $" & to_hstring(kickstart_rdata) severity note;
           return unsigned(kickstart_rdata);
@@ -839,7 +813,6 @@ begin
       
       wait_states <= x"00";
       wait_states_non_zero <= '0';
-      fastio_write <= '0';
 
       long_address := unsigned(system_address_next);
       
@@ -853,10 +826,10 @@ begin
         --system_address <= system_address_next;
 
       elsif io_sel_next='1' then
-        fastio_addr <= fastio_addr_next;
-        fastio_write <= '1'; fastio_read <= '0';
+        --fastio_addr <= fastio_addr_next;
+        --fastio_write <= '1'; fastio_read <= '0';
         report "raising fastio_write" severity note;
-        fastio_wdata <= std_logic_vector(value);
+        --fastio_wdata <= std_logic_vector(value);
         
       elsif ext_sel_next='1' then
         report "writing to slow device memory..." severity note;
@@ -933,9 +906,8 @@ begin
         if wait_states_non_zero = '1' then
           report "  $" & to_hstring(wait_states)
             &" memory waitstates remaining.  Fastio_rdata = $"
-            & to_hstring(fastio_rdata)
+            & to_hstring(io_rdata)
             & ", mem_reading=" & std_logic'image(mem_reading)
-            & ", fastio_addr=$" & to_hstring(fastio_addr)
             severity note;
           if (accessing_slowram='1') then
             if slow_access_ready_toggle = slow_access_desired_ready_toggle then
@@ -960,7 +932,6 @@ begin
                                         -- End of wait states, so clear memory writing and reading
 
           colour_ram_cs <= '0';
-          fastio_write <= '0';
           slow_access_write_drive <= '0';
 
           if mem_reading='1' then
@@ -1022,9 +993,9 @@ begin
     viciii_iomode,
     shadow_rdata,bus_proceed,cpu_proceed,
     cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
-    rom_writeprotect,fastio_addr,
+    rom_writeprotect,
     post_resolve_memory_access_address_next,
-    system_address_next, read_source, fastio_addr_next, io_sel_next, ext_sel_next
+    system_address_next, read_source, io_sel_next, ext_sel_next
     )
     
     variable system_address_var : std_logic_vector(19 downto 0);
@@ -1034,8 +1005,6 @@ begin
     
     variable kickstart_write_var : std_logic := '0';
     
-    variable fastio_addr_var : std_logic_vector(19 downto 0);
-
     variable pre_resolve_addr_var : unsigned(19 downto 0);
     variable kickstart_cs_var : std_logic;
     
@@ -1071,8 +1040,6 @@ begin
       kickstart_write_var := '0';
     end if;
     
-    fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
-    
 		if cpu_memory_access_write_next='1' then
       
 		  if system_address_var(19 downto 17)="001" then
@@ -1102,8 +1069,6 @@ begin
     
     -- Drive output signals with current state.
     -- FIXME - Come up with a better standardized naming scheme.
-    fastio_addr_next <= fastio_addr_var;
-    fastio_addr_fast <= fastio_addr_var;
     io_sel_next_out <= io_sel_next;
     ext_sel_next_out <= ext_sel_next;
     memory_ready_out <= bus_proceed;
@@ -1180,7 +1145,7 @@ begin
     elsif(read_source = VICIV) then
       cpu_memory_read_data <= unsigned(fastio_vic_rdata);
     elsif(read_source = FastIO) then
-      cpu_memory_read_data <= unsigned(fastio_rdata);
+      cpu_memory_read_data <= unsigned(io_rdata);
     else
       cpu_memory_read_data <= slow_access_rdata;
     end if;  

@@ -170,11 +170,11 @@ entity sdcardio is
     );
 
     attribute mark_debug : string;    
-    attribute mark_debug of fastio_rdata_sel: signal is "true";
-    attribute mark_debug of fastio_addr: signal is "true";
-    attribute mark_debug of fastio_read: signal is "true";
-    attribute mark_debug of fastio_write: signal is "true";
-    attribute mark_debug of fastio_wdata: signal is "true";
+    --attribute mark_debug of fastio_rdata_sel: signal is "true";
+    --attribute mark_debug of fastio_addr: signal is "true";
+    --attribute mark_debug of fastio_read: signal is "true";
+    --attribute mark_debug of fastio_write: signal is "true";
+    --attribute mark_debug of fastio_wdata: signal is "true";
     
 end sdcardio;
 
@@ -452,12 +452,12 @@ architecture behavioural of sdcardio is
   signal gesture_event_id : unsigned(3 downto 0) := x"0";
   signal gesture_event : unsigned(3 downto 0) := x"0";
 
-  attribute mark_debug of fastio_rdata: signal is "true";
-  attribute mark_debug of fastio_rdata_ram: signal is "true";
-  attribute mark_debug of sectorbuffercs: signal is "true";
-  attribute mark_debug of sdcardio_cs: signal is "true";
-  attribute mark_debug of f011_cs: signal is "true";
-  attribute mark_debug of sdcardio_fastio_source: signal is "true";
+  --attribute mark_debug of fastio_rdata: signal is "true";
+  --attribute mark_debug of fastio_rdata_ram: signal is "true";
+  --attribute mark_debug of sectorbuffercs: signal is "true";
+  --attribute mark_debug of sdcardio_cs: signal is "true";
+  --attribute mark_debug of f011_cs: signal is "true";
+  --attribute mark_debug of sdcardio_fastio_source: signal is "true";
 
   function resolve_sector_buffer_address(f011orsd : std_logic; addr : unsigned(8 downto 0))
     return integer is

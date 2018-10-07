@@ -297,12 +297,12 @@ entity iomapper is
     attribute keep : string;
     attribute mark_debug : string;
   
-    attribute mark_debug of data_o : signal is "true";
-    attribute mark_debug of address_next : signal is "true";
-    attribute mark_debug of r_next : signal is "true";
-    attribute mark_debug of w_next : signal is "true";
-    attribute mark_debug of data_i_next : signal is "true";
-    attribute mark_debug of io_sel_next : signal is "true";
+    --attribute mark_debug of data_o : signal is "true";
+    --attribute mark_debug of address_next : signal is "true";
+    --attribute mark_debug of r_next : signal is "true";
+    --attribute mark_debug of w_next : signal is "true";
+    --attribute mark_debug of data_i_next : signal is "true";
+    --attribute mark_debug of io_sel_next : signal is "true";
     
 end iomapper;
 
@@ -477,22 +477,22 @@ architecture behavioral of iomapper is
   --attribute mark_debug of data_i: signal is "true";
   --attribute mark_debug of w: signal is "true";
   --attribute mark_debug of address: signal is "true";
-  attribute mark_debug of sdcardio_cs: signal is "true";
+  --attribute mark_debug of sdcardio_cs: signal is "true";
   --attribute mark_debug of sdcardio_en: signal is "true";
-  attribute mark_debug of f011_cs: signal is "true";
+  --attribute mark_debug of f011_cs: signal is "true";
   --attribute mark_debug of viciii_iomode : signal is "true";
   --
-  attribute mark_debug of cia1cs : signal is "true";
-  attribute mark_debug of cia2cs : signal is "true";
-  attribute mark_debug of leftsid_cs : signal is "true";
-  attribute mark_debug of rightsid_cs : signal is "true";
+  --attribute mark_debug of cia1cs : signal is "true";
+  --attribute mark_debug of cia2cs : signal is "true";
+  --attribute mark_debug of leftsid_cs : signal is "true";
+  --attribute mark_debug of rightsid_cs : signal is "true";
   --
-  attribute mark_debug of sectorbuffercs: signal is "true";
-  attribute mark_debug of iomapper_output_mux_select : signal is "true";
+  --attribute mark_debug of sectorbuffercs: signal is "true";
+  --attribute mark_debug of iomapper_output_mux_select : signal is "true";
 
-  attribute mark_debug of cia1_o: signal is "true";
-  attribute mark_debug of cia2_o: signal is "true";
-  attribute mark_debug of sdcardio_o: signal is "true";
+  --attribute mark_debug of cia1_o: signal is "true";
+  --attribute mark_debug of cia2_o: signal is "true";
+  --attribute mark_debug of sdcardio_o: signal is "true";
   
   --attribute mark_debug of sector_buffer_mapped_read: signal is "true";
   --attribute mark_debug of chipselect_enables: signal is "true";

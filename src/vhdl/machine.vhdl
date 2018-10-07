@@ -414,12 +414,7 @@ architecture Behavioral of machine is
   signal hyper_trap_f011_read : std_logic := '0';
   signal hyper_trap_f011_write : std_logic := '0';
 
-  signal fastio_addr : std_logic_vector(19 downto 0);
-  signal fastio_addr_fast : std_logic_vector(19 downto 0);
-  signal fastio_read : std_logic;
-  signal fastio_write : std_logic;
-  signal fastio_wdata : std_logic_vector(7 downto 0);
-  signal fastio_rdata : std_logic_vector(7 downto 0);
+  signal io_rdata : std_logic_vector(7 downto 0);
 
   signal io_sel_next : std_logic;
   signal ext_sel_next : std_logic;
@@ -1050,12 +1045,7 @@ begin
           kickstart_write_next  => kickstart_write_next,
           kickstart_rdata       => kickstart_rdata,
       
-          fastio_addr => fastio_addr,
-          fastio_addr_fast => fastio_addr_fast,
-          fastio_read => fastio_read,
-          fastio_write => fastio_write,
-          fastio_wdata => fastio_wdata,
-          fastio_rdata => fastio_rdata,
+          io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
           fastio_vic_rdata => fastio_vic_rdata,
           fastio_colour_ram_rdata => colour_ram_fastio_rdata,
@@ -1224,8 +1214,9 @@ begin
       colour_ram_cs_next => colour_ram_cs_next,
       charrom_write_cs_next => charrom_write_cs_next,
 
+      -- TODO Clean this up, vic no longer needs two different bus connections.
       fastio_addr     => system_address_next,
-      fastio_read     => cpu_memory_access_read_next,
+      fastio_read     => system_read_next,
       fastio_write    => system_write_next,
       fastio_wdata    => system_wdata_next,
       vic_cs          => vic_cs_next,
@@ -1382,13 +1373,7 @@ begin
       w_next => system_write,
       data_i_next => system_wdata, 
 
---      address_next => fastio_addr_fast,
---      io_sel_next => io_sel_next,
---      r_next => cpu_memory_access_read_next,
---      w_next => cpu_memory_access_write_next,
---      data_i_next => std_logic_vector(cpu_memory_access_wdata_next),
-      
-      data_o => fastio_rdata,
+      data_o => io_rdata,
       
       colourram_at_dc00 => colourram_at_dc00,
       drive_led => drive_led,
@@ -1679,8 +1664,8 @@ begin
     
     force_single_step => sw(11),
     
-    fastio_read => fastio_read,
-    fastio_write => fastio_write,
+    fastio_read => system_read,
+    fastio_write => system_write,
 
     key_scancode => key_scancode,
     key_scancode_toggle => key_scancode_toggle,
