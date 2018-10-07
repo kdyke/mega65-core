@@ -998,9 +998,6 @@ architecture Behavioural of gs4510 is
     
     others => ( mcInstructionFetch => '1', others => '0'));
 
-
---    attribute mark_debug : string;
-
     --attribute mark_debug of read_source: signal is "true";
     --attribute mark_debug of read_data: signal is "true";
     --attribute mark_debug of read_data_copy: signal is "true";

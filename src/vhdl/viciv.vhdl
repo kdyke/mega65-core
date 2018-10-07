@@ -155,9 +155,9 @@ entity viciv is
     
     fastio_wdata : in std_logic_vector(7 downto 0);
     
-    vic_fastio_rdata : out std_logic_vector(7 downto 0);
+    vic_rdata : out std_logic_vector(7 downto 0);
     
-    colour_ram_fastio_rdata : out std_logic_vector(7 downto 0);
+    colour_ram_rdata : out std_logic_vector(7 downto 0);
     colour_ram_cs_next : in std_logic;
     charrom_write_cs_next : in std_logic;
 
@@ -852,17 +852,17 @@ architecture Behavioral of viciv is
   signal colourramaddress : unsigned(15 downto 0);
   signal colourramdata : unsigned(7 downto 0);
   -- ... and for CPU
-  signal colour_ram_fastio_address : unsigned(15 downto 0);
+  signal colour_ram_address : unsigned(15 downto 0);
   
   -- Palette RAM access via fastio port
   signal palette_we : std_logic_vector(3 downto 0) := (others => '0');
-  signal palette_fastio_address : std_logic_vector(9 downto 0);
-  signal palette_fastio_rdata : std_logic_vector(31 downto 0);
+  signal palette_ram_address : std_logic_vector(9 downto 0);
+  signal palette_ram_rdata : std_logic_vector(31 downto 0);
 
   -- Palette RAM access for video controller
   -- -- colour lookup for primary pixel pipeline
-  signal palette_address : std_logic_vector(9 downto 0);
-  signal palette_rdata : std_logic_vector(31 downto 0);
+  signal palette_vic_address : std_logic_vector(9 downto 0);
+  signal palette_vic_rdata : std_logic_vector(31 downto 0);
   -- -- colour lookup for anti-aliased font foreground colour
   signal alias_palette_address : std_logic_vector(9 downto 0);
   signal alias_palette_rdata : std_logic_vector(31 downto 0);
@@ -872,7 +872,7 @@ architecture Behavioral of viciv is
   signal sprite_alias_palette_rdata : std_logic_vector(31 downto 0);
 
   -- Palette bank selection registers
-  signal palette_bank_fastio : std_logic_vector(1 downto 0) := "11";
+  signal palette_bank : std_logic_vector(1 downto 0) := "11";
   signal palette_bank_chargen : std_logic_vector(1 downto 0) := "11";
   signal palette_bank_chargen_alt : std_logic_vector(1 downto 0) := "11";
   signal palette_bank_sprites : std_logic_vector(1 downto 0) := "11";
@@ -919,7 +919,7 @@ architecture Behavioral of viciv is
     );
 
   -- This controls the output mux state.
-  signal vic_fastio_source : vic_output_source;
+  signal vic_source : vic_output_source;
   
   signal viciv_flyback : std_logic := '0';
 
@@ -965,7 +965,7 @@ architecture Behavioral of viciv is
   -- Indicates if the next 16 bit screen token will be a GOTO/GOSUB token
   signal next_token_is_goto : std_logic := '0';
 
-  --attribute mark_debug of vic_fastio_source : signal is "true";
+  --attribute mark_debug of vic_source : signal is "true";
   --attribute mark_debug of fastio_rdata : signal is "true";
   
   --attribute keep_hierarchy of Behavioral : architecture is "yes";
@@ -1001,9 +1001,9 @@ begin
         clka => cpuclock,
         ena => colour_ram_cs_next,
         wea(0) => system_write_next,
-        addra => std_logic_vector(colour_ram_fastio_address(14 downto 0)),
+        addra => std_logic_vector(colour_ram_address(14 downto 0)),
         dina => system_wdata_next,
-        douta => colour_ram_fastio_rdata,
+        douta => colour_ram_rdata,
 
         -- video controller use port b of the dual-port colour ram.
         -- The CPU uses port a via the fastio interface
@@ -1021,17 +1021,17 @@ begin
       clka => cpuclock,
       ena => '1',
       wea => palette_we,
-      addra => palette_fastio_address,
+      addra => palette_ram_address,
       dina(31 downto 24) => fastio_wdata,
       dina(23 downto 16) => fastio_wdata,
       dina(15 downto 8) => fastio_wdata,
       dina(7 downto 0) => fastio_wdata,
-      douta => palette_fastio_rdata,
+      douta => palette_ram_rdata,
       clkb => pixelclock,
       web => (others => '0'),
-      addrb => palette_address,
+      addrb => palette_vic_address,
       dinb => (others => '0'),
-      doutb => palette_rdata
+      doutb => palette_vic_rdata
       );
 
   -- Used for anti-aliased text colour lookup
@@ -1040,12 +1040,12 @@ begin
       clka => cpuclock,
       ena => '1',
       wea => palette_we,
-      addra => palette_fastio_address,
+      addra => palette_ram_address,
       dina(31 downto 24) => fastio_wdata,
       dina(23 downto 16) => fastio_wdata,
       dina(15 downto 8) => fastio_wdata,
       dina(7 downto 0) => fastio_wdata,
-      -- douta => palette_fastio_rdata,
+      -- douta => palette_rdata,
       clkb => pixelclock,
       web => (others => '0'),
       addrb => alias_palette_address,
@@ -1202,10 +1202,10 @@ begin
           sprite_multi1_colour,sprite_colours,colourram_at_dc00_internal,
           viciii_extended_attributes,virtual_row_width,chargen_x_scale,
           chargen_y_scale,xcounter,chargen_active_soon,card_number,
-          colour_ram_base,vicii_sprite_pointer_address,palette_bank_fastio,
+          colour_ram_base,vicii_sprite_pointer_address,palette_bank,
           debug_cycles_to_next_card,
           debug_chargen_active,debug_raster_fetch_state,debug_charaddress,
-          debug_charrow,palette_fastio_rdata,palette_bank_chargen,
+          debug_charrow,palette_vic_rdata,palette_bank_chargen,
           debug_chargen_active_soon,palette_bank_sprites,
           vicii_ycounter,displayx_drive,reg_rom_e000,reg_rom_c000,
           reg_rom_a000,reg_c65_charset,reg_rom_8000,reg_palrom,
@@ -1531,22 +1531,22 @@ begin
       --   $FF80000-$FF8FFFF - All 64KB of colour RAM
       -- The colour RAM has to be dual-port since the video controller needs to
       -- access it as well, so all these have to be mapped on a single port.
-      colour_ram_fastio_address <= (others => '1');
+      colour_ram_address <= (others => '1');
       if io_sel_next='1' then
         -- Any I/O based color ram address is just the bottom 11 bits.  Whether we actually
         -- write or read from the upper half is controlled by the color_ram_cs_next signal.
-        colour_ram_fastio_address <= unsigned("00000" & system_address_next(10 downto 0));
+        colour_ram_address <= unsigned("00000" & system_address_next(10 downto 0));
       elsif register_bank(7 downto 4)=x"8" then
                                         -- colour RAM all 64KB
-        colour_ram_fastio_address <= unsigned(system_address_next(15 downto 0));
+        colour_ram_address <= unsigned(system_address_next(15 downto 0));
       end if;
       
       -- This is always being driven.
-      palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+      palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
 
       if rising_edge(ioclock) then
         -- Default is output register.
-        vic_fastio_source <= VicRegister;
+        vic_source <= VicRegister;
       
         -- There are two sources of data we need to provide.  One is from the set of internal registers,
         -- the other is from the palette memory.  For the former we can provide those in a clocked manner,
@@ -1818,7 +1818,7 @@ begin
           fastio_rdata(5 downto 1) <= std_logic_vector(vicii_first_raster(5 downto 1));
           fastio_rdata(0) <= vertical_flyback;
         elsif register_number=112 then -- $D3070
-          fastio_rdata <= palette_bank_fastio & palette_bank_chargen & palette_bank_sprites & palette_bank_chargen_alt;
+          fastio_rdata <= palette_bank & palette_bank_chargen & palette_bank_sprites & palette_bank_chargen_alt;
         elsif register_number=113 then -- $D3071
           fastio_rdata <= bitplane_sixteen_colour_mode_flags;
         elsif register_number=114 then -- $D3072
@@ -1860,27 +1860,27 @@ begin
                                         -- C65 style palette registers
         elsif register_number>=256 and register_number<512 then
           -- red palette
-          vic_fastio_source <= VicPaletteRed;
-          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          --fastio_rdata <= palette_fastio_rdata(31 downto 24);
+          vic_source <= VicPaletteRed;
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_rdata(31 downto 24);
         elsif register_number>=512 and register_number<768 then
           -- green palette
-          vic_fastio_source <= VicPaletteGreen;
-          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          --fastio_rdata <= palette_fastio_rdata(23 downto 16);
+          vic_source <= VicPaletteGreen;
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_rdata(23 downto 16);
         elsif register_number>=768 and register_number<1024 then
           -- blue palette
-          vic_fastio_source <= VicPaletteBlue;
-          --palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
-          --fastio_rdata <= palette_fastio_rdata(15 downto 8);
+          vic_source <= VicPaletteBlue;
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          --fastio_rdata <= palette_rdata(15 downto 8);
         end if;
       end if;
       
-      case vic_fastio_source is
-          when VicPaletteRed   => vic_fastio_rdata <= palette_fastio_rdata(31 downto 24);
-          when VicPaletteGreen => vic_fastio_rdata <= palette_fastio_rdata(23 downto 16);
-          when VicPaletteBlue  => vic_fastio_rdata <= palette_fastio_rdata(15 downto 8);
-          when others =>          vic_fastio_rdata <= fastio_rdata;
+      case vic_source is
+          when VicPaletteRed   => vic_rdata <= palette_ram_rdata(31 downto 24);
+          when VicPaletteGreen => vic_rdata <= palette_ram_rdata(23 downto 16);
+          when VicPaletteBlue  => vic_rdata <= palette_ram_rdata(15 downto 8);
+          when others =>          vic_rdata <= fastio_rdata;
         end case;
 
     end if;
@@ -2616,7 +2616,7 @@ begin
                                                   elsif register_number=112 then
                                         -- @IO:GS $D070 VIC-IV palette bank selection
                                         -- @IO:GS $D070.7-6 VIC-IV palette bank mapped at $D100-$D3FF
-                                                    palette_bank_fastio <= fastio_wdata(7 downto 6);
+                                                    palette_bank <= fastio_wdata(7 downto 6);
                                         -- @IO:GS $D070.5-4 VIC-IV bitmap/text palette bank
                                                     palette_bank_chargen <= fastio_wdata(5 downto 4);
                                         -- @IO:GS $D070.3-2 VIC-IV sprite palette bank
@@ -2692,15 +2692,15 @@ begin
                                                     null;
                                                   elsif register_number>=256 and register_number<512 then
                                         -- @IO:C65 $D100-$D1FF red palette values (reversed nybl order)
-                                                    palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
                                                     palette_we(3) <= '1';
                                                   elsif register_number>=512 and register_number<768 then
                                         -- @IO:C65 $D200-$D2FF green palette values (reversed nybl order)
-                                                    palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
                                                     palette_we(2) <= '1';
                                                   elsif register_number>=768 and register_number<1024 then
                                         -- @IO:C65 $D300-$D3FF blue palette values (reversed nybl order)
-                                                    palette_fastio_address <= palette_bank_fastio & std_logic_vector(register_number(7 downto 0));
+                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
                                                     palette_we(1) <= '1';
                                                   else
                                                     null;
@@ -3342,7 +3342,7 @@ begin
 
       report "PIXEL (" & integer'image(to_integer(displayx)) & "," & integer'image(to_integer(displayy)) & ") = $"
         & to_hstring(postsprite_pixel_colour)
-        & ", RGBA = $" &to_hstring(palette_rdata)
+        & ", RGBA = $" &to_hstring(palette_vic_rdata)
         severity note;
       
       -- 1. From pixel colour lookup RGB
@@ -3359,22 +3359,22 @@ begin
       -- Use palette bank 3 for "palette ROM" colours (C64 default colours
       -- should be placed there for C65 compatibility).
       if postsprite_pixel_colour(7 downto 4) = x"0" and reg_palrom='0' then
-        palette_address <= "11" & std_logic_vector(postsprite_pixel_colour);
+        palette_vic_address <= "11" & std_logic_vector(postsprite_pixel_colour);
         alias_palette_address <= "11" & std_logic_vector(postsprite_alpha_value);
       else
-        palette_address(7 downto 0) <= std_logic_vector(postsprite_pixel_colour);
+        palette_vic_address(7 downto 0) <= std_logic_vector(postsprite_pixel_colour);
         alias_palette_address(7 downto 0) <= std_logic_vector(postsprite_alpha_value);
         if pixel_is_sprite='0' then
           -- Bold + reverse = use alternate palette
           if (glyph_bold and glyph_reverse)='1' then
-            palette_address(9 downto 8) <= palette_bank_chargen_alt;
+            palette_vic_address(9 downto 8) <= palette_bank_chargen_alt;
             alias_palette_address(9 downto 8) <= palette_bank_chargen_alt;
           else
-            palette_address(9 downto 8) <= palette_bank_chargen;
+            palette_vic_address(9 downto 8) <= palette_bank_chargen;
             alias_palette_address(9 downto 8) <= palette_bank_chargen_alt;
           end if;
         else
-          palette_address(9 downto 8) <= palette_bank_sprites;
+          palette_vic_address(9 downto 8) <= palette_bank_sprites;
           alias_palette_address(9 downto 8) <= palette_bank_sprites;
         end if;          
       end if;
@@ -3383,22 +3383,22 @@ begin
       if xray_mode='1' then
         -- Debug mode enabled using switch 1 to show whether we think pixels
         -- are foreground, background, sprite and/or border.
-        palette_address(9 downto 4) <= (others => '0');
-        palette_address(3) <= postsprite_inborder;
-        palette_address(2) <= pixel_is_foreground_out;
-        palette_address(1) <= pixel_is_background_out;
-        palette_address(0) <= pixel_is_sprite;
+        palette_vic_address(9 downto 4) <= (others => '0');
+        palette_vic_address(3) <= postsprite_inborder;
+        palette_vic_address(2) <= pixel_is_foreground_out;
+        palette_vic_address(1) <= pixel_is_background_out;
+        palette_vic_address(0) <= pixel_is_sprite;
       end if;     
 
       -- VIC-III palette RGB values have only the high bits in the low nybl, and
       -- the high-nybl is reserved.
       -- VIC-IV puts the low nybl in those reserved high-nybl bits
-      vga_buffer_red(7 downto 4) <= unsigned(palette_rdata(27 downto 24));
-      vga_buffer_red(3 downto 0) <= unsigned(palette_rdata(31 downto 28));
-      vga_buffer_green(7 downto 4) <= unsigned(palette_rdata(19 downto 16));
-      vga_buffer_green(3 downto 0) <= unsigned(palette_rdata(23 downto 20));
-      vga_buffer_blue(7 downto 4) <= unsigned(palette_rdata(11 downto 8));
-      vga_buffer_blue(3 downto 0) <= unsigned(palette_rdata(15 downto 12));      
+      vga_buffer_red(7 downto 4) <= unsigned(palette_vic_rdata(27 downto 24));
+      vga_buffer_red(3 downto 0) <= unsigned(palette_vic_rdata(31 downto 28));
+      vga_buffer_green(7 downto 4) <= unsigned(palette_vic_rdata(19 downto 16));
+      vga_buffer_green(3 downto 0) <= unsigned(palette_vic_rdata(23 downto 20));
+      vga_buffer_blue(7 downto 4) <= unsigned(palette_vic_rdata(11 downto 8));
+      vga_buffer_blue(3 downto 0) <= unsigned(palette_vic_rdata(15 downto 12));      
       
       --vga_buffer_red <= unsigned(postsprite_pixel_colour);
       --vga_buffer_green <= unsigned(postsprite_pixel_colour);

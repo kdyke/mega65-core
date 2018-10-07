@@ -438,7 +438,7 @@ architecture Behavioral of machine is
   signal kickstart_write_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
-  signal fastio_vic_rdata : std_logic_vector(7 downto 0);
+  signal vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
 
   --signal chipram_we : STD_LOGIC;
@@ -1047,7 +1047,7 @@ begin
       
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
-          fastio_vic_rdata => fastio_vic_rdata,
+          vic_rdata => vic_rdata,
           fastio_colour_ram_rdata => colour_ram_fastio_rdata,
 
           colour_ram_cs_next => colour_ram_cs_next,
@@ -1210,7 +1210,7 @@ begin
       --chipram_we => chipram_we,
       chipram_address => chipram_address,
       chipram_datain => chipram_data,
-      colour_ram_fastio_rdata => colour_ram_fastio_rdata,
+      colour_ram_rdata => colour_ram_fastio_rdata,
       colour_ram_cs_next => colour_ram_cs_next,
       charrom_write_cs_next => charrom_write_cs_next,
 
@@ -1220,7 +1220,7 @@ begin
       fastio_write    => system_write_next,
       fastio_wdata    => system_wdata_next,
       vic_cs          => vic_cs_next,
-      vic_fastio_rdata    => fastio_vic_rdata,
+      vic_rdata       => vic_rdata,
       
       io_sel_next         => io_sel_next,
       system_wdata_next   => system_wdata_next,

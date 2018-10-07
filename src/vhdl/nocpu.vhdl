@@ -176,7 +176,7 @@ entity gs4510 is
     fastio_rdata : in std_logic_vector(7 downto 0);
     kickstart_rdata : in std_logic_vector(7 downto 0);
     sector_buffer_mapped : in std_logic;
-    fastio_vic_rdata : in std_logic_vector(7 downto 0);
+    vic_rdata : in std_logic_vector(7 downto 0);
     fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
     colour_ram_cs : out std_logic := '0';
     charrom_write_cs : out std_logic := '0';
@@ -859,11 +859,11 @@ begin
           report "reading from shadow RAM" severity note;
 --          return shadow_rdata;
         when ColourRAM =>
-          report "reading colour RAM fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
+          report "reading colour RAM fastio byte $" & to_hstring(vic_rdata) severity note;
           return unsigned(fastio_colour_ram_rdata);
         when VICIV =>
-          report "reading VIC fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
-          return unsigned(fastio_vic_rdata);
+          report "reading VIC fastio byte $" & to_hstring(vic_rdata) severity note;
+          return unsigned(vic_rdata);
         when FastIO =>
           report "reading normal fastio byte $" & to_hstring(fastio_rdata) severity note;
           return unsigned(fastio_rdata);

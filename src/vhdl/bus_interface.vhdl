@@ -366,7 +366,7 @@ entity bus_interface is
     ext_sel_out : inout std_logic := '0';
     
     sector_buffer_mapped : in std_logic;
-    fastio_vic_rdata : in std_logic_vector(7 downto 0);
+    vic_rdata : in std_logic_vector(7 downto 0);
     fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
     colour_ram_cs : out std_logic := '0';
     colour_ram_cs_next : inout std_logic := '0';
@@ -427,7 +427,7 @@ entity bus_interface is
     --attribute mark_debug of cpu_memory_read_data : signal is "true";
     --attribute mark_debug of cpu_proceed : signal is "true";
     --attribute mark_debug of memory_ready_out : signal is "true";
-    --attribute mark_debug of fastio_vic_rdata : signal is "true";
+    --attribute mark_debug of vic_rdata : signal is "true";
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
     
@@ -776,11 +776,11 @@ begin
           report "reading from shadow RAM" severity note;
           return unsigned(shadow_rdata);
         when ColourRAM =>
-          report "reading colour RAM fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
+          report "reading colour RAM fastio byte $" & to_hstring(vic_rdata) severity note;
           return unsigned(fastio_colour_ram_rdata);
         when VICIV =>
-          report "reading VIC fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
-          return unsigned(fastio_vic_rdata);
+          report "reading VIC fastio byte $" & to_hstring(vic_rdata) severity note;
+          return unsigned(vic_rdata);
         when FastIO =>
           report "reading normal io byte $" & to_hstring(io_rdata) severity note;
           return unsigned(io_rdata);
@@ -1143,7 +1143,7 @@ begin
     elsif(read_source = ColourRAM) then
       cpu_memory_read_data <= unsigned(fastio_colour_ram_rdata);
     elsif(read_source = VICIV) then
-      cpu_memory_read_data <= unsigned(fastio_vic_rdata);
+      cpu_memory_read_data <= unsigned(vic_rdata);
     elsif(read_source = FastIO) then
       cpu_memory_read_data <= unsigned(io_rdata);
     else
