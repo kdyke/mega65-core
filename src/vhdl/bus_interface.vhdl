@@ -336,10 +336,17 @@ entity bus_interface is
     
     memory_ready_out : out std_logic;
 
-    -- Temporary external shadow ram bus
-    system_address_out : out std_logic_vector(19 downto 0);
-    system_wdata_next : out  std_logic_vector(7 downto 0)  := (others => '0');
-    system_write_next : out std_logic;
+    -- These are all inout so the clocked variants can read from them too.
+    system_address_next : inout std_logic_vector(19 downto 0); 
+    system_wdata_next : inout  std_logic_vector(7 downto 0);
+    system_write_next : inout std_logic;
+    system_read_next : inout std_logic;
+
+    -- These are the clocked versions
+    system_address : out std_logic_vector(19 downto 0);
+    system_wdata : out  std_logic_vector(7 downto 0)  := (others => '0');
+    system_write : out std_logic;
+    system_read : out std_logic;
     
     shadow_write_next : out std_logic := '0';
     shadow_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
@@ -414,7 +421,7 @@ entity bus_interface is
     --attribute mark_debug of kickstart_rdata: signal is "true";
     --attribute mark_debug of kickstart_write_next: signal is "true";
     --
-    --attribute mark_debug of system_address_out: signal is "true";
+    --attribute mark_debug of system_address_next: signal is "true";
     --attribute mark_debug of system_write_next: signal is "true";
     --attribute mark_debug of system_wdata_next: signal is "true";
     
@@ -474,10 +481,7 @@ architecture Behavioural of bus_interface is
   signal dat_offset_drive : unsigned(15 downto 0) := to_unsigned(0,16);
 
   -- Shadow RAM control
-  signal system_address : std_logic_vector(19 downto 0);
-  signal system_address_next : std_logic_vector(19 downto 0);
 
-  signal  system_wdata : std_logic_vector(7 downto 0)  := (others => '0');
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
 
@@ -490,9 +494,6 @@ architecture Behavioural of bus_interface is
   signal ext_sel_resolved : std_logic;
   signal ext_sel_next : std_logic;
   
-  signal long_address_read : unsigned(19 downto 0)  := (others => '0');
-  signal long_address_write : unsigned(19 downto 0)  := (others => '0');
- 
   -- IO has one waitstate for reading, 0 for writing
   -- (Reading incurrs an extra waitstate due to read_data_copy)
   -- XXX An extra wait state seems to be necessary when reading from dual-port
@@ -630,7 +631,6 @@ begin
     end procedure reset_cpu_state;
 
     procedure read_long_address(
-      real_long_address : in std_logic_vector(19 downto 0);
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
@@ -639,7 +639,7 @@ begin
       -- Stop writing when reading.     
       fastio_write <= '0';
 
-      long_address := long_address_read;
+      long_address := unsigned(system_address_next);
       
       report "Reading from long address $" & to_hstring(long_address) severity note;
       mem_reading <= '1';
@@ -826,7 +826,6 @@ begin
     -- signals (and external memory interface signals) at this point.  If I can move the entire fastio
     -- bus to the "next" variant then this can die completeley.
     procedure write_long_byte(
-      real_long_address       : in std_logic_vector(19 downto 0);
       value              : in std_logic_vector(7 downto 0);
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
@@ -842,7 +841,7 @@ begin
       wait_states_non_zero <= '0';
       fastio_write <= '0';
 
-      long_address := long_address_write;
+      long_address := unsigned(system_address_next);
       
       -- Always write to shadow ram if in scope, even if we also write elsewhere.
       -- This ensures that shadow ram is consistent with the shadowed address space
@@ -982,6 +981,12 @@ begin
           -- come from the I/O device in question.
           memory_access_read := cpu_memory_access_read_next;
           memory_access_write := cpu_memory_access_write_next;
+
+          -- Update clocked signals if CPU is moving forward.
+          system_address <= system_address_next;
+          system_read <= system_read_next;
+          system_write <= system_write_next;
+          system_wdata <= system_wdata_next;
         end if;
         
         io_sel_out <= io_sel_next;
@@ -999,10 +1004,10 @@ begin
                                         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
-          write_long_byte(system_address_next,std_logic_vector(cpu_memory_access_wdata_next),io_sel_next,ext_sel_next);
+          write_long_byte(std_logic_vector(cpu_memory_access_wdata_next),io_sel_next,ext_sel_next);
         elsif memory_access_read='1' then 
           report "memory_access_read=1, addres=$"&to_hstring(system_address_next) severity note;
-          read_long_address(system_address_next,io_sel_next,ext_sel_next);
+          read_long_address(io_sel_next,ext_sel_next);
         end if;
       end if; -- if not reseting
     end if;                         -- if rising edge of clock
@@ -1017,7 +1022,6 @@ begin
     viciii_iomode,
     shadow_rdata,bus_proceed,cpu_proceed,
     cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
-    system_wdata,system_address,
     rom_writeprotect,fastio_addr,
     post_resolve_memory_access_address_next,
     system_address_next, read_source, fastio_addr_next, io_sel_next, ext_sel_next
@@ -1032,9 +1036,6 @@ begin
     
     variable fastio_addr_var : std_logic_vector(19 downto 0);
 
-    variable long_address_read_var : unsigned(19 downto 0) := x"FFFFF";
-    variable long_address_write_var : unsigned(19 downto 0) := x"FFFFF";
-
     variable pre_resolve_addr_var : unsigned(19 downto 0);
     variable kickstart_cs_var : std_logic;
     
@@ -1046,10 +1047,6 @@ begin
     kickstart_write_var := '0';
     charrom_write_cs_next <= '0';
     
-    -- FIXME - Figure out of we need either of these any more.
-    long_address_write_var := x"FFFFF";
-    long_address_read_var := x"FFFFF";
-
     -- These hold current value until we are ready to move on?
     io_sel_next <= io_sel_out;
     ext_sel_next <= ext_sel_out;
@@ -1074,17 +1071,10 @@ begin
       kickstart_write_var := '0';
     end if;
     
-    -- FastIO address bus currently doesn't maintain it's value while CPU is waiting.  This (currently)
-    -- prevents extra reads/writes from happening. Eventually we should be able to find a better way to
-    -- deal with that.
-    fastio_addr_var := x"FFFFF";
-
-    --fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
+    fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
     
 		if cpu_memory_access_write_next='1' then
       
-		  long_address_write_var := unsigned(system_address_var);
-	        
 		  if system_address_var(19 downto 17)="001" then
 		    report "writing to ROM. addr=$" & to_hstring(system_address_var) severity note;
 		    shadow_write_var := not rom_writeprotect;
@@ -1103,18 +1093,6 @@ begin
                       
       kickstart_write_var := kickstart_cs_var;
       
-      if io_sel_next_var='1' then
-        fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
-      end if;
-      
-    elsif cpu_memory_access_read_next='1' then
-	   
-		  long_address_read_var := unsigned(system_address_var);
-	  
-      if io_sel_next_var='1' then
-         fastio_addr_var := std_logic_vector(system_address_var(19 downto 0));
-      end if;
-     
     end if;
 
     -- FIXME - We shouldn't need both of these.  kickstart_cs_next should be
@@ -1131,21 +1109,12 @@ begin
     memory_ready_out <= bus_proceed;
     shadow_write_next <= shadow_write_var;
     io_sel_next <= io_sel_next_var;
-    ext_sel_next <= ext_sel_next_var;
-    system_address_next <= system_address_var;
+    ext_sel_next <= ext_sel_next_var;    
     
-    -- Global write signal, only used by blocks with their own chip selects
-    -- FIXME - These two signals are now just passthrough so its not clear
-    -- what they are even needed for any more, at least until we pull DMAgic
-    -- out of the CPU and thus we may need to handle which one is driving the
-    -- system signals.
+    system_address_next <= system_address_var;
     system_write_next <= cpu_memory_access_write_next;
+    system_read_next  <= cpu_memory_access_read_next;
     system_wdata_next <= std_logic_vector(cpu_memory_access_wdata_next);
-    system_address_out <= system_address_next;        
-    -- FIXME - There's not really a good reason for these to be different, nor for them
-    -- to not just always be equal to system_address_next.
-    long_address_read <= long_address_read_var;
-    long_address_write <= long_address_write_var;
     
     -- Color ram chip select (next)
     colour_ram_cs_next <= '0';
@@ -1158,7 +1127,8 @@ begin
     if cpu_memory_access_write_next='1' and system_address_next(19 downto 12) = x"1F" and system_address_next(11) = '1' then
       colour_ram_cs_next <= '1';
     end if;
-    if io_sel_next='1' then    --   $D{0,1,2,3}XXX
+    -- I/O window to color ram.
+    if io_sel_next='1' then    --   $DXXX
       -- Colour RAM at $D800-$DBFF and optionally $DC00-$DFFF
       if system_address_next(11)='1' then
         if (system_address_next(10)='0') or (colourram_at_dc00='1') then
@@ -1166,15 +1136,15 @@ begin
           colour_ram_cs_next <= '1';
         end if;
       end if;
-    end if;                         -- $D{0,1,2,3}XXX
+    end if;                         -- $DXXX
     
-    -- If reading IO page from $D{0,1,2,3}0{0-7}X, then the access is from
+    -- If reading IO page from $D0{0-7}X, then the access is from
     -- the VIC-IV.
-    -- If reading IO page from $D{0,1,2,3}{1,2,3}XX, then the access is from
+    -- If reading IO page from $D{1,2,3}XX, then the access is from
     -- the VIC-IV.
-    -- If reading IO page from $D{0,1,2,3}{8,9,a,b}XX, then the access is from
+    -- If reading IO page from $D{8,9,a,b}XX, then the access is from
     -- the VIC-IV.
-    -- If reading IO page from $D{0,1,2,3}{c,d,e,f}XX, and colourram_at_dc00='1',
+    -- If reading IO page from $D{c,d,e,f}XX, and colourram_at_dc00='1',
     -- then the access is from the VIC-IV.
     -- If reading IO page from $8XXXX, then the access is from the VIC-IV.
     -- We make the distinction to separate reading of VIC-IV
@@ -1183,14 +1153,14 @@ begin
 
     vic_cs_next <= '0';
     if io_sel_next='1' then
-      if system_address_next(11 downto 10) = "00" then  --   $D{0,1,2,3}{0,1,2,3}XX
+      if system_address_next(11 downto 10) = "00" then  --   $D{0,1,2,3}XX
         if system_address_next(11 downto 7) /= "00001" then  -- ! $D.0{8-F}X (FDC, RAM EX)
           report "VIC register from VIC fastio" severity note;
           report "Preparing to read from VICIV";
           vic_cs_next <= '1';
         end if;            
       end if;
-    end if;                           -- $DXXXX
+    end if;                           -- $DXXX
     
   end process;
 

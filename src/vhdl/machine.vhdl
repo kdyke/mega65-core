@@ -426,10 +426,15 @@ architecture Behavioral of machine is
   signal io_sel : std_logic;
   signal vic_cs_next : std_logic;
   
+  signal system_address_next : std_logic_vector(19 downto 0);
   signal system_write_next : std_logic;
+  signal system_read_next : std_logic;
   signal system_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
 
-  signal system_address_next : std_logic_vector(19 downto 0);
+  signal system_address : std_logic_vector(19 downto 0);
+  signal system_write : std_logic;
+  signal system_read : std_logic;
+  signal system_wdata : std_logic_vector(7 downto 0)  := (others => '0');
   
   signal shadow_write_next : std_logic := '0';
   signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
@@ -1027,14 +1032,21 @@ begin
           slow_access_wdata => slow_access_wdata,
           slow_access_rdata => slow_access_rdata,
       
-          system_wdata_next  => system_wdata_next,
-          system_address_out => system_address_next,
-          system_write_next  => system_write_next,
+          system_address_next => system_address_next,
+          system_read_next    => system_read_next,
+          system_write_next   => system_write_next,
+          system_wdata_next   => system_wdata_next,
+
+          -- Nothing is using these yet, but eventuall will replace
+          -- dedicated FastIO signals.
+          system_address => system_address,
+          system_read    => system_read,
+          system_write   => system_write,
+          system_wdata   => system_wdata,
           
           shadow_write_next  => shadow_write_next,          
           shadow_rdata       => shadow_rdata,
       
-          --kickstart_address_out => kickstart_address_next,
           kickstart_write_next  => kickstart_write_next,
           kickstart_rdata       => kickstart_rdata,
       
