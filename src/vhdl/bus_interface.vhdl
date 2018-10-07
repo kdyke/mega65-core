@@ -486,7 +486,6 @@ architecture Behavioural of bus_interface is
   signal ext_sel_next : std_logic;
   
   -- IO has one waitstate for reading, 0 for writing
-  -- (Reading incurrs an extra waitstate due to read_data_copy)
   -- XXX An extra wait state seems to be necessary when reading from dual-port
   -- memories like colour ram.
   constant ioread_48mhz : unsigned(7 downto 0) := x"01";
@@ -530,8 +529,6 @@ architecture Behavioural of bus_interface is
   -- Is CPU free to bus_proceed with processing an instruction?
   signal bus_proceed : std_logic := '1';
 
-  signal read_data_copy : unsigned(7 downto 0);
-  
   type memory_source is (
     DMAgicRegister,         -- 0x00
     HypervisorRegister,     -- 0x01
@@ -550,7 +547,6 @@ architecture Behavioural of bus_interface is
   signal post_resolve_memory_access_address_next : std_logic_vector(19 downto 0);
   
   --attribute mark_debug of read_source: signal is "true";
-  --attribute mark_debug of read_data_copy : signal is "true";
   --
   --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
@@ -729,8 +725,6 @@ begin
         read_source <= SlowRAM;
         accessing_slowram <= '1';
         slow_access_data_ready <= '0';
-        slow_access_address_drive <= long_address(19 downto 0);
-        slow_access_write_drive <= '0';
         slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
         slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
         wait_states <= x"FF";
@@ -756,46 +750,6 @@ begin
 
     end read_long_address;
     
-    -- purpose: obtain the byte of memory that has been read
-    -- Eventually this should be able to go away and we'll just have the one mux down
-    -- below that differenties between the primary bus interfaces.
-    impure function read_data_complex
-      return unsigned is
-      variable value : unsigned(7 downto 0);
-    begin  -- read_data
-      -- CPU hosted IO registers
-      report "Read source is " & memory_source'image(read_source);
-      case read_source is
-        when DMAgicRegister =>
-          return x"AA";
-        when HypervisorRegister =>
-          return x"55";
-        when CPUPort =>
-          return x"FF";
-        when Shadow =>
-          report "reading from shadow RAM" severity note;
-          return unsigned(shadow_rdata);
-        when ColourRAM =>
-          report "reading colour RAM fastio byte $" & to_hstring(vic_rdata) severity note;
-          return unsigned(fastio_colour_ram_rdata);
-        when VICIV =>
-          report "reading VIC fastio byte $" & to_hstring(vic_rdata) severity note;
-          return unsigned(vic_rdata);
-        when FastIO =>
-          report "reading normal io byte $" & to_hstring(io_rdata) severity note;
-          return unsigned(io_rdata);
-        when Kickstart =>
-          report "reading kickstart fastio byte $" & to_hstring(kickstart_rdata) severity note;
-          return unsigned(kickstart_rdata);
-        when SlowRAM =>
-          report "reading slow RAM data. Word is $" & to_hstring(slow_access_rdata) severity note;
-          return unsigned(slow_access_rdata);
-        when Unmapped =>
-          report "accessing unmapped memory" severity note;
-          return x"A0";                     -- make unmmapped memory obvious
-      end case;
-    end read_data_complex; 
-
     -- This function is *almost* ready to die.  It's really only handling updating the clocked fastio
     -- signals (and external memory interface signals) at this point.  If I can move the entire fastio
     -- bus to the "next" variant then this can die completeley.
@@ -814,24 +768,12 @@ begin
       wait_states <= x"00";
       wait_states_non_zero <= '0';
 
-      long_address := unsigned(system_address_next);
-      
       -- Always write to shadow ram if in scope, even if we also write elsewhere.
       -- This ensures that shadow ram is consistent with the shadowed address space
       -- when the CPU reads from shadow ram.
       -- system_wdata <= value;
       
-      if io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then      
-        report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
-        --system_address <= system_address_next;
-
-      elsif io_sel_next='1' then
-        --fastio_addr <= fastio_addr_next;
-        --fastio_write <= '1'; fastio_read <= '0';
-        report "raising fastio_write" severity note;
-        --fastio_wdata <= std_logic_vector(value);
-        
-      elsif ext_sel_next='1' then
+      if ext_sel_next='1' then
         report "writing to slow device memory..." severity note;
         accessing_slowram <= '1';
 
@@ -841,9 +783,6 @@ begin
         -- about there here, as it only changes the latency for receiving the
         -- write acknowledgement (a similar process can be used for caching reads
         -- from appropriate slow devices, e.g., for expansion memory).
-        slow_access_address_drive <= long_address(19 downto 0);
-        slow_access_write_drive <= '1';
-        slow_access_wdata_drive <= unsigned(value);
         slow_access_pending_write <= '1';
         slow_access_data_ready <= '0';
 
@@ -884,10 +823,6 @@ begin
       slow_access_wdata <= slow_access_wdata_drive;
       slow_access_ready_toggle_buffer <= slow_access_ready_toggle;
 
-                                                    -- Copy read memory location to simplify reading from memory.
-                                        -- Penalty is +1 wait state for memory other than shadowram.
-      read_data_copy <= read_data_complex;
-            
       memory_access_read := '0';
       memory_access_write := '0';
       monitor_waitstates <= wait_states;
@@ -958,6 +893,11 @@ begin
           system_read <= system_read_next;
           system_write <= system_write_next;
           system_wdata <= system_wdata_next;
+
+          -- TODO - Get rid of these.   They can just use system bus signals now.
+          slow_access_address_drive <= unsigned(system_address_next);
+          slow_access_write_drive <= system_write_next;
+          slow_access_wdata_drive <= unsigned(system_wdata_next);
         end if;
         
         io_sel_out <= io_sel_next;
@@ -1134,7 +1074,8 @@ begin
   -- time.  Because the internal FPGA interfaces are in general clocked instead of asynchronous,
   -- the mux will switch one clock cycle after the address has been driven onto the bus and will
   -- be held until the read finishes.
-  process (read_source, shadow_rdata, read_data_copy)
+  process (read_source, shadow_rdata, kickstart_rdata, fastio_colour_ram_rdata,
+           vic_rdata, io_rdata, slow_access_rdata)
   begin
     if(read_source = Shadow) then
       cpu_memory_read_data <= unsigned(shadow_rdata);
