@@ -424,7 +424,8 @@ architecture Behavioral of machine is
   signal io_sel_next : std_logic;
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
-
+  signal vic_cs_next : std_logic;
+  
   signal system_write_next : std_logic;
   signal system_wdata_next : std_logic_vector(7 downto 0)  := (others => '0');
 
@@ -1049,6 +1050,8 @@ begin
 
           colour_ram_cs_next => colour_ram_cs_next,
           charrom_write_cs_next => charrom_write_cs_next,
+          vic_cs_next => vic_cs_next,
+          
           io_sel_next_out => io_sel_next,
           io_sel_out => io_sel,
           ext_sel_next_out => ext_sel_next,
@@ -1209,10 +1212,11 @@ begin
       colour_ram_cs_next => colour_ram_cs_next,
       charrom_write_cs_next => charrom_write_cs_next,
 
-      fastio_addr     => fastio_addr_fast, -- TODO, switch this to system_address_next at some point.
-      fastio_read     => cpu_memory_access_read_next,  -- TODO This could be derived internally by matching register read and ~write.
+      fastio_addr     => system_address_next,
+      fastio_read     => cpu_memory_access_read_next,
       fastio_write    => system_write_next,
       fastio_wdata    => system_wdata_next,
+      vic_cs          => vic_cs_next,
       vic_fastio_rdata    => fastio_vic_rdata,
       
       io_sel_next         => io_sel_next,

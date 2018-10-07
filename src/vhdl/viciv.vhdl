@@ -151,6 +151,7 @@ entity viciv is
     system_write_next : in std_logic;
     system_address_next : in std_logic_vector(19 downto 0);
     system_wdata_next : in std_logic_vector(7 downto 0);
+    vic_cs : in std_logic;
     
     fastio_wdata : in std_logic_vector(7 downto 0);
     
@@ -1174,7 +1175,9 @@ begin
 
               fastio_addr => fastio_addr,
               fastio_write => fastio_write,
-              fastio_wdata => fastio_wdata
+              fastio_wdata => fastio_wdata,
+              vic_cs => vic_cs,
+              io_sel => io_sel_next
               );
 
   
@@ -1494,7 +1497,7 @@ begin
       register_page := unsigned(fastio_addr(11 downto 8));
       register_num  := unsigned(fastio_addr(7 downto 0));
       
-      if (register_bank=x"0D" and viciii_iomode="00") and register_page<4 then
+      if (vic_cs='1' and viciii_iomode="00") and register_page<4 then
         -- First 1KB of normal C64 IO space maps to r$0 - r$3F
         register_number(5 downto 0) := unsigned(fastio_addr(5 downto 0));        
         register_number(11 downto 6) := (others => '0');
@@ -1512,7 +1515,7 @@ begin
         end if;
         report "IO access resolves to video register number "
           & integer'image(to_integer(register_number)) severity note;        
-      elsif (register_bank=x"0D" and (viciii_iomode="01" or viciii_iomode="11")) and register_page<4 then
+      elsif (vic_cs='1' and (viciii_iomode="01" or viciii_iomode="11")) and register_page<4 then
         register_number(11 downto 10) := "00";
         register_number(9 downto 8) := register_page(1 downto 0);
         register_number(7 downto 0) := register_num;
@@ -1977,7 +1980,7 @@ begin
 --      end if;
       
       -- $DD00 video bank bits
-      if fastio_write='1'
+      if fastio_write='1' and io_sel_next='1'
         -- Fastio IO addresses D{0,1,2,3}Dx0
         and (fastio_addr(19 downto 12)=x"0D")
         and (fastio_addr(11 downto  8)=x"D")
@@ -2012,7 +2015,7 @@ begin
       clear_collisionspritesprite <= clear_collisionspritesprite_1;
       
       -- $D000 registers
-      if fastio_write='1'
+      if fastio_write='1' and io_sel_next='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then
         if register_number>=0 and register_number<8 then
           -- compatibility sprite coordinates

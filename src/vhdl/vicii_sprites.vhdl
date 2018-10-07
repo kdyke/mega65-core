@@ -117,8 +117,9 @@ entity vicii_sprites is
     -- them directly on the much slower ioclock, and provide them to each sprite.
     fastio_addr : in std_logic_vector(19 downto 0);
     fastio_write : in std_logic;
-    fastio_wdata : in std_logic_vector(7 downto 0)
-
+    fastio_wdata : in std_logic_vector(7 downto 0);
+    vic_cs : in std_logic;
+    io_sel : in std_logic
     );
 end vicii_sprites;
 
@@ -951,9 +952,9 @@ begin
         register_bank := x"FF";
         register_page := x"F";
         register_num := x"FF";
-      end if;    
+      end if;
       
-      if register_bank=x"0D" and (viciii_iomode="00") and register_page<4 then
+      if vic_cs='1'  and (viciii_iomode="00") and register_page<4 then
         -- First 1KB of normal C64 IO space maps to r$0 - r$3F
         register_number(5 downto 0) := unsigned(fastio_addr(5 downto 0));        
         register_number(11 downto 6) := (others => '0');
@@ -963,7 +964,7 @@ begin
         end if;
         report "IO access resolves to video register number "
           & integer'image(to_integer(register_number)) severity note;        
-      elsif register_bank=x"0D" and (viciii_iomode="01" or viciii_iomode="11") and register_page<4 then
+      elsif vic_cs='1'  and (viciii_iomode="01" or viciii_iomode="11") and register_page<4 then
         register_number(11 downto 10) := "00";
         register_number(9 downto 8) := register_page(1 downto 0);
         register_number(7 downto 0) := register_num;
@@ -977,7 +978,7 @@ begin
     -- extended attributes are enabled.  If so, sprite colour registers are
     -- 8-bit (256 colour) instead of 4-bit (16 colour).
     if rising_edge(ioclock) then
-      if fastio_write='1'
+      if fastio_write='1' and io_sel='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then        
         if register_number>=0 and register_number<16 then
                                         -- compatibility sprite coordinates
