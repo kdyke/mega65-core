@@ -81,12 +81,13 @@ entity machine is
          buffereduart2_rx : in std_logic;
          buffereduart2_tx : out std_logic := '1';
          
-         slow_access_request_toggle : out std_logic;
-         slow_access_ready_toggle : in std_logic := '0';
-         slow_access_write : out std_logic := '0';
+         slow_access_rdata : in unsigned(7 downto 0);
+         slow_access_ready : in std_logic := '0';
+
+         slow_access_request : out std_logic := '0';         
+         slow_access_write : out std_logic := '0';         
          slow_access_address : out unsigned(19 downto 0);
          slow_access_wdata : out unsigned(7 downto 0);
-         slow_access_rdata : in unsigned(7 downto 0);
          cart_access_count : in unsigned(7 downto 0) := x"00";
 
          sector_buffer_mapped : inout std_logic;
@@ -694,6 +695,9 @@ architecture Behavioral of machine is
 begin
 
   monitor_roms <= colourram_at_dc00 & rom_at_e000  & rom_at_c000 & rom_at_a000 & rom_at_8000 & monitor_cpuport;
+  slow_access_write   <= system_write;
+  slow_access_address <= unsigned(system_address);
+  slow_access_wdata   <= unsigned(system_wdata);
   
   ----------------------------------------------------------------------------
   -- IRQ & NMI: If either the hardware buttons on the FPGA board or an IO
@@ -727,7 +731,7 @@ begin
   -- report "btnCpuReset = " & std_logic'image(btnCpuReset) & ", reset_io = " & std_logic'image(reset_io) & ", sw(15) = " & std_logic'image(sw(15)) severity note;
   -- report "reset_combined = " & std_logic'image(reset_combined) severity note;
   end process;
-  
+    
   process(pixelclock,ioclock)
     variable digit : std_logic_vector(3 downto 0);
   begin
@@ -1021,12 +1025,8 @@ begin
           monitor_waitstates => monitor_waitstates,
           monitor_memory_access_address => monitor_memory_access_address,
       
-          slow_access_request_toggle => slow_access_request_toggle,
-          slow_access_ready_toggle => slow_access_ready_toggle,
-          slow_access_address => slow_access_address,
-          slow_access_write => slow_access_write,
-          slow_access_wdata => slow_access_wdata,
           slow_access_rdata => slow_access_rdata,
+          slow_access_ready => slow_access_ready,
       
           system_address_next => system_address_next,
           system_read_next    => system_read_next,
@@ -1058,6 +1058,7 @@ begin
           io_sel_next => io_sel_next,
           io_sel => io_sel,
           ext_sel_next => ext_sel_next,
+          ext_sel => slow_access_request,
           viciii_iomode => viciii_iomode,
       
           colourram_at_dc00 => colourram_at_dc00,

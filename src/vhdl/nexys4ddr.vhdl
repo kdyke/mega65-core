@@ -200,8 +200,8 @@ architecture Behavioral of container is
   
   signal segled_counter : unsigned(31 downto 0) := (others => '0');
 
-  signal slow_access_request_toggle : std_logic;
-  signal slow_access_ready_toggle : std_logic;
+  signal slow_access_request : std_logic;
+  signal slow_access_ready : std_logic;
   signal slow_access_write : std_logic;
   signal slow_access_address : unsigned(19 downto 0);
   signal slow_access_wdata : unsigned(7 downto 0);
@@ -302,8 +302,8 @@ begin
       qspicsn => qspicsn,      
 --      qspisck => '1',
 
-      slow_access_request_toggle => slow_access_request_toggle,
-      slow_access_ready_toggle => slow_access_ready_toggle,
+      slow_access_requst => slow_access_request,
+      slow_access_ready => slow_access_ready,
       slow_access_write => slow_access_write,
       slow_access_address => slow_access_address,
       slow_access_wdata => slow_access_wdata,
@@ -489,8 +489,8 @@ begin
       buffereduart2_tx => jchi(10),
       buffereduart_ringindicate => jchi(8),
       
-      slow_access_request_toggle => slow_access_request_toggle,
-      slow_access_ready_toggle => slow_access_ready_toggle,
+      slow_access_requst => slow_access_request,
+      slow_access_ready => slow_access_ready,
       slow_access_address => slow_access_address,
       slow_access_write => slow_access_write,
       slow_access_wdata => slow_access_wdata,

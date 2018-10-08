@@ -25,8 +25,8 @@ ENTITY slow_devices IS
     cpu_game : out std_logic;
     sector_buffer_mapped : in std_logic;
 
-    slow_access_request_toggle : in std_logic;
-    slow_access_ready_toggle : out std_logic := '0';
+    slow_access_request : in std_logic;
+    slow_access_ready : out std_logic := '0';
     slow_access_write : in std_logic;
     slow_access_address : in unsigned(19 downto 0);
     slow_access_wdata : in unsigned(7 downto 0);
@@ -93,8 +93,6 @@ architecture behavioural of slow_devices is
   signal cart_access_wdata : unsigned(7 downto 0) := (others => '1');
   signal cart_access_accept_strobe : std_logic;
   signal cart_access_read_strobe : std_logic;
-
-  signal slow_access_last_request_toggle : std_logic := '1';
 
   type slow_state is (
     Idle,
@@ -167,8 +165,10 @@ begin
 
       case state is
         when Idle =>    
-          if slow_access_last_request_toggle /= slow_access_request_toggle then
-            report "Access request for $" & to_hstring(slow_access_address) & ", toggle=" & std_logic'image(slow_access_request_toggle);
+          if slow_access_request='0' then
+            slow_access_ready <= '0';          
+          elsif slow_access_request='1' then
+            report "Access request for $" & to_hstring(slow_access_address);
             -- XXX do job, and acknowledge when done.
 
             -- CPU maps expansion port access to $7FF0000-$7FFFFFF for
@@ -193,6 +193,7 @@ begin
           -- All we have to do is direct access requests based on whether they
           -- are handled by the cartridge/expansion port, or by on-board
           -- expansion RAM of some sort.
+          slow_access_ready <= '0';
           if slow_access_address(19)='1' then
             -- $800000-$FFFFFFF = expansion RAM
             state <= ExpansionRAMRequest;
@@ -214,12 +215,10 @@ begin
               when others => slow_access_rdata <= x"55";
             end case;
             state <= Idle;
-            slow_access_ready_toggle <= slow_access_request_toggle;
+            slow_access_ready <= '1';
           end if;        
         end if;
           
-        -- Note toggle state
-        slow_access_last_request_toggle <= slow_access_request_toggle;
       when ExpansionRAMRequest =>
         -- XXX Currently not implemented.
         -- Unmapped address space: Content = "ExtraRAM"
@@ -235,7 +234,7 @@ begin
           when others => slow_access_rdata <= x"45";
         end case;
         state <= Idle;
-        slow_access_ready_toggle <= slow_access_request_toggle;
+        slow_access_ready <= '1';
       when CartridgePortRequest =>
           report "Starting cartridge port access request, w="
             & std_logic'image(slow_access_write);
@@ -248,8 +247,8 @@ begin
           cart_access_request <= '0';
           if slow_access_write = '1' then
             report "C64 cartridge port write dispatched asynchronously.";
-            slow_access_ready_toggle <= slow_access_request_toggle;
             state <= Idle;
+            slow_access_ready <= '1';
           else
             state <= CartridgePortAcceptWait;
             report "C64 cartridge port read commenced.";
@@ -262,7 +261,7 @@ begin
           cart_access_request <= '0';
           report "C64 cartridge port access complete"; 
           slow_access_rdata <= cart_access_rdata;
-          slow_access_ready_toggle <= slow_access_request_toggle;
+          slow_access_ready <= '1';
           state <= Idle;
         end if;
       end case;
