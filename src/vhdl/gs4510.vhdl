@@ -194,8 +194,6 @@ entity gs4510 is
     --attribute mark_debug of cpu_memory_ready: signal is "true";
     --attribute mark_debug of reset: signal is "true";
 
-    --attribute keep of cpu_memory_read_data : signal is "true";
-    --attribute dont_touch of cpu_memory_read_data : signal is "true";
     --attribute mark_debug of cpu_memory_read_data : signal is "true";
     
 end entity gs4510;
@@ -4289,7 +4287,6 @@ begin
     map_en_next <= map_en;
     map_en_var := '0';
 
-    --cpu_proceed <= proceed and cpu_memory_ready and not phi_pause;
     cpu_proceed <= cpu_memory_ready and not phi_pause;
 
     -- Don't output next address unless we are unblocked.    Unfortunately some of the different

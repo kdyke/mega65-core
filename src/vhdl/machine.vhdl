@@ -420,6 +420,7 @@ architecture Behavioral of machine is
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
   signal vic_cs_next : std_logic;
+  signal io_ready : std_logic;
   
   signal system_address_next : std_logic_vector(19 downto 0);
   signal system_write_next : std_logic;
@@ -1048,15 +1049,15 @@ begin
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
           vic_rdata => vic_rdata,
-          fastio_colour_ram_rdata => colour_ram_fastio_rdata,
+          colour_ram_data => colour_ram_fastio_rdata,
 
           colour_ram_cs_next => colour_ram_cs_next,
           charrom_write_cs_next => charrom_write_cs_next,
           vic_cs_next => vic_cs_next,
           
-          io_sel_next_out => io_sel_next,
-          io_sel_out => io_sel,
-          ext_sel_next_out => ext_sel_next,
+          io_sel_next => io_sel_next,
+          io_sel => io_sel,
+          ext_sel_next => ext_sel_next,
           viciii_iomode => viciii_iomode,
       
           colourram_at_dc00 => colourram_at_dc00,

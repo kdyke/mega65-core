@@ -104,13 +104,13 @@ begin
   variable char_access_page : unsigned(19 downto 16);
   variable reg_offset : unsigned(11 downto 0);
   variable map_io : std_logic;
-  variable map_exp : std_logic;
+  variable map_ext : std_logic;
   
   begin  -- resolve_long_address
 
     -- Now apply C64-style $01 lines first, because MAP and $D030 take precedence
     map_io := '0';
-    map_exp := '0';
+    map_ext := '0';
     
     lhc(4) := gated_exrom;
     lhc(3) := gated_game;
@@ -144,6 +144,7 @@ begin
     -- default is address in = address out
     temp_address := short_address;
     
+    -- I/O Space is never mapped.
     if map_en='0' then
       -- IO
       temp_address := short_address;
@@ -178,7 +179,7 @@ begin
             -- (but only if SD card sector buffer is not mapped, and
             -- 2nd KB of colour RAM is not mapped).
           if (short_address(11 downto 8) = x"E") or (short_address(11 downto 8) = x"F") then
-            map_exp := '1';
+            map_ext := '1';
             map_io := '0';
           end if;        
         end if;      
@@ -188,7 +189,7 @@ begin
       if ((blocknum=14) or (blocknum=15)) then
         if ((gated_exrom='1') and (gated_game='0')) then
           -- ULTIMAX mode external ROM
-          map_exp := '1';
+          map_ext := '1';
         elsif (lhc(1)='1') and (writeP='0') then
           nonmapped_page(19 downto 16) := x"2";
         end if;        
@@ -207,7 +208,7 @@ begin
         )
       then
         -- ULTIMAX mode or cartridge external ROM
-        map_exp := '1';
+        map_ext := '1';
       end if;
       
       -- C64 BASIC
@@ -219,37 +220,37 @@ begin
         and ((gated_exrom='0') and (gated_game='0'))) and (writeP='0')
       then
         -- ULTIMAX mode or cartridge external ROM
-        map_exp := '1';
+        map_ext := '1';
       end if;
 
       -- Expose remaining address space to cartridge port in ultimax mode
       if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
         if (blocknum=1) then
           -- $1000 - $1FFF Ultimax mode
-          map_exp := '1';
+          map_ext := '1';
         end if;
         if (blocknum=2 ) then
           -- $2000 - $2FFF Ultimax mode
           -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
           -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
           -- it down. Not yet implemented, and won't be perfectly compatible.
-          map_exp := '1';
+          map_ext := '1';
         end if;
         if ((blocknum=4) or (blocknum=5)) then
           -- $4000 - $5FFF Ultimax mode
-          map_exp := '1';
+          map_ext := '1';
         end if;
         if ((blocknum=6) or (blocknum=7)) then
           -- $6000 - $7FFF Ultimax mode
-          map_exp := '1';
+          map_ext := '1';
         end if;
         if (blocknum=12) then
           -- $C000 - $CFFF Ultimax mode
-          map_exp := '1';
+          map_ext := '1';
         end if;
       end if;
 
-      if map_exp = '1' then
+      if map_ext = '1' then
           nonmapped_page(19 downto 16) := x"7";  -- temp hack to pick something out of the way
       end if;
 
@@ -289,7 +290,7 @@ begin
     end if;
 
     io_sel_resolved <= map_io;
-    ext_sel_resolved <= map_exp;
+    ext_sel_resolved <= map_ext;
     resolved_address <= std_logic_vector(temp_address);
   end process;
 
@@ -343,7 +344,7 @@ entity bus_interface is
     system_read_next : inout std_logic;
 
     -- These are the clocked versions
-    system_address : out std_logic_vector(19 downto 0);
+    system_address : inout std_logic_vector(19 downto 0);
     system_wdata : out  std_logic_vector(7 downto 0)  := (others => '0');
     system_write : out std_logic;
     system_read : out std_logic;
@@ -360,15 +361,15 @@ entity bus_interface is
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
     io_rdata : in std_logic_vector(7 downto 0);
-    io_sel_next_out : out std_logic := '0';
-    io_sel_out : inout std_logic := '0';
-    ext_sel_next_out : out std_logic := '0';
-    ext_sel_out : inout std_logic := '0';
+    io_sel_next : inout std_logic := '0';
+    io_sel : inout std_logic := '0';
+    ext_sel_next : inout std_logic := '0';
+    ext_sel : inout std_logic := '0';
     
     sector_buffer_mapped : in std_logic;
     vic_rdata : in std_logic_vector(7 downto 0);
-    fastio_colour_ram_rdata : in std_logic_vector(7 downto 0);
-    colour_ram_cs : out std_logic := '0';
+    colour_ram_data : in std_logic_vector(7 downto 0);
+
     colour_ram_cs_next : inout std_logic := '0';
     charrom_write_cs_next : out std_logic := '0';
     vic_cs_next : inout std_logic := '0';
@@ -383,6 +384,7 @@ entity bus_interface is
     slow_access_write : out std_logic := '0';
     slow_access_wdata : out unsigned(7 downto 0);
     slow_access_rdata : in unsigned(7 downto 0);
+    slow_ready : in std_logic := '0';
     
     ---------------------------------------------------------------------------
     -- VIC-III memory banking control
@@ -415,8 +417,14 @@ entity bus_interface is
     --attribute mark_debug of kickstart_write_next: signal is "true";
     --
     --attribute mark_debug of system_address_next: signal is "true";
+    --attribute mark_debug of system_read_next: signal is "true";
     --attribute mark_debug of system_write_next: signal is "true";
     --attribute mark_debug of system_wdata_next: signal is "true";
+    --
+    --attribute mark_debug of system_address: signal is "true";
+    --attribute mark_debug of system_read: signal is "true";
+    --attribute mark_debug of system_write: signal is "true";
+    --attribute mark_debug of system_wdata: signal is "true";
     
     --attribute mark_debug of shadow_write_next: signal is "true";
     --attribute mark_debug of shadow_rdata: signal is "true";
@@ -430,6 +438,13 @@ entity bus_interface is
     --attribute mark_debug of vic_rdata : signal is "true";
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
+    --attribute mark_debug of io_sel_next : signal is "true";
+    --attribute mark_debug of io_sel : signal is "true";
+    --attribute mark_debug of io_rdata : signal is "true";
+    --attribute mark_debug of memory_ready_out : signal is "true";
+    --attribute mark_debug of vic_cs_next : signal is "true";
+    --attribute mark_debug of colour_ram_cs_next : signal is "true";
+    --attribute mark_debug of charrom_write_cs_next : signal is "true";
     
 end entity bus_interface;
 
@@ -481,9 +496,7 @@ architecture Behavioural of bus_interface is
   signal kickstart_cs_next : std_logic;
   
   signal io_sel_resolved : std_logic;
-  signal io_sel_next : std_logic;
   signal ext_sel_resolved : std_logic;
-  signal ext_sel_next : std_logic;
   
   -- IO has one waitstate for reading, 0 for writing
   -- XXX An extra wait state seems to be necessary when reading from dual-port
@@ -493,11 +506,15 @@ architecture Behavioural of bus_interface is
   constant iowrite_48mhz : unsigned(7 downto 0) := x"00";
   constant shadow_48mhz :  unsigned(7 downto 0) := x"00";
 
-  signal shadow_wait_states : unsigned(7 downto 0) := shadow_48mhz;
-  signal io_read_wait_states : unsigned(7 downto 0) := ioread_48mhz;
-  signal colourram_read_wait_states : unsigned(7 downto 0) := colourread_48mhz;
-  signal io_write_wait_states : unsigned(7 downto 0) := iowrite_48mhz;
-
+  -- Most of these are really just constants and are here to made things appear
+  -- consistent.
+  signal shadow_ready : std_logic := '1';
+  signal kickstart_ready : std_logic := '1';
+  signal colour_ram_ready : std_logic := '1';
+  signal vic_ready : std_logic := '1';
+  signal cpu_internal_ready : std_logic := '1';
+  signal io_ready : std_logic := '0';
+  
   -- Interface to slow device address space
   signal slow_access_request_toggle_drive : std_logic := '0';
   signal slow_access_write_drive : std_logic := '0';
@@ -509,8 +526,8 @@ architecture Behavioural of bus_interface is
   signal slow_access_data_ready : std_logic := '0';
 
   -- Number of pending wait states
-  signal wait_states : unsigned(7 downto 0) := x"05";
-  signal wait_states_non_zero : std_logic := '1';
+  signal wait_states : unsigned(7 downto 0); -- This will now be a counter.
+  signal wait_states_next : unsigned(7 downto 0); -- This will now be a counter.
   
 -- Note that ROM is actually implemented using
 -- power-on initialised RAM in the FPGA mapped via our io interface.
@@ -526,10 +543,10 @@ architecture Behavioural of bus_interface is
   -- serial monitor is reading data 
   signal monitor_mem_reading : std_logic := '0';
 
-  -- Is CPU free to bus_proceed with processing an instruction?
-  signal bus_proceed : std_logic := '1';
+  -- Is CPU free to proceed with processing an instruction?
+  signal bus_ready : std_logic := '1';
 
-  type memory_source is (
+  type bus_device_type is (
     DMAgicRegister,         -- 0x00
     HypervisorRegister,     -- 0x01
     CPUPort,                -- 0x02
@@ -542,11 +559,11 @@ architecture Behavioural of bus_interface is
     Unmapped                -- 0x09
     );
 
-  signal read_source : memory_source;
+  signal bus_device : bus_device_type;
     
   signal post_resolve_memory_access_address_next : std_logic_vector(19 downto 0);
   
-  --attribute mark_debug of read_source: signal is "true";
+  --attribute mark_debug of bus_device: signal is "true";
   --
   --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
   --
@@ -556,14 +573,17 @@ architecture Behavioural of bus_interface is
   --
   --attribute mark_debug of bus_proceed: signal is "true";
   --attribute mark_debug of wait_states: signal is "true";
-  --attribute mark_debug of wait_states_non_zero: signal is "true";
     
   --attribute mark_debug of colour_ram_cs : signal is "true";
   --attribute mark_debug of colourram_at_dc00 : signal is "true";
   --attribute mark_debug of sector_buffer_mapped : signal is "true";
   --attribute mark_debug of kickstart_cs_next : signal is "true";
   --attribute mark_debug of colour_ram_cs_next : signal is "true";
-  --attribute mark_debug of vic_cs_next : signal is "true";
+  --attribute mark_debug of bus_device : signal is "true";
+  --attribute mark_debug of wait_states : signal is "true";
+  --attribute mark_debug of wait_states_next : signal is "true";
+  --attribute mark_debug of io_ready : signal is "true";
+  --attribute mark_debug of cpu_internal_ready : signal is "true";
   
 begin
   
@@ -596,7 +616,6 @@ begin
     begin
 
       -- Stop memory accesses
-      colour_ram_cs <= '0';
       --chipram_we <= '0';        
       --chipram_datain <= x"c0";    
 
@@ -607,12 +626,13 @@ begin
       slow_access_desired_ready_toggle <= slow_access_ready_toggle;
       
       wait_states <= (others => '0');
-      wait_states_non_zero <= '0';
       mem_reading <= '0';
+      bus_ready <= '1';
+      bus_device <= Shadow;
       
     end procedure reset_cpu_state;
 
-    procedure read_long_address(
+    procedure bus_access(
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
@@ -630,13 +650,6 @@ begin
       slow_access_pending_write <= '0';
       slow_access_write_drive <= '0';
 
-      wait_states <= io_read_wait_states;
-      if io_read_wait_states /= x"00" then
-        wait_states_non_zero <= '1';
-      else
-        wait_states_non_zero <= '0';
-      end if; 
-                  
       the_read_address <= long_address;
 
       report "MEMORY long_address = $" & to_hstring(long_address);
@@ -644,59 +657,23 @@ begin
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
       if io_sel_next='1' and long_address(11 downto 6)&"00" = x"64" and hypervisor_mode='1' then
         report "Preparing for reading hypervisor register";
-        read_source <= HypervisorRegister;
-        -- One cycle wait-state on hypervisor registers to remove the register
-        -- decode from the critical path of memory access.
-        wait_states <= x"01";
-        wait_states_non_zero <= '1';
-        bus_proceed <= '0';
+        bus_device <= HypervisorRegister;
       elsif (long_address = x"00000") or (long_address = x"00001") then
         report "Preparing to read from a CPUPort";
-        read_source <= CPUPort;
-        -- One cycle wait-state on hypervisor registers to remove the register
-        -- decode from the critical path of memory access.
-        wait_states <= x"01";
-        wait_states_non_zero <= '1';
-        bus_proceed <= '0';
+        bus_device <= CPUPort;
       elsif (io_sel_next='1' and long_address = x"0d0a0") then
         report "Preparing to read from CPU memory expansion controller port";
-        read_source <= CPUPort;
-        -- One cycle wait-state on hypervisor registers to remove the register
-        -- decode from the critical path of memory access.
-        wait_states <= x"01";
-        wait_states_non_zero <= '1';
-        bus_proceed <= '0';
+        bus_device <= CPUPort;
         -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
       elsif kickstart_cs_next='1' then
-        read_source <= Kickstart;
-        bus_proceed <= '1';
-        wait_states_non_zero <= '0';
+        bus_device <= Kickstart;
       elsif colour_ram_cs_next='1' then
-        read_source <= ColourRAM;
-        bus_proceed <= '1';
-        wait_states_non_zero <= '0';
+        bus_device <= ColourRAM;
       elsif vic_cs_next='1' then
-        read_source <= VICIV;
-        bus_proceed <= '1';
-        wait_states_non_zero <= '0';          
+        bus_device <= VICIV;
       elsif io_sel_next='1' then
         report "Preparing to read from FastIO";
-        read_source <= FastIO;
-        bus_proceed <= '0';
-        --wait_states_non_zero <= '0';          
-        
-        -- XXX Some fastio (that referencing ioclocked registers) does require
-        -- io_wait_states, while some can use fewer waitstates because the
-        -- memories involved can be clocked at the CPU clock, and have just 1
-        -- wait state due to the dual-port memories.
-        -- But for now, just apply the wait state to all fastio addresses.
-        wait_states <= io_read_wait_states;
-        if io_read_wait_states /= x"00" then
-          wait_states_non_zero <= '1';
-        else
-          wait_states_non_zero <= '0';
-        end if;
-        
+        bus_device <= FastIO;        
       elsif long_address(19)='0' and long_address(18)='0' then
         -- Reading from chipram
         -- @ IO:C64 $00002-$0FFFF - 64KB RAM
@@ -712,9 +689,7 @@ begin
         -- @ IO:C65 $30000-$31FFF - 16KB C65 DOS ROM
         -- @ IO:M65 $40000-$5FFFF - 128KB RAM (in place of C65 cartridge support)
         report "Preparing to read from Shadow";
-        read_source <= Shadow;
-        wait_states_non_zero <= '0';
-        bus_proceed <= '1';
+        bus_device <= Shadow;
           report "Reading from shadowed chipram address $"
           & to_hstring(long_address(19 downto 0)) severity note;
                                         --Also mapped to 7F2 0000 - 7F3 FFFF
@@ -722,82 +697,24 @@ begin
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF Slow Device memory (127MB)
         report "Preparing to read from SlowRAM";
-        read_source <= SlowRAM;
+        bus_device <= SlowRAM;
         accessing_slowram <= '1';
         slow_access_data_ready <= '0';
         slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
         slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
-        wait_states <= x"FF";
-        wait_states_non_zero <= '1';
-        bus_proceed <= '0';
       else
         -- Don't let unmapped memory jam things up
         report "hit unmapped memory -- clearing wait_states" severity note;
         report "Preparing to read from Unmapped";
-        read_source <= Unmapped;
-        wait_states <= shadow_wait_states;
-        if shadow_wait_states /= x"00" then
-          wait_states_non_zero <= '1';
-        else
-          wait_states_non_zero <= '0';
-        end if;
-        bus_proceed <= '1';
+        bus_device <= Unmapped;
       end if;
       if (viciii_iomode="01" or viciii_iomode="11") and (long_address(19 downto 8) = x"0D7") then
         report "Preparing to read from a DMAgicRegister";
-        read_source <= DMAgicRegister;
+        bus_device <= DMAgicRegister;
       end if;      
 
-    end read_long_address;
-    
-    -- This function is *almost* ready to die.  It's really only handling updating the clocked fastio
-    -- signals (and external memory interface signals) at this point.  If I can move the entire fastio
-    -- bus to the "next" variant then this can die completeley.
-    procedure write_long_byte(
-      value              : in std_logic_vector(7 downto 0);
-      io_sel_next : in std_logic;
-      ext_sel_next : in std_logic) is
-      variable long_address : unsigned(19 downto 0);
-      variable dmagic_write : std_logic;
-    begin
-      -- Schedule the memory write to the appropriate destination.
-
-      accessing_slowram <= '0';
-      slow_access_write_drive <= '0';
-      
-      wait_states <= x"00";
-      wait_states_non_zero <= '0';
-
-      -- Always write to shadow ram if in scope, even if we also write elsewhere.
-      -- This ensures that shadow ram is consistent with the shadowed address space
-      -- when the CPU reads from shadow ram.
-      -- system_wdata <= value;
-      
-      if ext_sel_next='1' then
-        report "writing to slow device memory..." severity note;
-        accessing_slowram <= '1';
-
-        -- We dispatch the write, and then wait for the slow access controller
-        -- to acknowledge the write.  The slow access controller is free to
-        -- buffer the writes as it wishes to hide latency -- we don't need to worry
-        -- about there here, as it only changes the latency for receiving the
-        -- write acknowledgement (a similar process can be used for caching reads
-        -- from appropriate slow devices, e.g., for expansion memory).
-        slow_access_pending_write <= '1';
-        slow_access_data_ready <= '0';
-
-        -- Tell CPU to wait for response
-        slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
-        slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
-        wait_states_non_zero <= '1';
-        wait_states <= x"FF";
-        bus_proceed <= '0';
-      else
-        -- Don't let unmapped memory jam things up
-        null;
-      end if;
-    end write_long_byte;
-        
+    end bus_access;
+            
     variable memory_access_read : std_logic := '0';
     variable memory_access_write : std_logic := '0';
   begin    
@@ -823,58 +740,48 @@ begin
       slow_access_wdata <= slow_access_wdata_drive;
       slow_access_ready_toggle_buffer <= slow_access_ready_toggle;
 
+      -- Update wait states for monitor output and maybe bus timeout detection.
+      wait_states <= wait_states_next;
+
       memory_access_read := '0';
       memory_access_write := '0';
       monitor_waitstates <= wait_states;
     
+      -- CPU ready signal generation.  Basially there's just a one clock delay any time
+      -- the CPU address changes.
+      -- Currently the same for I/O accesses, so don't duplicate the logic.
+      -- Note: This is done as a clocked thing so it takes effect on the following cycle,
+      -- which is what we want.  It also looks backwards because it's easier for me to
+      -- consider the case where the next address is different from the already clocked one, 
+      -- which happens when the CPU is ready to move.  So when they are different, it means
+      -- we'll need to wait one cycle (after the next clock edge).  Also, doing it clocked
+      -- means we don't have a combinatorial loop.
+      if system_address_next /= system_address and system_write_next='0' then
+        cpu_internal_ready <= '0';
+        io_ready <= '0';
+      else
+        cpu_internal_ready <= '1';
+        io_ready <= '1';
+      end if;
+    
                                         -- report "reset = " & std_logic'image(reset) severity note;
       reset_drive <= reset;
       if reset_drive='0' then
-        bus_proceed <= '1';
         wait_states <= x"00";
-        wait_states_non_zero <= '0';
       else
                                         -- Honour wait states on memory accesses
                                         -- Clear memory access lines unless we are in a memory wait state
                                         -- XXX replace with single bit test flag for wait_states = 0 to reduce
                                         -- logic depth
-        if wait_states_non_zero = '1' then
-          report "  $" & to_hstring(wait_states)
-            &" memory waitstates remaining.  Fastio_rdata = $"
-            & to_hstring(io_rdata)
-            & ", mem_reading=" & std_logic'image(mem_reading)
-            severity note;
-          if (accessing_slowram='1') then
-            if slow_access_ready_toggle = slow_access_desired_ready_toggle then
-                                        -- Next cycle we can do stuff, provided that the serial monitor
-                                        -- isn't asking us to do anything.
-              bus_proceed <= '1';
-              slow_access_write_drive <= '0';
-            else
-                                        -- Otherwise keep waiting for slow memory interface
-              null;
-            end if;           
-          else
-            if wait_states /= x"01" then
-              wait_states <= wait_states - 1;
-              wait_states_non_zero <= '1';
-            else
-              wait_states_non_zero <= '0';
-              bus_proceed <= '1';
-            end if;
-          end if;          
+        if bus_ready='0' then
         else
                                         -- End of wait states, so clear memory writing and reading
-
-          colour_ram_cs <= '0';
           slow_access_write_drive <= '0';
 
           if mem_reading='1' then
             mem_reading <= '0';
             monitor_mem_reading <= '0';
           end if;
-
-          bus_proceed <= '1';
         end if;
 
         report "CPU state : cpu_proceed=" & std_logic'image(cpu_proceed);
@@ -893,32 +800,19 @@ begin
           system_read <= system_read_next;
           system_write <= system_write_next;
           system_wdata <= system_wdata_next;
+          io_sel <= io_sel_next;
+          ext_sel <= ext_sel_next;
 
           -- TODO - Get rid of these.   They can just use system bus signals now.
           slow_access_address_drive <= unsigned(system_address_next);
           slow_access_write_drive <= system_write_next;
           slow_access_wdata_drive <= unsigned(system_wdata_next);
+          
         end if;
         
-        io_sel_out <= io_sel_next;
-        ext_sel_out <= ext_sel_next;
-
-                                        -- Effect memory accesses.
-                                        -- Note that we cannot combine address resolution for read and write,
-                                        -- because the resolution of some addresses is dependent on whether
-                                        -- the operation is read or write.  ROM accesses are a good example.
-                                        -- We delay the memory write until the next cycle to minimise logic depth
-
-                                        -- XXX - Try to fast-route low address lines to shadowram and other memory
-                                        -- blocks.
-        
-                                        -- Mark pages dirty as necessary        
-        if memory_access_write='1' then
-
-          write_long_byte(std_logic_vector(cpu_memory_access_wdata_next),io_sel_next,ext_sel_next);
-        elsif memory_access_read='1' then 
+        if memory_access_write='1' or memory_access_read='1' then
           report "memory_access_read=1, addres=$"&to_hstring(system_address_next) severity note;
-          read_long_address(io_sel_next,ext_sel_next);
+          bus_access(io_sel_next,ext_sel_next);
         end if;
       end if; -- if not reseting
     end if;                         -- if rising edge of clock
@@ -931,11 +825,11 @@ begin
   -- alternate (new) combinatorial core memory address generation.
   process (hypervisor_mode,mem_reading,
     viciii_iomode,
-    shadow_rdata,bus_proceed,cpu_proceed,
+    shadow_rdata,cpu_proceed,
     cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
     rom_writeprotect,
     post_resolve_memory_access_address_next,
-    system_address_next, read_source, io_sel_next, ext_sel_next
+    system_address_next, system_address, bus_device, io_sel_next, ext_sel_next
     )
     
     variable system_address_var : std_logic_vector(19 downto 0);
@@ -955,10 +849,6 @@ begin
     shadow_write_var := '0';
     kickstart_write_var := '0';
     charrom_write_cs_next <= '0';
-    
-    -- These hold current value until we are ready to move on?
-    io_sel_next <= io_sel_out;
-    ext_sel_next <= ext_sel_out;
     
 	  if cpu_memory_access_resolve_address_next = '1' then        
 	    system_address_var := post_resolve_memory_access_address_next;
@@ -1009,12 +899,10 @@ begin
     
     -- Drive output signals with current state.
     -- FIXME - Come up with a better standardized naming scheme.
-    io_sel_next_out <= io_sel_next;
-    ext_sel_next_out <= ext_sel_next;
-    memory_ready_out <= bus_proceed;
-    shadow_write_next <= shadow_write_var;
     io_sel_next <= io_sel_next_var;
     ext_sel_next <= ext_sel_next_var;    
+    memory_ready_out <= bus_ready;
+    shadow_write_next <= shadow_write_var;
     
     system_address_next <= system_address_var;
     system_write_next <= cpu_memory_access_write_next;
@@ -1067,30 +955,53 @@ begin
       end if;
     end if;                           -- $DXXX
     
+    if bus_ready='1' then
+      wait_states_next <= x"00";
+    else
+      wait_states_next <= wait_states + 1;
+    end if;
+    
   end process;
 
-  -- read_data input mux
+  -- read_data (and ready) input mux
   -- This controls which data is being fed into the CPU (and/or eventually DMAgic) at any given
   -- time.  Because the internal FPGA interfaces are in general clocked instead of asynchronous,
   -- the mux will switch one clock cycle after the address has been driven onto the bus and will
-  -- be held until the read finishes.
-  process (read_source, shadow_rdata, kickstart_rdata, fastio_colour_ram_rdata,
-           vic_rdata, io_rdata, slow_access_rdata)
+  -- be held until the read finishes. The mux also controls where we source the "ready" signal from.
+  process (bus_device, shadow_rdata, shadow_ready, kickstart_rdata, kickstart_ready,
+           colour_ram_data, colour_ram_ready, vic_rdata, vic_ready, io_rdata, io_ready,
+           slow_access_rdata, system_write_next)
   begin
-    if(read_source = Shadow) then
+    if(bus_device = Shadow) then
       cpu_memory_read_data <= unsigned(shadow_rdata);
-    elsif(read_source = Kickstart) then
+      bus_ready <= shadow_ready;
+    elsif(bus_device = Kickstart) then
       cpu_memory_read_data <= unsigned(kickstart_rdata);
-    elsif(read_source = ColourRAM) then
-      cpu_memory_read_data <= unsigned(fastio_colour_ram_rdata);
-    elsif(read_source = VICIV) then
+      bus_ready <= kickstart_ready;
+    elsif(bus_device = ColourRAM) then
+      cpu_memory_read_data <= unsigned(colour_ram_data);
+      bus_ready <= colour_ram_ready;
+    elsif(bus_device = VICIV) then
       cpu_memory_read_data <= unsigned(vic_rdata);
-    elsif(read_source = FastIO) then
+      bus_ready <= vic_ready;
+    elsif(bus_device = FastIO) then
       cpu_memory_read_data <= unsigned(io_rdata);
+      bus_ready <= io_ready; -- FastIO doesn't need write wait states.
+    elsif bus_device = CPUPort or bus_device=HypervisorRegister or bus_device=DMAgicRegister then
+      cpu_memory_read_data <= x"55";
+      bus_ready <= cpu_internal_ready; -- TODO - This is temporary until we update internal CPU logic to do this for itself.
+    elsif bus_device = Unmapped then
+      cpu_memory_read_data <= x"AA";
+      bus_ready <= '1';
     else
       cpu_memory_read_data <= slow_access_rdata;
+      if slow_ready='1' or wait_states >= x"F0" then
+        bus_ready <= '1';
+      else
+       bus_ready <= '0';
+      end if;
     end if;  
   end process;
-  
+    
 end Behavioural;
 
