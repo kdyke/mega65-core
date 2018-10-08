@@ -146,6 +146,7 @@ entity viciv is
     fastio_addr : in std_logic_vector(19 downto 0);
     fastio_read : in std_logic;
     fastio_write : in std_logic;
+    io_sel : in std_logic;
     
     io_sel_next : in std_logic;
     system_write_next : in std_logic;
@@ -176,6 +177,11 @@ entity viciv is
     attribute mark_debug : string;
     attribute keep : string;
     attribute dont_touch : string;
+    
+    --attribute mark_debug of fastio_write: signal is "true";
+    --attribute mark_debug of system_write_next: signal is "true";
+    --attribute mark_debug of fastio_addr: signal is "true";
+    --attribute mark_debug of fastio_wdata: signal is "true";
     
 end viciv;
 
@@ -471,6 +477,8 @@ architecture Behavioral of viciv is
   signal debug_character_data_from_rom_drive2 : std_logic := '0';
   signal debug_charaddress_drive2 : unsigned(11 downto 0) := to_unsigned(0,12);
   signal debug_charrow_drive2 : std_logic_vector(7 downto 0) := x"00";
+
+  signal register_number_sig : unsigned(11 downto 0);
 
   -----------------------------------------------------------------------------
   -- Video controller registers
@@ -966,7 +974,8 @@ architecture Behavioral of viciv is
   signal next_token_is_goto : std_logic := '0';
 
   --attribute mark_debug of vic_source : signal is "true";
-  --attribute mark_debug of fastio_rdata : signal is "true";
+  --attribute mark_debug of palette_we : signal is "true";
+  --attribute mark_debug of register_number_sig : signal is "true";
   
   --attribute keep_hierarchy of Behavioral : architecture is "yes";
 
@@ -1177,7 +1186,7 @@ begin
               fastio_write => fastio_write,
               fastio_wdata => fastio_wdata,
               vic_cs => vic_cs,
-              io_sel => io_sel_next
+              io_sel => io_sel
               );
 
   
@@ -1543,7 +1552,27 @@ begin
       
       -- This is always being driven.
       palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
-
+      register_number_sig <= register_number;
+      
+      -- Palette write signals need to be updated combinatorially so they can source from
+      -- fastio_wdata without a delay.
+      palette_we <= x"0";
+      if fastio_write='1' and io_sel='1' then
+        if register_number>=256 and register_number<512 then
+-- @IO:C65 $D100-$D1FF red palette values (reversed nybl order)
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          palette_we(3) <= '1';
+        elsif register_number>=512 and register_number<768 then
+-- @IO:C65 $D200-$D2FF green palette values (reversed nybl order)
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          palette_we(2) <= '1';
+        elsif register_number>=768 and register_number<1024 then
+-- @IO:C65 $D300-$D3FF blue palette values (reversed nybl order)
+          --palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
+          palette_we(1) <= '1';
+        end if;
+      end if;
+      
       if rising_edge(ioclock) then
         -- Default is output register.
         vic_source <= VicRegister;
@@ -1885,6 +1914,7 @@ begin
 
     end if;
     
+    
     if rising_edge(ioclock) then
 
       -- Calculate raster number for sprites.
@@ -1960,8 +1990,6 @@ begin
       ack_collisionspritebitmap <= '0';
       ack_raster <= '0';
       
-      palette_we <= (others => '0');
-
       -- Get VIC-II sprite data offsets
       -- (this can happen on ioclock, since it should still allow ample time
       --  to synchronise with the sprites before we fetch the data for them).
@@ -1980,7 +2008,7 @@ begin
 --      end if;
       
       -- $DD00 video bank bits
-      if fastio_write='1' and io_sel_next='1'
+      if fastio_write='1' and io_sel='1'
         -- Fastio IO addresses D{0,1,2,3}Dx0
         and (fastio_addr(19 downto 12)=x"0D")
         and (fastio_addr(11 downto  8)=x"D")
@@ -2015,7 +2043,7 @@ begin
       clear_collisionspritesprite <= clear_collisionspritesprite_1;
       
       -- $D000 registers
-      if fastio_write='1' and io_sel_next='1'
+      if fastio_write='1' and io_sel='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then
         if register_number>=0 and register_number<8 then
           -- compatibility sprite coordinates
@@ -2690,18 +2718,6 @@ begin
                                                   elsif register_number<255 then
                                         -- reserved register, FDC and RAM expansion controller
                                                     null;
-                                                  elsif register_number>=256 and register_number<512 then
-                                        -- @IO:C65 $D100-$D1FF red palette values (reversed nybl order)
-                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
-                                                    palette_we(3) <= '1';
-                                                  elsif register_number>=512 and register_number<768 then
-                                        -- @IO:C65 $D200-$D2FF green palette values (reversed nybl order)
-                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
-                                                    palette_we(2) <= '1';
-                                                  elsif register_number>=768 and register_number<1024 then
-                                        -- @IO:C65 $D300-$D3FF blue palette values (reversed nybl order)
-                                                    palette_ram_address <= palette_bank & std_logic_vector(register_number(7 downto 0));
-                                                    palette_we(1) <= '1';
                                                   else
                                                     null;
                                                   end if;

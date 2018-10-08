@@ -420,7 +420,7 @@ architecture Behavioral of machine is
   signal io_sel_next : std_logic;
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
-  signal vic_cs_next : std_logic;
+  signal vic_cs : std_logic;
   signal io_ready : std_logic;
   
   signal system_address_next : std_logic_vector(19 downto 0);
@@ -1053,7 +1053,7 @@ begin
 
           colour_ram_cs_next => colour_ram_cs_next,
           charrom_write_cs_next => charrom_write_cs_next,
-          vic_cs_next => vic_cs_next,
+          vic_cs => vic_cs,
           
           io_sel_next => io_sel_next,
           io_sel => io_sel,
@@ -1217,13 +1217,14 @@ begin
       charrom_write_cs_next => charrom_write_cs_next,
 
       -- TODO Clean this up, vic no longer needs two different bus connections.
-      fastio_addr     => system_address_next,
-      fastio_read     => system_read_next,
-      fastio_write    => system_write_next,
-      fastio_wdata    => system_wdata_next,
-      vic_cs          => vic_cs_next,
+      fastio_addr     => system_address,
+      fastio_read     => system_read,
+      fastio_write    => system_write,
+      fastio_wdata    => system_wdata,
+      vic_cs          => vic_cs,
       vic_rdata       => vic_rdata,
       
+      io_sel          => io_sel,
       io_sel_next         => io_sel_next,
       system_wdata_next   => system_wdata_next,
       system_address_next => system_address_next,

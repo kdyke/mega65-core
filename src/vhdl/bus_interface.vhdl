@@ -373,6 +373,7 @@ entity bus_interface is
     colour_ram_cs_next : inout std_logic := '0';
     charrom_write_cs_next : out std_logic := '0';
     vic_cs_next : inout std_logic := '0';
+    vic_cs : inout std_logic := '0';
     
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
@@ -400,10 +401,10 @@ entity bus_interface is
     
     --attribute mark_debug of io_rdata: signal is "true";
     --
-    --attribute mark_debug of ext_sel_next_out: signal is "true";
-    --attribute mark_debug of io_sel_next_out: signal is "true";
-    --attribute mark_debug of ext_sel_out: signal is "true";
-    --attribute mark_debug of io_sel_out: signal is "true";
+    --attribute mark_debug of ext_sel_next: signal is "true";
+    --attribute mark_debug of io_sel_next: signal is "true";
+    --attribute mark_debug of ext_sel: signal is "true";
+    --attribute mark_debug of io_sel: signal is "true";
     --
     --attribute mark_debug of  system_wdata_next: signal is "true";
     --
@@ -430,6 +431,10 @@ entity bus_interface is
     --attribute mark_debug of cpu_proceed : signal is "true";
     --attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of vic_rdata : signal is "true";
+    --attribute mark_debug of vic_cs_next : signal is "true";
+    --attribute mark_debug of vic_cs : signal is "true";
+    --attribute mark_debug of viciii_iomode : signal is "true";
+    
     --
     --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
     --attribute mark_debug of io_sel_next : signal is "true";
@@ -510,8 +515,9 @@ architecture Behavioural of bus_interface is
   signal io_ready : std_logic := '0';
   
   -- Number of pending wait states
-  signal wait_states : unsigned(7 downto 0); -- This will now be a counter.
+  signal wait_states : unsigned(7 downto 0) := x"00"; -- This will now be a counter.
   signal wait_states_next : unsigned(7 downto 0); -- This will now be a counter.
+  signal slow_access_ready_internal : std_logic;
   
 -- Note that ROM is actually implemented using
 -- power-on initialised RAM in the FPGA mapped via our io interface.
@@ -595,6 +601,7 @@ begin
       wait_states <= (others => '0');
       bus_ready <= '1';
       bus_device <= Shadow;
+      slow_access_ready_internal <= '0';
       
     end procedure reset_cpu_state;
 
@@ -689,7 +696,15 @@ begin
       
       -- Update wait states for monitor output and maybe bus timeout detection.
       wait_states <= wait_states_next;
-
+      
+      -- Keep a clocked slow access ready to help with timing.  The one extra 50Mhz
+      -- cycle of delay to recognize external 1Mhz devices won't hurt anything.
+      if(slow_access_ready='1' or wait_states_next >= x"f0") then
+        slow_access_ready_internal <= '1';
+      else
+        slow_access_ready_internal <= '0';
+      end if;
+      
       monitor_waitstates <= wait_states;
     
       -- CPU ready signal generation.  Basially there's just a one clock delay any time
@@ -725,7 +740,8 @@ begin
           system_wdata <= system_wdata_next;
           io_sel <= io_sel_next;
           ext_sel <= ext_sel_next;
-
+          vic_cs <= vic_cs_next;
+          
           bus_access(io_sel_next,ext_sel_next);
 
         end if;
@@ -899,7 +915,7 @@ begin
       bus_ready <= colour_ram_ready;
     elsif(bus_device = VICIV) then
       cpu_memory_read_data <= unsigned(vic_rdata);
-      bus_ready <= vic_ready;
+      bus_ready <= io_ready;  -- This is now using same wait states as other I/O
     elsif(bus_device = FastIO) then
       cpu_memory_read_data <= unsigned(io_rdata);
       bus_ready <= io_ready;
@@ -911,12 +927,8 @@ begin
       bus_ready <= '1';
     else
       cpu_memory_read_data <= slow_access_rdata;
-      if slow_access_ready='1' or wait_states >= x"F0" then
-        bus_ready <= '1';
-      else
-       bus_ready <= '0';
-      end if;
-    end if;  
+      bus_ready <= slow_access_ready_internal;
+    end if;
   end process;
     
 end Behavioural;
