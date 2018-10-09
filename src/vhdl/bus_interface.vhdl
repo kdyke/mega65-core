@@ -902,7 +902,7 @@ begin
   -- be held until the read finishes. The mux also controls where we source the "ready" signal from.
   process (bus_device, shadow_rdata, shadow_ready, kickstart_rdata, kickstart_ready,
            colour_ram_data, colour_ram_ready, vic_rdata, vic_ready, io_rdata, io_ready,
-           slow_access_rdata, slow_access_ready, wait_states)
+           slow_access_rdata, slow_access_ready_internal)
   begin
     if(bus_device = Shadow) then
       cpu_memory_read_data <= unsigned(shadow_rdata);

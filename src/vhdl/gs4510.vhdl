@@ -299,7 +299,7 @@ architecture Behavioural of gs4510 is
   signal dmagic_subcmd : unsigned(7 downto 0)  := (others => '0');	-- F018A/B extention
   signal dmagic_count : unsigned(15 downto 0)  := (others => '0');
   signal dmagic_tally : unsigned(15 downto 0)  := (others => '0');
-  signal dmagic_src_addr : unsigned(35 downto 0)  := (others => '0'); -- in 256ths of bytes
+  signal dmagic_src_addr : unsigned(27 downto 0)  := (others => '0'); -- in 256ths of bytes
   signal reg_dmagic_use_transparent_value : std_logic := '0';
   signal reg_dmagic_transparent_value : unsigned(7 downto 0) := x"00";
   signal dmagic_option_id : unsigned(7 downto 0) := x"00";
@@ -309,7 +309,7 @@ architecture Behavioural of gs4510 is
   signal dmagic_src_modulo : std_logic := '0';
   signal dmagic_src_hold : std_logic := '0';
   signal reg_dmagic_dst_mb : unsigned(7 downto 0)  := (others => '0');
-  signal dmagic_dest_addr : unsigned(35 downto 0)  := (others => '0'); -- in 256ths of bytes
+  signal dmagic_dest_addr : unsigned(27 downto 0)  := (others => '0'); -- in 256ths of bytes
   signal dmagic_dest_io : std_logic := '0';
   signal dmagic_dest_direction : std_logic := '0';
   signal dmagic_dest_modulo : std_logic := '0';
@@ -320,8 +320,8 @@ architecture Behavioural of gs4510 is
   -- byte (i.e., 1 byte every 256 operations) through to 255 + 255/256ths per
   -- operation. This was added to accelerate texture copying for Doom-style 3D
   -- drawing.
-  signal reg_dmagic_src_skip : unsigned(15 downto 0) := x"0100";
-  signal reg_dmagic_dst_skip : unsigned(15 downto 0) := x"0100";
+  signal reg_dmagic_src_skip : unsigned(7 downto 0) := x"01";
+  signal reg_dmagic_dst_skip : unsigned(7 downto 0) := x"01";
 
   -- Temporary registers used while loading DMA list
   signal dmagic_dest_bank_temp : unsigned(7 downto 0)  := (others => '0');
@@ -1647,8 +1647,8 @@ begin
     begin
       reg_dmagic_use_transparent_value <= '0';
       reg_dmagic_transparent_value <= x"00";
-      reg_dmagic_src_skip <= x"0100";
-      reg_dmagic_dst_skip <= x"0100";
+      reg_dmagic_src_skip <= x"01";
+      reg_dmagic_dst_skip <= x"01";
     end procedure;
     
     procedure alu_op_cmp (
@@ -2556,19 +2556,18 @@ begin
                   & " $" & to_hstring(memory_read_value);
                 dmagic_option_id <= (others => '0');
                 case dmagic_option_id is
-                                        -- @ IO:GS $D705 - Enhanced DMAgic job option $80 $xx = Set MB of source address
-                  
+                                        -- @ IO:GS $D705 - Enhanced DMAgic job option $80 $xx = Set MB of source address                  
                   --when x"80" => reg_dmagic_src_mb <= x"00";
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $81 $xx = Set MB of destination address
                   --when x"81" => reg_dmagic_dst_mb <= x"00";
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $82 $xx = Set source skip rate (/256ths of bytes)
-                  when x"82" => reg_dmagic_src_skip(7 downto 0) <= memory_read_value;
+                  --when x"82" => reg_dmagic_src_skip(7 downto 0) <= memory_read_value;
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $83 $xx = Set source skip rate (whole bytes)
-                  when x"83" => reg_dmagic_src_skip(15 downto 8) <= memory_read_value;
+                  when x"83" => reg_dmagic_src_skip(7 downto 0) <= memory_read_value;
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $84 $xx = Set destination skip rate (/256ths of bytes)
-                  when x"84" => reg_dmagic_dst_skip(7 downto 0) <= memory_read_value;
+                  --when x"84" => reg_dmagic_dst_skip(7 downto 0) <= memory_read_value;
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $85 $xx = Set destination skip rate (whole bytes)
-                  when x"85" => reg_dmagic_dst_skip(15 downto 8) <= memory_read_value;
+                  when x"85" => reg_dmagic_dst_skip(7 downto 0) <= memory_read_value;
                                         -- @ IO:GS $D705 - Enhanced DMAgic job option $86 $xx = Don't write to destination if byte value = $xx, and option $06 enabled
                   when x"86" => reg_dmagic_transparent_value <= memory_read_value;
                   when others => null;
@@ -2615,12 +2614,12 @@ begin
               else
                 dmagic_dest_bank_temp <= dmagic_modulo(7 downto 0);
               end if;
-              dmagic_dest_addr(23 downto 16) <= dmagic_dest_bank_temp;
-              dmagic_dest_addr(15 downto 8) <= dmagic_dest_addr(23 downto 16);
-              dmagic_src_bank_temp <= dmagic_dest_addr(15 downto 8);
-              dmagic_src_addr(23 downto 16) <= dmagic_src_bank_temp;
-              dmagic_src_addr(15 downto 8) <= dmagic_src_addr(23 downto 16);
-              dmagic_count(15 downto 8) <= dmagic_src_addr(15 downto 8);
+              dmagic_dest_addr(15 downto 8) <= dmagic_dest_bank_temp;
+              dmagic_dest_addr(7 downto 0) <= dmagic_dest_addr(15 downto 8);
+              dmagic_src_bank_temp <= dmagic_dest_addr(7 downto 0);
+              dmagic_src_addr(15 downto 8) <= dmagic_src_bank_temp;
+              dmagic_src_addr(7 downto 0) <= dmagic_src_addr(15 downto 8);
+              dmagic_count(15 downto 8) <= dmagic_src_addr(7 downto 0);
               dmagic_count(7 downto 0) <= dmagic_count(15 downto 8);
               dmagic_cmd <= dmagic_count(7 downto 0);
               if (job_is_f018b = '0') and (dmagic_list_counter = 10) then
@@ -2636,23 +2635,21 @@ begin
               report "DMAgic: got list: cmd=$"
                 & to_hstring(dmagic_cmd)
                 & ", src=$"
-                & to_hstring(dmagic_src_addr(23 downto 8))
-                & ", dest=$" & to_hstring(dmagic_dest_addr(23 downto 8))
+                & to_hstring(dmagic_src_addr(15 downto 0))
+                & ", dest=$" & to_hstring(dmagic_dest_addr(15 downto 0))
                 & ", count=$" & to_hstring(dmagic_count);
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
               if (job_is_f018b = '1') then
-                dmagic_src_addr(35 downto 28) <= to_unsigned(0,8) + dmagic_src_bank_temp(6 downto 4);
-                dmagic_src_addr(27 downto 24) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(35 downto 28) <= to_unsigned(0,8) + dmagic_dest_bank_temp(6 downto 4);
-                dmagic_dest_addr(27 downto 24) <= dmagic_dest_bank_temp(3 downto 0);
+                dmagic_src_addr(27 downto 20) <= to_unsigned(0,8) + dmagic_src_bank_temp(6 downto 4);
+                dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
+                dmagic_dest_addr(27 downto 20) <= to_unsigned(0,8) + dmagic_dest_bank_temp(6 downto 4);
+                dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
               else
-                dmagic_src_addr(35 downto 28) <= to_unsigned(0,8);
-                dmagic_src_addr(27 downto 24) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(35 downto 28) <= to_unsigned(0,8);
-                dmagic_dest_addr(27 downto 24) <= dmagic_dest_bank_temp(3 downto 0);
+                dmagic_src_addr(27 downto 20) <= to_unsigned(0,8);
+                dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
+                dmagic_dest_addr(27 downto 20) <= to_unsigned(0,8);
+                dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
               end if;               
-              dmagic_src_addr(7 downto 0) <= (others => '0');
-              dmagic_dest_addr(7 downto 0) <= (others => '0');
               dmagic_src_io <= dmagic_src_bank_temp(7);
               if (job_is_f018b = '1') then
                 dmagic_src_direction <= dmagic_cmd(4);
@@ -2729,11 +2726,11 @@ begin
                                         -- in the C65 specifications document
               if dmagic_dest_hold='0' then
                 if dmagic_dest_direction='0' then
-                  dmagic_dest_addr(23 downto 0)
-                    <= dmagic_dest_addr(23 downto 0) + reg_dmagic_dst_skip;
+                  dmagic_dest_addr(15 downto 0)
+                    <= dmagic_dest_addr(15 downto 0) + reg_dmagic_dst_skip;
                 else
-                  dmagic_dest_addr(23 downto 0)
-                    <= dmagic_dest_addr(23 downto 0) - reg_dmagic_dst_skip;
+                  dmagic_dest_addr(15 downto 0)
+                    <= dmagic_dest_addr(15 downto 0) - reg_dmagic_dst_skip;
                 end if;
               end if;
                                         -- XXX we compare count with 1 before decrementing.
@@ -2768,16 +2765,16 @@ begin
                                         -- Update source address.
                                         -- XXX Ignores modulus, whose behaviour is insufficiently defined
                                         -- in the C65 specifications document
-              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(35 downto 8))
-                &"."&to_hstring(dmagic_src_addr(7 downto 0))
+              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(27 downto 0))
+                
                 & " (reg_dmagic_src_skip=$" & to_hstring(reg_dmagic_src_skip)&")";
               if dmagic_src_hold='0' then
                 if dmagic_src_direction='0' then
-                  dmagic_src_addr(23 downto 0)
-                    <= dmagic_src_addr(23 downto 0) + reg_dmagic_src_skip;
+                  dmagic_src_addr(15 downto 0)
+                    <= dmagic_src_addr(15 downto 0) + reg_dmagic_src_skip;
                 else
-                  dmagic_src_addr(23 downto 0)
-                    <= dmagic_src_addr(23 downto 0) - reg_dmagic_src_skip;
+                  dmagic_src_addr(15 downto 0)
+                    <= dmagic_src_addr(15 downto 0) - reg_dmagic_src_skip;
                 end if;
               end if;
                                         -- Set IO visibility for destination
@@ -2785,8 +2782,7 @@ begin
               state <= DMAgicCopyWrite;
             when DMAgicCopyWrite =>
                                         -- Remember value just read
-              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(35 downto 8))
-                &"."&to_hstring(dmagic_src_addr(7 downto 0))
+              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(27 downto 0))
                 & " (reg_dmagic_src_skip=$" & to_hstring(reg_dmagic_src_skip)&")";
               dmagic_first_read <= '0';
               reg_t <= memory_read_value;
@@ -2803,11 +2799,11 @@ begin
                                         -- in the C65 specifications document
                 if dmagic_dest_hold='0' then
                   if dmagic_dest_direction='0' then
-                    dmagic_dest_addr(23 downto 0)
-                      <= dmagic_dest_addr(23 downto 0) + reg_dmagic_dst_skip;
+                    dmagic_dest_addr(15 downto 0)
+                      <= dmagic_dest_addr(15 downto 0) + reg_dmagic_dst_skip;
                   else
-                    dmagic_dest_addr(23 downto 0)
-                      <= dmagic_dest_addr(23 downto 0) - reg_dmagic_dst_skip;
+                    dmagic_dest_addr(15 downto 0)
+                      <= dmagic_dest_addr(15 downto 0) - reg_dmagic_dst_skip;
                   end if;
                 end if;
                                         -- XXX we compare count with 1 before decrementing.
@@ -4395,12 +4391,12 @@ begin
   		  when DMAgicFill =>
           address_op := addr_op_dmagic;
   		    memory_access_write := '1';
-  		    memory_access_wdata := dmagic_src_addr(15 downto 8);
+  		    memory_access_wdata := dmagic_src_addr(7 downto 0);
   		    memory_access_resolve_address := '0';
-  		    dmagic_address := dmagic_dest_addr(27 downto 8);
+  		    dmagic_address := dmagic_dest_addr(19 downto 0);
 
   		    -- redirect memory write to IO block if required
-		      if dmagic_dest_addr(27 downto 20) = x"0d" and dmagic_dest_io='1' then
+		      if dmagic_dest_addr(19 downto 12) = x"0d" and dmagic_dest_io='1' then
             memory_access_io := '1';
 		      end if;
 		    
@@ -4409,10 +4405,10 @@ begin
           address_op := addr_op_dmagic;
   		    memory_access_read := '1';
   		    memory_access_resolve_address := '0';
-  		    dmagic_address := dmagic_src_addr(27 downto 8);
+  		    dmagic_address := dmagic_src_addr(19 downto 0);
 
   		    -- redirect memory write to IO block if required
-  		    if dmagic_src_addr(27 downto 20) = x"0d" and dmagic_src_io='1' then
+  		    if dmagic_src_addr(19 downto 12) = x"0d" and dmagic_src_io='1' then
             memory_access_io := '1';
   		    end if;
 		    
@@ -4429,10 +4425,10 @@ begin
   		      end if;
   		      memory_access_wdata := reg_t;
   		      memory_access_resolve_address := '0';
-  		      dmagic_address := dmagic_dest_addr(27 downto 8);
+  		      dmagic_address := dmagic_dest_addr(19 downto 0);
 
   		      -- redirect memory write to IO block if required
-  		      if dmagic_dest_addr(27 downto 20) = x"0d" and dmagic_dest_io='1' then
+  		      if dmagic_dest_addr(19 downto 12) = x"0d" and dmagic_dest_io='1' then
               memory_access_io := '1';
   		      end if;
   		    end if;
