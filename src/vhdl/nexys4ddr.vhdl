@@ -302,7 +302,7 @@ begin
       qspicsn => qspicsn,      
 --      qspisck => '1',
 
-      slow_access_requst => slow_access_request,
+      slow_access_request => slow_access_request,
       slow_access_ready => slow_access_ready,
       slow_access_write => slow_access_write,
       slow_access_address => slow_access_address,
@@ -489,7 +489,7 @@ begin
       buffereduart2_tx => jchi(10),
       buffereduart_ringindicate => jchi(8),
       
-      slow_access_requst => slow_access_request,
+      slow_access_request => slow_access_request,
       slow_access_ready => slow_access_ready,
       slow_access_address => slow_access_address,
       slow_access_write => slow_access_write,
