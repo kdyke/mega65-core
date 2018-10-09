@@ -299,7 +299,7 @@ architecture Behavioural of gs4510 is
   signal dmagic_subcmd : unsigned(7 downto 0)  := (others => '0');	-- F018A/B extention
   signal dmagic_count : unsigned(15 downto 0)  := (others => '0');
   signal dmagic_tally : unsigned(15 downto 0)  := (others => '0');
-  signal dmagic_src_addr : unsigned(27 downto 0)  := (others => '0'); -- in 256ths of bytes
+  signal dmagic_src_addr : unsigned(19 downto 0)  := (others => '0');
   signal reg_dmagic_use_transparent_value : std_logic := '0';
   signal reg_dmagic_transparent_value : unsigned(7 downto 0) := x"00";
   signal dmagic_option_id : unsigned(7 downto 0) := x"00";
@@ -309,7 +309,7 @@ architecture Behavioural of gs4510 is
   signal dmagic_src_modulo : std_logic := '0';
   signal dmagic_src_hold : std_logic := '0';
   signal reg_dmagic_dst_mb : unsigned(7 downto 0)  := (others => '0');
-  signal dmagic_dest_addr : unsigned(27 downto 0)  := (others => '0'); -- in 256ths of bytes
+  signal dmagic_dest_addr : unsigned(19 downto 0)  := (others => '0');
   signal dmagic_dest_io : std_logic := '0';
   signal dmagic_dest_direction : std_logic := '0';
   signal dmagic_dest_modulo : std_logic := '0';
@@ -2640,14 +2640,10 @@ begin
                 & ", count=$" & to_hstring(dmagic_count);
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
               if (job_is_f018b = '1') then
-                dmagic_src_addr(27 downto 20) <= to_unsigned(0,8) + dmagic_src_bank_temp(6 downto 4);
                 dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(27 downto 20) <= to_unsigned(0,8) + dmagic_dest_bank_temp(6 downto 4);
                 dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
               else
-                dmagic_src_addr(27 downto 20) <= to_unsigned(0,8);
                 dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(27 downto 20) <= to_unsigned(0,8);
                 dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
               end if;               
               dmagic_src_io <= dmagic_src_bank_temp(7);
@@ -2765,7 +2761,7 @@ begin
                                         -- Update source address.
                                         -- XXX Ignores modulus, whose behaviour is insufficiently defined
                                         -- in the C65 specifications document
-              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(27 downto 0))
+              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(19 downto 0))
                 
                 & " (reg_dmagic_src_skip=$" & to_hstring(reg_dmagic_src_skip)&")";
               if dmagic_src_hold='0' then
@@ -2782,7 +2778,7 @@ begin
               state <= DMAgicCopyWrite;
             when DMAgicCopyWrite =>
                                         -- Remember value just read
-              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(27 downto 0))
+              report "dmagic_src_addr=$" & to_hstring(dmagic_src_addr(19 downto 0))
                 & " (reg_dmagic_src_skip=$" & to_hstring(reg_dmagic_src_skip)&")";
               dmagic_first_read <= '0';
               reg_t <= memory_read_value;
