@@ -352,7 +352,7 @@ entity bus_interface is
     shadow_write_next : out std_logic := '0';
     shadow_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
 
-    kickstart_write_next : out std_logic := '0';
+    kickstart_cs_next : inout std_logic := '0';
     kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
         
     cpu_leds : out std_logic_vector(3 downto 0);
@@ -409,7 +409,7 @@ entity bus_interface is
     --attribute mark_debug of  system_wdata_next: signal is "true";
     --
     --attribute mark_debug of kickstart_rdata: signal is "true";
-    --attribute mark_debug of kickstart_write_next: signal is "true";
+    --attribute mark_debug of kickstart_cs_next: signal is "true";
     --
     --attribute mark_debug of system_address_next: signal is "true";
     --attribute mark_debug of system_read_next: signal is "true";
@@ -492,8 +492,6 @@ architecture Behavioural of bus_interface is
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
 
-  signal kickstart_cs_next : std_logic;
-  
   signal io_sel_resolved : std_logic;
   signal ext_sel_resolved : std_logic;
   
@@ -792,14 +790,11 @@ begin
       ext_sel_next_var := '0';
     end if;      
 
-    -- Kickstart ROM chip select.  FIXME - kickstart_write_var shouldn't need to be depdendent on
-    -- the chip select logic at this level.
+    -- Kickstart ROM chip select.
     if (hypervisor_mode='1' and system_address_var(19 downto 14)&"00" = x"F8") then
       kickstart_cs_var := '1';
-      kickstart_write_var := cpu_memory_access_write_next;
     else
       kickstart_cs_var := '0';
-      kickstart_write_var := '0';
     end if;
     
 		if cpu_memory_access_write_next='1' then
@@ -819,14 +814,9 @@ begin
       if system_address_var(19 downto 12) = x"7E" then
         charrom_write_cs_next <= '1';
       end if;
-                      
-      kickstart_write_var := kickstart_cs_var;
-      
+                            
     end if;
 
-    -- FIXME - We shouldn't need both of these.  kickstart_cs_next should be
-    -- all that's needed if we plumb both through to the kickstart memory module.
-    kickstart_write_next <= kickstart_write_var;
     kickstart_cs_next <= kickstart_cs_var;
     
     -- Drive output signals with current state.

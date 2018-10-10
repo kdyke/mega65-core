@@ -437,7 +437,7 @@ architecture Behavioral of machine is
   signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
 
   --signal kickstart_address_next : std_logic_vector(13 downto 0);
-  signal kickstart_write_next : std_logic := '0';
+  signal kickstart_cs_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
   signal vic_rdata : std_logic_vector(7 downto 0);
@@ -880,7 +880,8 @@ begin
   kickstartrom : entity work.kickstart port map (
     clk     => cpuclock,
     address => system_address_next(13 downto 0),
-    we      => kickstart_write_next,
+    cs      => kickstart_cs_next,
+    we      => system_write_next,
     data_o  => kickstart_rdata,
     data_i  =>  system_wdata_next
     );
@@ -1044,8 +1045,8 @@ begin
           shadow_write_next  => shadow_write_next,          
           shadow_rdata       => shadow_rdata,
       
-          kickstart_write_next  => kickstart_write_next,
-          kickstart_rdata       => kickstart_rdata,
+          kickstart_cs_next  => kickstart_cs_next,
+          kickstart_rdata    => kickstart_rdata,
       
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
