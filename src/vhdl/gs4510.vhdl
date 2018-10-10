@@ -320,12 +320,6 @@ architecture Behavioural of gs4510 is
   signal reg_dmagic_src_skip : unsigned(7 downto 0) := x"01";
   signal reg_dmagic_dst_skip : unsigned(7 downto 0) := x"01";
 
-  -- Temporary registers used while loading DMA list
-  signal dmagic_dest_bank_temp : unsigned(7 downto 0)  := (others => '0');
-  signal dmagic_src_bank_temp : unsigned(7 downto 0)  := (others => '0');
-  -- Temporary store for CPU port bits to bank IO/ROMs in/out during DMA
-  signal pre_dma_cpuport_bits : unsigned(2 downto 0) := (others => '1');
-
   -- CPU internal state
   signal flag_c : std_logic := '0';        -- carry flag
   signal flag_z : std_logic := '0';        -- zero flag
@@ -1022,11 +1016,24 @@ architecture Behavioural of gs4510 is
     --attribute mark_debug of dmagic_src_addr : signal is "true";
     --attribute mark_debug of dmagic_dest_addr : signal is "true";
     --
-    --attribute mark_debug of pre_dma_cpuport_bits : signal is "true";
-    --
     --attribute mark_debug of last_write_address : signal is "true";
     --attribute mark_debug of last_write_value : signal is "true";
     --attribute mark_debug of last_write_pending : signal is "true";
+    
+    --attribute mark_debug of dmagic_modulo : signal is "true";
+    --attribute mark_debug of dmagic_src_addr : signal is "true";
+    --attribute mark_debug of dmagic_dest_addr : signal is "true";
+    --attribute mark_debug of dmagic_count : signal is "true";
+    --attribute mark_debug of dmagic_cmd : signal is "true";
+    --attribute mark_debug of dmagic_dest_direction : signal is "true";
+    --attribute mark_debug of dmagic_dest_modulo : signal is "true";
+    --attribute mark_debug of dmagic_dest_hold : signal is "true";
+    --attribute mark_debug of dmagic_dest_io : signal is "true";
+    --attribute mark_debug of dmagic_src_direction : signal is "true";
+    --attribute mark_debug of dmagic_src_modulo : signal is "true";
+    --attribute mark_debug of dmagic_src_hold : signal is "true";
+    --attribute mark_debug of dmagic_src_io : signal is "true";
+    --attribute mark_debug of dmagic_list_counter : signal is "true";
     
 begin
 
@@ -1785,7 +1792,8 @@ begin
     variable stack_pop : std_logic;
     variable stack_push : std_logic;
     variable push_value : unsigned(7 downto 0);
-
+    variable dmagic_inc : std_logic;
+    
     variable temp_addr : unsigned(15 downto 0);    
 
     variable temp17 : unsigned(16 downto 0);    
@@ -2149,6 +2157,7 @@ begin
                                         -- By default we are doing nothing new.
       pc_inc := '0'; pc_dec := '0'; dec_sp := '0';
       stack_pop := '0'; stack_push := '0';
+      dmagic_inc := '0';
       
       memory_access_read := '0';
       memory_access_write := '0';
@@ -2595,31 +2604,61 @@ begin
                 &", memory_read_value = $"&to_hstring(memory_read_value)&")";
                                         -- ask for next byte from DMA list
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
-                                        -- shift read byte into DMA registers and shift everything around
-              dmagic_modulo(15 downto 8) <= memory_read_value;
-              dmagic_modulo(7 downto 0) <= dmagic_modulo(15 downto 8);
-              if (job_is_f018b = '1') then
-                dmagic_subcmd <= dmagic_modulo(7 downto 0);
-                dmagic_dest_bank_temp <= dmagic_subcmd;
-              else
-                dmagic_dest_bank_temp <= dmagic_modulo(7 downto 0);
-              end if;
-              dmagic_dest_addr(15 downto 8) <= dmagic_dest_bank_temp;
-              dmagic_dest_addr(7 downto 0) <= dmagic_dest_addr(15 downto 8);
-              dmagic_src_bank_temp <= dmagic_dest_addr(7 downto 0);
-              dmagic_src_addr(15 downto 8) <= dmagic_src_bank_temp;
-              dmagic_src_addr(7 downto 0) <= dmagic_src_addr(15 downto 8);
-              dmagic_count(15 downto 8) <= dmagic_src_addr(7 downto 0);
-              dmagic_count(7 downto 0) <= dmagic_count(15 downto 8);
-              dmagic_cmd <= dmagic_count(7 downto 0);
-              if (job_is_f018b = '0') and (dmagic_list_counter = 10) then
-                state <= DMAgicGetReady;
-              elsif dmagic_list_counter = 11 then
-                state <= DMAgicGetReady;
-              else
-                dmagic_list_counter <= dmagic_list_counter + 1;
+              dmagic_inc := '1';
+                                        -- Load DMA registers
+              case dmagic_list_counter is
+                when  0 =>  dmagic_cmd                        <= memory_read_value;
+                            if (job_is_f018b = '1') then
+                              dmagic_src_direction            <= memory_read_value(4);
+                              dmagic_dest_direction           <= memory_read_value(5);
+                            end if;
+                when  1 =>  dmagic_count(7 downto 0)          <= memory_read_value;
+                when  2 =>  dmagic_count(15 downto 8)         <= memory_read_value;
+                when  3 =>  dmagic_src_addr(7 downto 0)       <= memory_read_value;
+                when  4 =>  dmagic_src_addr(15 downto 8)      <= memory_read_value;
+                when  5 =>  dmagic_src_addr(19 downto 16)     <= memory_read_value(3 downto 0);
+                            dmagic_src_io                     <= memory_read_value(7);
+                            if job_is_f018b='0' then
+                              dmagic_src_direction            <= memory_read_value(6);
+                              dmagic_src_modulo               <= memory_read_value(5);
+                              dmagic_src_hold                 <= memory_read_value(4);
+                            end if;
+                when  6 =>  dmagic_dest_addr(7 downto 0)      <= memory_read_value;
+                when  7 =>  dmagic_dest_addr(15 downto 8)     <= memory_read_value;
+                when  8 =>  dmagic_dest_addr(19 downto 16)    <= memory_read_value(3 downto 0);
+                            dmagic_dest_io                    <= memory_read_value(7);
+                            if job_is_f018b='0' then
+                              dmagic_dest_direction           <= memory_read_value(6);
+                              dmagic_dest_modulo              <= memory_read_value(5);
+                              dmagic_dest_hold                <= memory_read_value(4);
+                            end if;
+                when  9 =>  if job_is_f018b='0' then
+                              dmagic_modulo(7 downto 0)       <= memory_read_value;
+                            else
+                              dmagic_src_modulo               <= memory_read_value(0);
+                              dmagic_src_hold                 <= memory_read_value(1);
+                              dmagic_dest_modulo              <= memory_read_value(2);
+                              dmagic_dest_hold                <= memory_read_value(3);
+                            end if;
+                when 10 =>  if job_is_f018b='0' then
+                              dmagic_modulo(15 downto 8)      <= memory_read_value;
+                              state <= DMAgicGetReady;
+                              dmagic_inc := '0';
+                            else
+                              dmagic_modulo(7 downto 0)       <= memory_read_value;
+                            end if;
+                when 11 =>  dmagic_modulo(15 downto 8)        <= memory_read_value;
+                            state <= DMAgicGetReady;
+                            dmagic_inc := '0';
+                when others =>
+                            dmagic_inc := '0';
+              end case;
+              
+              dmagic_list_counter <= dmagic_list_counter + 1;
+              if dmagic_inc ='1' then
                 reg_dmagic_addr <= reg_dmagic_addr + 1;
-              end if;
+              end if;           
+
               report "DMAgic: Reading DMA list (end of cycle)";
             when DMAgicGetReady =>
               report "DMAgic: got list: cmd=$"
@@ -2629,52 +2668,13 @@ begin
                 & ", dest=$" & to_hstring(dmagic_dest_addr(15 downto 0))
                 & ", count=$" & to_hstring(dmagic_count);
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
-              if (job_is_f018b = '1') then
-                dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
-              else
-                dmagic_src_addr(19 downto 16) <= dmagic_src_bank_temp(3 downto 0);
-                dmagic_dest_addr(19 downto 16) <= dmagic_dest_bank_temp(3 downto 0);
-              end if;               
-              dmagic_src_io <= dmagic_src_bank_temp(7);
-              if (job_is_f018b = '1') then
-                dmagic_src_direction <= dmagic_cmd(4);
-                dmagic_src_modulo <= dmagic_subcmd(0);
-                dmagic_src_hold <= dmagic_subcmd(1);
-              else
-                dmagic_src_direction <= dmagic_src_bank_temp(6);
-                dmagic_src_modulo <= dmagic_src_bank_temp(5);
-                dmagic_src_hold <= dmagic_src_bank_temp(4);
-              end if;
-              dmagic_dest_io <= dmagic_dest_bank_temp(7);
-              if (job_is_f018b = '1') then
-                dmagic_dest_direction <= dmagic_cmd(5);
-                dmagic_dest_modulo <= dmagic_subcmd(2);
-                dmagic_dest_hold <= dmagic_subcmd(3);
-              else
-                dmagic_dest_direction <= dmagic_dest_bank_temp(6);
-                dmagic_dest_modulo <= dmagic_dest_bank_temp(5);
-                dmagic_dest_hold <= dmagic_dest_bank_temp(4);
-              end if;
-
-                                        -- Save memory mapping flags, and set memory map to
-                                        -- be all RAM +/- IO area
-              pre_dma_cpuport_bits <= cpuport_value(2 downto 0);
-              cpuport_value(2 downto 1) <= "10";
               
-              case dmagic_cmd(1 downto 0) is                
+              case dmagic_cmd(1 downto 0) is
                 when "11" => -- fill                  
                   state <= DMAgicFill;
-
-                                        -- And set IO visibility based on destination bank flags
-                                        -- since we are only writing.
-                  cpuport_value(0) <= dmagic_dest_bank_temp(7);
-                  
                 when "00" => -- copy
                   dmagic_first_read <= '1';
                   state <= DMagicCopyRead;
-                                        -- Set IO visibility based on source bank flags
-                  cpuport_value(0) <= dmagic_src_bank_temp(7);
                 when others =>
                                         -- swap and mix not yet implemented
                   state <= normal_fetch_state;
@@ -2725,7 +2725,6 @@ begin
               if dmagic_count = 1 then
                                         -- DMA done
                 report "DMAgic: DMA fill complete";
-                cpuport_value(2 downto 0) <= pre_dma_cpuport_bits;
                 if dmagic_cmd(2) = '0' then
                                         -- Last DMA job in chain, go back to executing instructions
                   state <= normal_fetch_state;
@@ -2764,7 +2763,7 @@ begin
                 end if;
               end if;
                                         -- Set IO visibility for destination
-              cpuport_value(0) <= dmagic_dest_io;
+              --cpuport_value(0) <= dmagic_dest_io;
               state <= DMAgicCopyWrite;
             when DMAgicCopyWrite =>
                                         -- Remember value just read
@@ -2773,8 +2772,6 @@ begin
               dmagic_first_read <= '0';
               reg_t <= memory_read_value;
 
-                                        -- Set IO visibility for source
-              cpuport_value(0) <= dmagic_src_io;              
               state <= DMAgicCopyRead;
 
               phi_add_backlog <= '1'; phi_new_backlog <= 1;
@@ -2798,7 +2795,6 @@ begin
                 if dmagic_count = 1 then
                                         -- DMA done
                   report "DMAgic: DMA copy complete";
-                  cpuport_value(2 downto 0) <= pre_dma_cpuport_bits;
                   if dmagic_cmd(2) = '0' then
                                         -- Last DMA job in chain, go back to executing instructions
                     state <= normal_fetch_state;
