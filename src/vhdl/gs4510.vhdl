@@ -170,18 +170,18 @@ entity gs4510 is
     viciii_iomode : in std_logic_vector(1 downto 0);
 
     ---------------------------------------------------------------------------
-    -- New CPU bus interface signals
+    -- CPU bus interface signals
     ---------------------------------------------------------------------------
-    cpu_memory_access_address_next : out unsigned(19 downto 0);
-    cpu_memory_access_read_next : out std_logic;
-    cpu_memory_access_write_next : out std_logic;
-    cpu_memory_access_resolve_address_next : out std_logic;
-    cpu_memory_access_wdata_next : out unsigned(7 downto 0);
-    cpu_memory_access_io_next : out std_logic;
-    cpu_memory_read_data : in unsigned(7 downto 0);
-    cpu_memory_ready : in std_logic;
-    cpu_proceed : out std_logic;
-    cpu_map_en : out std_logic;
+    memory_access_address_next : inout unsigned(19 downto 0);
+    memory_access_read_next : inout std_logic;
+    memory_access_write_next : inout std_logic;
+    memory_access_resolve_address_next : inout std_logic;
+    memory_access_wdata_next : inout unsigned(7 downto 0);
+    memory_access_io_next : inout std_logic;
+    memory_read_data : in unsigned(7 downto 0);
+    ready : in std_logic;
+    cpu_ready : out std_logic;
+    map_en_next : inout std_logic;
     rom_writeprotect : inout std_logic := '0';
     cpuport_ddr_out : out  unsigned(7 downto 0);
     cpuport_value_out : out unsigned(7 downto 0) := x"3F"  
@@ -239,9 +239,6 @@ architecture Behavioural of gs4510 is
   signal last_address : unsigned(19 downto 0)  := (others => '0'); -- FIXME
   signal last_value : unsigned(7 downto 0)  := (others => '0');
 
-  signal map_en_next : std_logic;
-  signal map_en : std_logic;
-  
   signal read_data : unsigned(7 downto 0)  := (others => '0');
   
   signal long_address_read : unsigned(19 downto 0)  := (others => '0');
@@ -814,24 +811,17 @@ architecture Behavioural of gs4510 is
   signal force_4502 : std_logic := '1';
 
   signal monitor_char_toggle_internal : std_logic := '1';
-  
-  -- These signals are all driven by the combinatorial address generation logic
-  signal memory_access_address_next : unsigned(19 downto 0);
-  signal memory_access_read_next : std_logic;
-  signal memory_access_write_next : std_logic;
-  signal memory_access_resolve_address_next : std_logic;
-  signal memory_access_wdata_next : unsigned(7 downto 0);
-  signal memory_access_io_next : std_logic;
-  
-  -- These signals are the clocked versions of the above signals, primarily used
-  -- to hold the signals in cases where we are paused for any reason (wait states, etc.)
+    
+  -- These signals are the clocked versions of the memory interface signals, primarily used
+  -- to hold the current values in cases where we are paused for any reason (wait states, etc.)
   signal memory_access_address_hold : unsigned(19 downto 0);
   signal memory_access_read_hold : std_logic;
   signal memory_access_write_hold : std_logic;
   signal memory_access_resolve_address_hold : std_logic;
   signal memory_access_wdata_hold : unsigned(7 downto 0);
   signal memory_access_io_hold : std_logic;
-  
+  signal map_en_hold : std_logic;
+    
   signal cycle_counter : unsigned(15 downto 0) := (others => '0');
 
   signal cpu_speed_bias : integer := 128;
@@ -1465,7 +1455,7 @@ begin
 
         when others =>
           report "accessing external memory" severity note;
-          return cpu_memory_read_data;
+          return memory_read_data;
       end case;
     end read_data_complex; 
 
@@ -2289,7 +2279,7 @@ begin
 
         reset_out <= '1';
         
-        if cpu_memory_ready = '1' then
+        if ready = '1' then
                                         -- End of wait states, so clear memory writing and reading
           if mem_reading='1' then
 --            report "resetting mem_reading (read $" & to_hstring(memory_read_value) & ")" severity note;
@@ -2299,11 +2289,11 @@ begin
 
         end if;
         
-        monitor_proceed <= cpu_memory_ready and not phi_pause;
+        monitor_proceed <= ready and not phi_pause;
         monitor_request_reflected <= monitor_mem_attention_request_drive;
 
         report "CPU state : proceed=" & std_logic'image(proceed);
-        if phi_pause='0' and cpu_memory_ready='1' then
+        if phi_pause='0' and ready='1' then
                                         -- Main state machine for CPU
           report "CPU state = " & processor_state'image(state) & ", PC=$" & to_hstring(reg_pc) severity note;
 
@@ -4054,7 +4044,7 @@ begin
           memory_access_resolve_address_hold <= memory_access_resolve_address;
           memory_access_wdata_hold <= memory_access_wdata_next;
           memory_access_io_hold <= memory_access_io_next;
-          map_en <= map_en_next;
+          map_en_hold <= map_en_next;
         
         end if;
 
@@ -4276,10 +4266,10 @@ begin
 
     temp_addr := x"0000";
 
-    map_en_next <= map_en;
+    map_en_next <= map_en_hold;
     map_en_var := '0';
 
-    cpu_proceed <= cpu_memory_ready and not phi_pause;
+    cpu_ready <= ready and not phi_pause;
 
     -- Don't output next address unless we are unblocked.    Unfortunately some of the different
     -- signals can be out of phase and so we have to test multiple of them.  In particular, phi_pause
@@ -4306,7 +4296,7 @@ begin
     -- could use to detect a "real" read versus just a random "bus still has old address".
     
     -- TODO - Recombine the different "ready" signals into a single "ready" signal that's used everywhere.
-    if cpu_memory_ready='1' and phi_pause='0' then
+    if ready='1' and phi_pause='0' then
     
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
@@ -4675,15 +4665,6 @@ begin
     memory_access_wdata_next <= memory_access_wdata;
     memory_access_io_next <= memory_access_io;
     
-    -- For now, do the same for the new bus_interface module
-    cpu_memory_access_address_next <= memory_access_address;
-    cpu_memory_access_read_next <= memory_access_read;
-    cpu_memory_access_write_next <= memory_access_write;
-    cpu_memory_access_resolve_address_next <= memory_access_resolve_address;
-    cpu_memory_access_wdata_next <= memory_access_wdata;
-    cpu_memory_access_io_next <= memory_access_io;
-    cpu_map_en <= map_en_next;
-
     -- FIXME - There's not really a reason for these to be different.
     long_address_read <= long_address_read_var;
     long_address_write <= long_address_write_var;
@@ -4694,10 +4675,10 @@ begin
   end process;
 
   -- read_data input mux - FIXME, This needs to go away ASAP.
-  process (read_source, cpu_memory_read_data, read_data_copy)
+  process (read_source, memory_read_data, read_data_copy)
   begin
     if((read_source /= CPUPort) and (read_source /= DMAgicRegister) and (read_source /= HypervisorRegister)) then
-      read_data <= cpu_memory_read_data;
+      read_data <= memory_read_data;
     else
       read_data <= read_data_copy;
     end if;  

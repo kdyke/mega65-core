@@ -672,9 +672,10 @@ architecture Behavioral of machine is
   signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
   signal cpu_memory_access_io_next : std_logic;
   signal cpu_memory_read_data : unsigned(7 downto 0);
-  signal cpu_proceed : std_logic;
+  signal cpu_ready : std_logic;
   signal cpu_map_en_next : std_logic;
-  signal memory_ready_out : std_logic;
+  signal cpu_memory_ready : std_logic;
+
   signal rom_writeprotect : std_logic; -- TEMP
   signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
   signal cpuport_value : unsigned(7 downto 0);
@@ -980,17 +981,17 @@ begin
       io_sel_next => io_sel_next,
       ext_sel_next => ext_sel_next,
       
-      cpu_memory_access_address_next         => cpu_memory_access_address_next,
-      cpu_memory_access_read_next            => cpu_memory_access_read_next,
-      cpu_memory_access_write_next           => cpu_memory_access_write_next,  
-      cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
-      cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
-      cpu_memory_access_io_next              => cpu_memory_access_io_next,
-      cpu_memory_read_data                   => cpu_memory_read_data,
-      cpu_proceed                            => cpu_proceed,
-      cpu_map_en                             => cpu_map_en_next,
-      cpu_memory_ready                       => memory_ready_out,
-      rom_writeprotect                      => rom_writeprotect,
+      memory_access_address_next         => cpu_memory_access_address_next,
+      memory_access_read_next            => cpu_memory_access_read_next,
+      memory_access_write_next           => cpu_memory_access_write_next,  
+      memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
+      memory_access_wdata_next           => cpu_memory_access_wdata_next,
+      memory_access_io_next              => cpu_memory_access_io_next,
+      memory_read_data                   => cpu_memory_read_data,
+      cpu_ready                          => cpu_ready,
+      map_en_next                        => cpu_map_en_next,
+      ready                              => cpu_memory_ready,
+      rom_writeprotect                   => rom_writeprotect,
       cpuport_ddr_out => cpuport_ddr,
       cpuport_value_out => cpuport_value,
       
@@ -1013,10 +1014,10 @@ begin
           cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
           cpu_memory_access_io_next              => cpu_memory_access_io_next,
           cpu_memory_read_data                   => cpu_memory_read_data,
-          cpu_proceed                            => cpu_proceed,
+          cpu_proceed                            => cpu_ready,
           cpu_map_en_next                        => cpu_map_en_next,
-          memory_ready_out                       => memory_ready_out,
-          rom_writeprotect                      => rom_writeprotect,
+          memory_ready_out                       => cpu_memory_ready,
+          rom_writeprotect                       => rom_writeprotect,
           cpuport_ddr => cpuport_ddr,
           cpuport_value => cpuport_value,
           dat_offset => dat_offset,
