@@ -40,33 +40,26 @@ entity bus_interface is
   port (
     Clock : in std_logic;
     reset : in std_logic;
-    exrom : in std_logic;
-    game : in std_logic;
 
     hypervisor_mode : in std_logic := '0';
 
-    dat_offset : in unsigned(15 downto 0);
-    dat_bitplane_addresses : in sprite_vector_eight;
-    
     monitor_waitstates : out unsigned(7 downto 0);
     monitor_memory_access_address : out unsigned(31 downto 0);
 
-    -- Incoming signals from the CPU.  Only valid when ready is true.
-    cpu_memory_access_address_next : in unsigned(19 downto 0);
-    cpu_memory_access_read_next : in std_logic;
-    cpu_memory_access_write_next : in std_logic;
-    cpu_memory_access_resolve_address_next : in std_logic;
-    cpu_memory_access_wdata_next : in unsigned(7 downto 0);
-    cpu_memory_access_io_next : in std_logic;
-    bus_read_data : out unsigned(7 downto 0);
-    cpu_proceed : in std_logic;
-    cpu_map_en_next : in std_logic;
-    rom_writeprotect : in std_logic;
-    cpuport_ddr : in unsigned(7 downto 0);
-    cpuport_value : in unsigned(7 downto 0);
+    -- Incoming signals from the current bus master.  Only valid when ready is true.
+    memory_access_address_next : in std_logic_vector(19 downto 0);
+    memory_access_read_next : in std_logic;
+    memory_access_write_next : in std_logic;
+    memory_access_wdata_next : in unsigned(7 downto 0);
+    memory_access_io_next : in std_logic;
+    memory_access_ext_next : in std_logic;
+    memory_access_ready : in std_logic;
     
-    memory_ready_out : out std_logic;
-
+    bus_read_data : out unsigned(7 downto 0);
+    bus_ready : inout std_logic;
+    
+    rom_writeprotect : in std_logic;
+    
     -- These are all inout so the clocked variants can read from them too.
     system_address_next : inout std_logic_vector(19 downto 0); 
     system_wdata_next : inout  std_logic_vector(7 downto 0);
@@ -85,8 +78,6 @@ entity bus_interface is
     kickstart_cs_next : inout std_logic := '0';
     kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
         
-    cpu_leds : out std_logic_vector(3 downto 0);
-    
     ---------------------------------------------------------------------------
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
@@ -116,11 +107,7 @@ entity bus_interface is
     ---------------------------------------------------------------------------
     viciii_iomode : in std_logic_vector(1 downto 0);
 
-    colourram_at_dc00 : in std_logic;
-    rom_at_e000 : in std_logic;
-    rom_at_c000 : in std_logic;
-    rom_at_a000 : in std_logic;
-    rom_at_8000 : in std_logic
+    colourram_at_dc00 : in std_logic
 
     );
     
@@ -158,7 +145,7 @@ entity bus_interface is
     --attribute keep of bus_read_data : signal is "true";
     --attribute dont_touch of bus_read_data : signal is "true";
     --attribute mark_debug of bus_read_data : signal is "true";
-    --attribute mark_debug of cpu_proceed : signal is "true";
+    --attribute mark_debug of memory_access_ready : signal is "true";
     --attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of vic_rdata : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
@@ -166,7 +153,7 @@ entity bus_interface is
     --attribute mark_debug of viciii_iomode : signal is "true";
     
     --
-    --attribute mark_debug of cpu_memory_access_wdata_next : signal is "true";
+    --attribute mark_debug of memory_access_wdata_next : signal is "true";
     --attribute mark_debug of io_sel_next : signal is "true";
     --attribute mark_debug of io_sel : signal is "true";
     --attribute mark_debug of io_rdata : signal is "true";
@@ -179,52 +166,15 @@ end entity bus_interface;
 
 architecture Behavioural of bus_interface is
   
-  component address_resolver is
-    port (
-      short_address : in unsigned(19 downto 0);
-      writeP : in std_logic;
-      gated_exrom : in std_logic; 
-      gated_game : in std_logic;
-      map_en : in std_logic;
-      cpuport_ddr : in unsigned(7 downto 0);
-      cpuport_value : in unsigned(7 downto 0);
-      viciii_iomode : in std_logic_vector(1 downto 0);
-      sector_buffer_mapped : in std_logic;
-      colourram_at_dc00 : in std_logic;
-      hypervisor_mode : in std_logic;
-      rom_at_e000 : in std_logic;
-      rom_at_c000 : in std_logic;
-      rom_at_a000 : in std_logic;
-      rom_at_8000 : in std_logic;
-      dat_bitplane_addresses : in sprite_vector_eight;
-      dat_offset_drive : in unsigned(15 downto 0);
-      io_sel_resolved : out std_logic;
-      ext_sel_resolved : out std_logic;
-      resolved_address : out unsigned(19 downto 0)
-      );
-    
-  end component address_resolver;
-
   attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   signal reset_drive : std_logic := '0';
-  signal cartridge_enable : std_logic := '0';
-  signal gated_exrom : std_logic := '1'; 
-  signal gated_game : std_logic := '1';
-  signal force_exrom : std_logic := '1'; 
-  signal force_game : std_logic := '1';
-
-  signal dat_bitplane_addresses_drive : sprite_vector_eight;
-  signal dat_offset_drive : unsigned(15 downto 0) := to_unsigned(0,16);
 
   -- Shadow RAM control
 
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
 
-  signal cpu_io_sel_resolved : std_logic;
-  signal cpu_ext_sel_resolved : std_logic;
-  
   -- IO has one waitstate for reading, 0 for writing
   -- XXX An extra wait state seems to be necessary when reading from dual-port
   -- memories like colour ram.
@@ -255,7 +205,6 @@ architecture Behavioural of bus_interface is
   -- Microcode data and ALU routing signals follow:
 
   -- Is CPU free to proceed with processing an instruction?
-  signal bus_ready : std_logic := '1';
 
   type bus_device_type is (
     DMAgicRegister,         -- 0x00
@@ -271,9 +220,7 @@ architecture Behavioural of bus_interface is
     );
 
   signal bus_device : bus_device_type;
-    
-  signal cpu_resolved_memory_access_address_next : std_logic_vector(19 downto 0);
-  
+      
   --attribute mark_debug of bus_device: signal is "true";
   --
   --attribute mark_debug of cpu_resolved_memory_access_address_next: signal is "true";
@@ -297,31 +244,6 @@ architecture Behavioural of bus_interface is
   --attribute mark_debug of cpu_internal_ready : signal is "true";
   
 begin
-  
-  address_resolver0 : entity work.address_resolver port map(
-    short_address => cpu_memory_access_address_next,
-    writeP => cpu_memory_access_write_next,
-    gated_exrom => gated_exrom,
-    gated_game => gated_game,
-    map_en => cpu_map_en_next,
-    resolve_address => cpu_memory_access_resolve_address_next,
-    io_sel => cpu_memory_access_io_next,
-    cpuport_value => cpuport_value,
-    cpuport_ddr => cpuport_ddr,
-    viciii_iomode => viciii_iomode,
-    sector_buffer_mapped => sector_buffer_mapped,
-    colourram_at_dc00 => colourram_at_dc00,
-    hypervisor_mode => hypervisor_mode,
-    rom_at_e000 => rom_at_e000,
-    rom_at_c000 => rom_at_c000,
-    rom_at_a000 => rom_at_a000,
-    rom_at_8000 => rom_at_8000,
-    dat_bitplane_addresses => dat_bitplane_addresses,
-    dat_offset_drive => dat_offset_drive,
-    io_sel_resolved => cpu_io_sel_resolved,
-    ext_sel_resolved => cpu_ext_sel_resolved,
-    resolved_address => cpu_resolved_memory_access_address_next
-  );
   
   process(clock,reset)
 
@@ -414,17 +336,6 @@ begin
   -- Bus interface state machine update.
     if rising_edge(clock) then
       
-      dat_bitplane_addresses_drive <= dat_bitplane_addresses;
-      dat_offset_drive <= dat_offset;
-      
-      if cartridge_enable='1' then
-        gated_exrom <= exrom and force_exrom;
-        gated_game <= game and force_game;
-      else
-        gated_exrom <= force_exrom;
-        gated_game <= force_game;
-      end if;
-      
       -- Update wait states for monitor output and maybe bus timeout detection.
       wait_states <= wait_states_next;
       
@@ -461,8 +372,8 @@ begin
         wait_states <= x"00";
       else
 
-        report "CPU state : cpu_proceed=" & std_logic'image(cpu_proceed);
-        if cpu_proceed='1' then
+        report "CPU state : memory_access_ready=" & std_logic'image(memory_access_ready);
+        if memory_access_ready='1' then
 
           -- Update clocked signals if CPU is moving forward.
           system_address <= system_address_next;
@@ -488,11 +399,10 @@ begin
   -- alternate (new) combinatorial core memory address generation.
   process (hypervisor_mode,
     viciii_iomode,
-    shadow_rdata,cpu_proceed,
-    cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
+    shadow_rdata,memory_access_ready,
+    memory_access_read_next, memory_access_write_next, memory_access_address_next, memory_access_wdata_next, memory_access_io_next,
+    memory_access_ext_next,
     rom_writeprotect,
-    cpu_resolved_memory_access_address_next,
-    cpu_io_sel_resolved, cpu_ext_sel_resolved,
     system_address_next, system_address, bus_device, io_sel_next, ext_sel_next
     )
     
@@ -516,10 +426,10 @@ begin
     charrom_write_cs_next <= '0';
     memory_access_write_var := '0';
     
-    system_address_var := cpu_resolved_memory_access_address_next;
-    io_sel_next_var := cpu_io_sel_resolved;
-    ext_sel_next_var := cpu_ext_sel_resolved;
-    memory_access_write_var := cpu_memory_access_write_next;
+    system_address_var := memory_access_address_next;
+    io_sel_next_var := memory_access_io_next;
+    ext_sel_next_var := memory_access_ext_next;
+    memory_access_write_var := memory_access_write_next;
     
     -- Kickstart ROM chip select.
     if (hypervisor_mode='1' and system_address_var(19 downto 14)&"00" = x"F8") then
@@ -528,7 +438,7 @@ begin
       kickstart_cs_var := '0';
     end if;
     
-		if cpu_memory_access_write_next='1' then
+		if memory_access_write_next='1' then
       
 		  if system_address_var(19 downto 17)="001" then
 		    report "writing to ROM. addr=$" & to_hstring(system_address_var) severity note;
@@ -554,13 +464,12 @@ begin
     -- FIXME - Come up with a better standardized naming scheme.
     io_sel_next <= io_sel_next_var;
     ext_sel_next <= ext_sel_next_var;    
-    memory_ready_out <= bus_ready;
     shadow_write_next <= shadow_write_var;
     
     system_address_next <= system_address_var;
-    system_write_next <= cpu_memory_access_write_next;
-    system_read_next  <= cpu_memory_access_read_next;
-    system_wdata_next <= std_logic_vector(cpu_memory_access_wdata_next);
+    system_write_next <= memory_access_write_next;
+    system_read_next  <= memory_access_read_next;
+    system_wdata_next <= std_logic_vector(memory_access_wdata_next);
     
     -- Color ram chip select (next)
     colour_ram_cs_next <= '0';
@@ -570,7 +479,7 @@ begin
     
     -- Additional colour ram write area on C65 from 0x1f800 to 0x1ffff
     -- We only do this for writes because for reads we just get it from shadow.
-    if cpu_memory_access_write_next='1' and system_address_next(19 downto 12) = x"1F" and system_address_next(11) = '1' then
+    if memory_access_write_next='1' and system_address_next(19 downto 12) = x"1F" and system_address_next(11) = '1' then
       colour_ram_cs_next <= '1';
     end if;
     -- I/O window to color ram.

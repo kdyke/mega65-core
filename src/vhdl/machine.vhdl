@@ -671,18 +671,34 @@ architecture Behavioral of machine is
   signal cpu_memory_access_resolve_address_next : std_logic;
   signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
   signal cpu_memory_access_io_next : std_logic;
-  signal bus_read_data : unsigned(7 downto 0);
+  signal cpu_read_data : unsigned(7 downto 0);
   signal cpu_ready : std_logic;
   signal cpu_map_en_next : std_logic;
-  signal cpu_memory_ready : std_logic;
+  signal cpu_bus_ready : std_logic;
+
+  signal bus_cpu_ready : std_logic;
 
   signal rom_writeprotect : std_logic; -- TEMP
   signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
   signal cpuport_value : unsigned(7 downto 0);
   
-  --attribute keep of bus_read_data : signal is "true";
-  --attribute dont_touch of bus_read_data : signal is "true";
-  --attribute mark_debug of bus_read_data : signal is "true";
+  signal cpu_resolved_memory_access_address_next : std_logic_vector(19 downto 0);
+  
+  signal dat_bitplane_addresses_drive : sprite_vector_eight;
+  signal dat_offset_drive : unsigned(15 downto 0) := to_unsigned(0,16);
+  
+  signal cartridge_enable : std_logic := '0';
+  signal gated_exrom : std_logic := '1'; 
+  signal gated_game : std_logic := '1';
+  signal force_exrom : std_logic := '1'; 
+  signal force_game : std_logic := '1';
+  
+  signal cpu_io_sel_resolved : std_logic;
+  signal cpu_ext_sel_resolved : std_logic;
+    
+  --attribute keep of cpu_read_data : signal is "true";
+  --attribute dont_touch of cpu_read_data : signal is "true";
+  --attribute mark_debug of cpu_read_data : signal is "true";
   --
   --attribute mark_debug of btnCpuReset : signal is "true";
   --attribute mark_debug of reset_io : signal is "true";
@@ -742,6 +758,17 @@ begin
       power_on_reset(7) <= '1';
       power_on_reset(6 downto 0) <= power_on_reset(7 downto 1);
 
+      dat_bitplane_addresses_drive <= dat_bitplane_addresses;
+      dat_offset_drive <= dat_offset;
+
+      if cartridge_enable='1' then
+        gated_exrom <= cpu_exrom and force_exrom;
+        gated_game <= cpu_game and force_game;
+      else
+        gated_exrom <= force_exrom;
+        gated_game <= force_game;
+      end if;
+      
       led(0) <= irq;
       led(1) <= nmi;
       led(2) <= combinedirq;
@@ -988,10 +1015,10 @@ begin
       memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
       memory_access_wdata_next           => cpu_memory_access_wdata_next,
       memory_access_io_next              => cpu_memory_access_io_next,
-      memory_read_data                   => bus_read_data,
-      cpu_ready                          => cpu_ready,
+      memory_read_data                   => cpu_read_data,
+      cpu_ready                          => bus_cpu_ready,
       map_en_next                        => cpu_map_en_next,
-      ready                              => cpu_memory_ready,
+      ready                              => cpu_bus_ready,
       rom_writeprotect                   => rom_writeprotect,
       cpuport_ddr_out => cpuport_ddr,
       cpuport_value_out => cpuport_value,
@@ -1000,47 +1027,72 @@ begin
       
       );
 
+      address_resolver0 : entity work.address_resolver port map(
+        short_address => cpu_memory_access_address_next,
+        writeP => cpu_memory_access_write_next,
+        gated_exrom => gated_exrom,
+        gated_game => gated_game,
+        map_en => cpu_map_en_next,
+        resolve_address => cpu_memory_access_resolve_address_next,
+        io_sel => cpu_memory_access_io_next,
+        cpuport_value => cpuport_value,
+        cpuport_ddr => cpuport_ddr,
+        viciii_iomode => viciii_iomode,
+        sector_buffer_mapped => sector_buffer_mapped,
+        colourram_at_dc00 => colourram_at_dc00,
+        hypervisor_mode => cpu_hypervisor_mode,
+        rom_at_e000 => rom_at_e000,
+        rom_at_c000 => rom_at_c000,
+        rom_at_a000 => rom_at_a000,
+        rom_at_8000 => rom_at_8000,
+        dat_bitplane_addresses => dat_bitplane_addresses,
+        dat_offset_drive => dat_offset_drive,
+        io_sel_resolved => cpu_io_sel_resolved,
+        ext_sel_resolved => cpu_ext_sel_resolved,
+        resolved_address => cpu_resolved_memory_access_address_next
+      );
+  
       bus0: entity work.bus_interface
         port map(
           clock => cpuclock,
           reset =>reset_combined,
-          exrom => cpu_exrom,
-          game => cpu_game,
           hypervisor_mode => cpu_hypervisor_mode,
 
-          cpu_memory_access_address_next         => cpu_memory_access_address_next,
-          cpu_memory_access_read_next            => cpu_memory_access_read_next,
-          cpu_memory_access_write_next           => cpu_memory_access_write_next,  
-          cpu_memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
-          cpu_memory_access_wdata_next           => cpu_memory_access_wdata_next,
-          cpu_memory_access_io_next              => cpu_memory_access_io_next,
-          bus_read_data                          => bus_read_data,
-          cpu_proceed                            => cpu_ready,
-          cpu_map_en_next                        => cpu_map_en_next,
-          memory_ready_out                       => cpu_memory_ready,
+          memory_access_address_next             => cpu_resolved_memory_access_address_next,
+          memory_access_read_next                => cpu_memory_access_read_next,
+          memory_access_write_next               => cpu_memory_access_write_next,  
+          memory_access_ready                    => bus_cpu_ready,  -- CPU to bus ready signal
+          memory_access_wdata_next               => cpu_memory_access_wdata_next,
+          memory_access_io_next                  => cpu_io_sel_resolved,
+          memory_access_ext_next                 => cpu_ext_sel_resolved,
+
+          bus_read_data                          => cpu_read_data,   
+          bus_ready                              => cpu_bus_ready,  -- bus to CPU ready signal
           rom_writeprotect                       => rom_writeprotect,
-          cpuport_ddr => cpuport_ddr,
-          cpuport_value => cpuport_value,
-          dat_offset => dat_offset,
-          dat_bitplane_addresses => dat_bitplane_addresses,
 
           monitor_waitstates => monitor_waitstates,
+          
+          -- FIXME, this should go away really. It's just system_address_next with extra 0's.
           monitor_memory_access_address => monitor_memory_access_address,
       
           slow_access_rdata => slow_access_rdata,
           slow_access_ready => slow_access_ready,
       
+          -- At this point I think these all might just be copies of the memory_access_ signals and
+          -- so may not be needed any more.
           system_address_next => system_address_next,
           system_read_next    => system_read_next,
           system_write_next   => system_write_next,
           system_wdata_next   => system_wdata_next,
+          io_sel_next => io_sel_next,
+          ext_sel_next => ext_sel_next,
 
-          -- Nothing is using these yet, but eventuall will replace
-          -- dedicated FastIO signals.
           system_address => system_address,
           system_read    => system_read,
           system_write   => system_write,
           system_wdata   => system_wdata,
+          io_sel => io_sel,
+          ext_sel => slow_access_request,
           
           shadow_write_next  => shadow_write_next,          
           shadow_rdata       => shadow_rdata,
@@ -1057,17 +1109,9 @@ begin
           charrom_write_cs_next => charrom_write_cs_next,
           vic_cs => vic_cs,
           
-          io_sel_next => io_sel_next,
-          io_sel => io_sel,
-          ext_sel_next => ext_sel_next,
-          ext_sel => slow_access_request,
           viciii_iomode => viciii_iomode,
       
-          colourram_at_dc00 => colourram_at_dc00,
-          rom_at_e000 => rom_at_e000,
-          rom_at_c000 => rom_at_c000,
-          rom_at_a000 => rom_at_a000,
-          rom_at_8000 => rom_at_8000
+          colourram_at_dc00 => colourram_at_dc00
 
           );
 
