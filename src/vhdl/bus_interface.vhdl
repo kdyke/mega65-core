@@ -44,6 +44,8 @@ entity address_resolver is
     gated_exrom : in std_logic; 
     gated_game : in std_logic;
     map_en : in std_logic;
+    resolve_address : in std_logic;
+    io_sel : in std_logic;
     cpuport_ddr : in unsigned(7 downto 0);
     cpuport_value : in unsigned(7 downto 0);
     viciii_iomode : in std_logic_vector(1 downto 0);
@@ -275,6 +277,8 @@ begin
     end if;
 
     -- C65 DAT
+    -- This seems like it's in the wrong place.   If it's here then DMAgic can't write to 
+    -- the DAT, which I'm guessing actually worked on a real C65.
     report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
     if map_io='1' and viciii_iomode(0)='1' and temp_address(19 downto 3) & "000" = x"0D040" then
       temp_address(19 downto 17) := (others => '0');
@@ -289,9 +293,15 @@ begin
       report "C65 VIC-III DAT: Address translated to $" & to_hstring(temp_address);
     end if;
 
-    io_sel_resolved <= map_io;
-    ext_sel_resolved <= map_ext;
-    resolved_address <= std_logic_vector(temp_address);
+    if resolve_address='1' then
+      io_sel_resolved <= map_io;
+      ext_sel_resolved <= map_ext;
+      resolved_address <= std_logic_vector(temp_address);
+    else
+      io_sel_resolved <= io_sel;
+      ext_sel_resolved <= '0';
+      resolved_address <= std_logic_vector(short_address);
+    end if;
   end process;
 
 end Behavioural;
@@ -492,8 +502,8 @@ architecture Behavioural of bus_interface is
   signal shadow_try_write_count : unsigned(7 downto 0) := x"00";
   signal shadow_observed_write_count : unsigned(7 downto 0) := x"00";
 
-  signal io_sel_resolved : std_logic;
-  signal ext_sel_resolved : std_logic;
+  signal cpu_io_sel_resolved : std_logic;
+  signal cpu_ext_sel_resolved : std_logic;
   
   -- IO has one waitstate for reading, 0 for writing
   -- XXX An extra wait state seems to be necessary when reading from dual-port
@@ -542,11 +552,11 @@ architecture Behavioural of bus_interface is
 
   signal bus_device : bus_device_type;
     
-  signal post_resolve_memory_access_address_next : std_logic_vector(19 downto 0);
+  signal cpu_resolved_memory_access_address_next : std_logic_vector(19 downto 0);
   
   --attribute mark_debug of bus_device: signal is "true";
   --
-  --attribute mark_debug of post_resolve_memory_access_address_next: signal is "true";
+  --attribute mark_debug of cpu_resolved_memory_access_address_next: signal is "true";
   --
   --attribute mark_debug of system_wdata: signal is "true";
   --attribute mark_debug of system_address_next: signal is "true";
@@ -574,6 +584,8 @@ begin
     gated_exrom => gated_exrom,
     gated_game => gated_game,
     map_en => cpu_map_en_next,
+    resolve_address => cpu_memory_access_resolve_address_next,
+    io_sel => cpu_memory_access_io_next,
     cpuport_value => cpuport_value,
     cpuport_ddr => cpuport_ddr,
     viciii_iomode => viciii_iomode,
@@ -586,9 +598,9 @@ begin
     rom_at_8000 => rom_at_8000,
     dat_bitplane_addresses => dat_bitplane_addresses,
     dat_offset_drive => dat_offset_drive,
-    io_sel_resolved => io_sel_resolved,
-    ext_sel_resolved => ext_sel_resolved,
-    resolved_address => post_resolve_memory_access_address_next
+    io_sel_resolved => cpu_io_sel_resolved,
+    ext_sel_resolved => cpu_ext_sel_resolved,
+    resolved_address => cpu_resolved_memory_access_address_next
   );
   
   process(clock,reset)
@@ -758,7 +770,8 @@ begin
     shadow_rdata,cpu_proceed,
     cpu_memory_access_read_next, cpu_memory_access_write_next, cpu_memory_access_address_next, cpu_memory_access_wdata_next, cpu_memory_access_io_next,
     rom_writeprotect,
-    post_resolve_memory_access_address_next,
+    cpu_resolved_memory_access_address_next,
+    cpu_io_sel_resolved, cpu_ext_sel_resolved,
     system_address_next, system_address, bus_device, io_sel_next, ext_sel_next
     )
     
@@ -771,6 +784,7 @@ begin
     
     variable pre_resolve_addr_var : unsigned(19 downto 0);
     variable kickstart_cs_var : std_logic;
+    variable memory_access_write_var : std_logic;
     
   begin
         
@@ -779,17 +793,13 @@ begin
     shadow_write_var := '0';
     kickstart_write_var := '0';
     charrom_write_cs_next <= '0';
+    memory_access_write_var := '0';
     
-	  if cpu_memory_access_resolve_address_next = '1' then        
-	    system_address_var := post_resolve_memory_access_address_next;
-      io_sel_next_var := io_sel_resolved;
-      ext_sel_next_var := ext_sel_resolved;
-    else
-      system_address_var := std_logic_vector(cpu_memory_access_address_next);
-      io_sel_next_var := cpu_memory_access_io_next;
-      ext_sel_next_var := '0';
-    end if;      
-
+    system_address_var := cpu_resolved_memory_access_address_next;
+    io_sel_next_var := cpu_io_sel_resolved;
+    ext_sel_next_var := cpu_ext_sel_resolved;
+    memory_access_write_var := cpu_memory_access_write_next;
+    
     -- Kickstart ROM chip select.
     if (hypervisor_mode='1' and system_address_var(19 downto 14)&"00" = x"F8") then
       kickstart_cs_var := '1';
