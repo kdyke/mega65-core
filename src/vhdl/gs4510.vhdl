@@ -1343,7 +1343,8 @@ begin
         read_source <= Unmapped;
       end if;
 
-      if (viciii_iomode="01" or viciii_iomode="11") and (long_address(19 downto 8) = x"0D7") then
+      if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
+        ((long_address(19 downto 4) = x"0D70") or (long_address(19 downto 4) = x"0D7F")) then
         report "Preparing to read from a DMAgicRegister";
         read_source <= DMAgicRegister;
       end if;      
@@ -1484,7 +1485,8 @@ begin
       last_write_address <= real_long_address;
       last_write_fastio <= '0';
       
-      if (io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and long_address(19 downto 8) = x"0D7") then        
+      if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
+      ((long_address(19 downto 4) = x"0D70") or (long_address(19 downto 4) = x"0D7F")) then
         dmagic_write := '1';
       end if;
 
