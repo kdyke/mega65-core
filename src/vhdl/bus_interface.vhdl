@@ -518,7 +518,7 @@ begin
 
     dmagic_cs_next <= '0';
     if io_sel_next='1' then
-      if system_address_next(11 downto 4) = x"71" then
+      if system_address_next(11 downto 4) = x"71" and viciii_iomode(0)='1' then
         dmagic_cs_next <= '1';
       end if;
     end if;
