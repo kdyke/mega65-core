@@ -53,7 +53,7 @@ entity bus_interface is
     memory_access_wdata_next : in unsigned(7 downto 0);
     memory_access_io_next : in std_logic;
     memory_access_ext_next : in std_logic;
-    memory_access_ready : in std_logic;
+    ack : in std_logic;
     
     bus_read_data : out unsigned(7 downto 0);
     bus_ready : inout std_logic;
@@ -95,6 +95,12 @@ entity bus_interface is
     charrom_write_cs_next : out std_logic := '0';
     vic_cs_next : inout std_logic := '0';
     vic_cs : inout std_logic := '0';
+    
+    -- For new DMAgic implementation
+    dmagic_cs_next : inout std_logic;
+    dmagic_cs : inout std_logic;
+    dmagic_rdata : in std_logic_vector(7 downto 0);
+    dmagic_io_ready : in std_logic;
     
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
@@ -145,7 +151,7 @@ entity bus_interface is
     --attribute keep of bus_read_data : signal is "true";
     --attribute dont_touch of bus_read_data : signal is "true";
     --attribute mark_debug of bus_read_data : signal is "true";
-    --attribute mark_debug of memory_access_ready : signal is "true";
+    --attribute mark_debug of ack : signal is "true";
     --attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of vic_rdata : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
@@ -216,7 +222,8 @@ architecture Behavioural of bus_interface is
     VICIV,                  -- 0x06
     Kickstart,              -- 0x07
     SlowRAM,                -- 0x08
-    Unmapped                -- 0x09
+    DMAgicNew,              -- 0x09
+    Unmapped                -- 0x0A
     );
 
   signal bus_device : bus_device_type;
@@ -290,6 +297,8 @@ begin
         bus_device <= ColourRAM;
       elsif vic_cs_next='1' then
         bus_device <= VICIV;
+      elsif dmagic_cs_next='1' then
+        bus_device <= DMAgicNew;
       elsif io_sel_next='1' then
         report "Preparing to read from FastIO";
         bus_device <= FastIO;        
@@ -372,10 +381,10 @@ begin
         wait_states <= x"00";
       else
 
-        report "CPU state : memory_access_ready=" & std_logic'image(memory_access_ready);
-        if memory_access_ready='1' then
+        report "CPU state : ack=" & std_logic'image(ack);
+        if ack='1' then
 
-          -- Update clocked signals if CPU is moving forward.
+          -- Update clocked signals if bus master is moving forward and begin bus access cycle
           system_address <= system_address_next;
           system_read <= system_read_next;
           system_write <= system_write_next;
@@ -383,6 +392,7 @@ begin
           io_sel <= io_sel_next;
           ext_sel <= ext_sel_next;
           vic_cs <= vic_cs_next;
+          dmagic_cs <= dmagic_cs_next;
           
           bus_access(io_sel_next,ext_sel_next);
 
@@ -399,7 +409,7 @@ begin
   -- alternate (new) combinatorial core memory address generation.
   process (hypervisor_mode,
     viciii_iomode,
-    shadow_rdata,memory_access_ready,
+    shadow_rdata,ack,
     memory_access_read_next, memory_access_write_next, memory_access_address_next, memory_access_wdata_next, memory_access_io_next,
     memory_access_ext_next,
     rom_writeprotect,
@@ -506,6 +516,13 @@ begin
     -- registers from all other IO registers, partly to work around some bugs,
     -- and partly because the banking of the VIC registers is the fiddliest part.
 
+    dmagic_cs_next <= '0';
+    if io_sel_next='1' then
+      if system_address_next(11 downto 4) = x"71" then
+        dmagic_cs_next <= '1';
+      end if;
+    end if;
+      
     vic_cs_next <= '0';
     if io_sel_next='1' then
       if system_address_next(11 downto 10) = "00" then  --   $D{0,1,2,3}XX
@@ -552,6 +569,9 @@ begin
     elsif bus_device = CPUPort or bus_device=HypervisorRegister or bus_device=DMAgicRegister then
       bus_read_data <= x"55";
       bus_ready <= cpu_internal_ready; -- TODO - This is temporary until we update internal CPU logic to do this for itself.
+    elsif bus_device = DMAgicNew then
+      bus_read_data <= unsigned(dmagic_rdata);
+      bus_ready <= dmagic_io_ready;
     elsif bus_device = Unmapped then
       bus_read_data <= x"AA";
       bus_ready <= '1';

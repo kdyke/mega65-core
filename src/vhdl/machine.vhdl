@@ -422,6 +422,10 @@ architecture Behavioral of machine is
   signal io_sel : std_logic;
   signal vic_cs : std_logic;
   signal io_ready : std_logic;
+
+  signal dmagic_cs_next : std_logic;
+  signal dmagic_io_ready : std_logic;
+  signal dmagic_rdata : std_logic_vector(7 downto 0)  := (others => '0');
   
   signal system_address_next : std_logic_vector(19 downto 0);
   signal system_write_next : std_logic;
@@ -664,19 +668,43 @@ architecture Behavioral of machine is
   signal system_address_state_dbg_out : std_logic_vector(3 downto 0);
   signal pixelclock_select : std_logic_vector(7 downto 0);
   
-  -- New CPU bus interface signals
+  -- New CPU bus interface signals (CPU to arbiter and address resolver)
   signal cpu_memory_access_address_next : unsigned(19 downto 0);
   signal cpu_memory_access_read_next : std_logic;
   signal cpu_memory_access_write_next : std_logic;
   signal cpu_memory_access_resolve_address_next : std_logic;
   signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
   signal cpu_memory_access_io_next : std_logic;
+  signal cpu_ack : std_logic;
   signal cpu_read_data : unsigned(7 downto 0);
   signal cpu_ready : std_logic;
   signal cpu_map_en_next : std_logic;
-  signal cpu_bus_ready : std_logic;
 
-  signal bus_cpu_ready : std_logic;
+  -- Signals between DMAgic and bus arbiter
+  signal dmagic_memory_access_address_next : std_logic_vector(19 downto 0);
+  signal dmagic_memory_access_read_next : std_logic;
+  signal dmagic_memory_access_write_next : std_logic;
+  signal dmagic_memory_access_resolve_address_next : std_logic;
+  signal dmagic_memory_access_wdata_next : unsigned(7 downto 0);
+  signal dmagic_memory_access_io_next : std_logic;
+  signal dmagic_memory_access_ext_next : std_logic;
+  signal dmagic_ack : std_logic;
+  signal dmagic_read_data : unsigned(7 downto 0);
+  signal dmagic_ready : std_logic;
+  signal dmagic_dma_req : std_logic;
+  signal dmagic_cpu_req : std_logic;
+
+  -- Signals between bus arbiter and bus interface
+  signal bus_memory_access_address_next : std_logic_vector(19 downto 0);
+  signal bus_memory_access_read_next : std_logic;
+  signal bus_memory_access_write_next : std_logic;
+  signal bus_memory_access_resolve_address_next : std_logic;
+  signal bus_memory_access_wdata_next : unsigned(7 downto 0);
+  signal bus_memory_access_io_next : std_logic;
+  signal bus_memory_access_ext_next : std_logic;
+  signal bus_ack : std_logic;
+  signal bus_read_data : unsigned(7 downto 0);
+  signal bus_ready : std_logic;
 
   signal rom_writeprotect : std_logic; -- TEMP
   signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
@@ -1016,9 +1044,9 @@ begin
       memory_access_wdata_next           => cpu_memory_access_wdata_next,
       memory_access_io_next              => cpu_memory_access_io_next,
       memory_read_data                   => cpu_read_data,
-      cpu_ready                          => bus_cpu_ready,
+      cpu_ready                          => cpu_ack,
       map_en_next                        => cpu_map_en_next,
-      ready                              => cpu_bus_ready,
+      ready                              => cpu_ready,
       rom_writeprotect                   => rom_writeprotect,
       cpuport_ddr_out => cpuport_ddr,
       cpuport_value_out => cpuport_value,
@@ -1052,22 +1080,91 @@ begin
         resolved_address => cpu_resolved_memory_access_address_next
       );
   
+      dmagic0: entity work.dmagic
+      port map(
+          clock => cpuclock,
+          reset => reset_combined,
+          
+          memory_access_address_next        => dmagic_memory_access_address_next,
+          memory_access_read_next           => dmagic_memory_access_read_next,
+          memory_access_write_next          => dmagic_memory_access_write_next,
+          memory_access_wdata_next          => dmagic_memory_access_wdata_next,
+          memory_access_io_next             => dmagic_memory_access_io_next,
+          memory_access_ext_next            => dmagic_memory_access_ext_next,
+          ack                               => dmagic_ack,
+          bus_ready                         => dmagic_ready,
+          read_data                         => dmagic_read_data,
+          dma_req                           => dmagic_dma_req,
+          cpu_req                           => dmagic_cpu_req,
+          
+          io_address_next                   => system_address_next(7 downto 0),
+          io_cs                             => dmagic_cs_next,
+          io_read_next                      => system_read_next,
+          io_write_next                     => system_write_next,
+          io_wdata_next                     => system_wdata_next,
+          io_data                           => dmagic_rdata,
+          io_ready                          => dmagic_io_ready
+          
+          );
+
+      arbiter0: entity work.bus_arbiter
+      port map(
+          clock => cpuclock,
+          reset => reset_combined,
+          
+          -- Signals from CPU (or address resolver) to arbiter
+          cpu_memory_access_address_next  => cpu_resolved_memory_access_address_next,
+          cpu_memory_access_read_next     => cpu_memory_access_read_next,
+          cpu_memory_access_write_next    => cpu_memory_access_write_next,
+          cpu_memory_access_wdata_next    => cpu_memory_access_wdata_next,
+          cpu_memory_access_io_next       => cpu_io_sel_resolved,
+          cpu_memory_access_ext_next      => cpu_ext_sel_resolved,
+          cpu_ack                         => cpu_ack,
+          cpu_read_data                   => cpu_read_data,
+          cpu_ready                       => cpu_ready,
+
+          -- Signals from DMAgic to arbiter
+          dmagic_memory_access_address_next  => dmagic_memory_access_address_next,
+          dmagic_memory_access_read_next     => dmagic_memory_access_read_next,
+          dmagic_memory_access_write_next    => dmagic_memory_access_write_next,
+          dmagic_memory_access_wdata_next    => dmagic_memory_access_wdata_next,
+          dmagic_memory_access_io_next       => dmagic_memory_access_io_next,
+          dmagic_memory_access_ext_next      => dmagic_memory_access_ext_next,
+          dmagic_ack                         => dmagic_ack,
+          dmagic_read_data                   => dmagic_read_data,
+          dmagic_ready                       => dmagic_ready,
+          dmagic_dma_req                     => dmagic_dma_req,
+          dmagic_cpu_req                     => dmagic_cpu_req,
+          
+          -- Signals from arbiter to bus interface
+          bus_memory_access_address_next  => bus_memory_access_address_next,
+          bus_memory_access_read_next     => bus_memory_access_read_next,
+          bus_memory_access_write_next    => bus_memory_access_write_next,
+          bus_memory_access_wdata_next    => bus_memory_access_wdata_next,
+          bus_memory_access_io_next       => bus_memory_access_io_next,
+          bus_memory_access_ext_next      => bus_memory_access_ext_next,
+          bus_ack                         => bus_ack,
+          bus_read_data                   => bus_read_data,
+          bus_ready                       => bus_ready
+          
+          );
+          
       bus0: entity work.bus_interface
         port map(
           clock => cpuclock,
           reset =>reset_combined,
           hypervisor_mode => cpu_hypervisor_mode,
 
-          memory_access_address_next             => cpu_resolved_memory_access_address_next,
-          memory_access_read_next                => cpu_memory_access_read_next,
-          memory_access_write_next               => cpu_memory_access_write_next,  
-          memory_access_ready                    => bus_cpu_ready,  -- CPU to bus ready signal
-          memory_access_wdata_next               => cpu_memory_access_wdata_next,
-          memory_access_io_next                  => cpu_io_sel_resolved,
-          memory_access_ext_next                 => cpu_ext_sel_resolved,
+          memory_access_address_next             => bus_memory_access_address_next,
+          memory_access_read_next                => bus_memory_access_read_next,
+          memory_access_write_next               => bus_memory_access_write_next,  
+          ack                                    => bus_ack,
+          memory_access_wdata_next               => bus_memory_access_wdata_next,
+          memory_access_io_next                  => bus_memory_access_io_next,
+          memory_access_ext_next                 => bus_memory_access_ext_next,
+          bus_read_data                          => bus_read_data,   
+          bus_ready                              => bus_ready,
 
-          bus_read_data                          => cpu_read_data,   
-          bus_ready                              => cpu_bus_ready,  -- bus to CPU ready signal
           rom_writeprotect                       => rom_writeprotect,
 
           monitor_waitstates => monitor_waitstates,
@@ -1100,6 +1197,10 @@ begin
           kickstart_cs_next  => kickstart_cs_next,
           kickstart_rdata    => kickstart_rdata,
       
+          dmagic_io_ready    => dmagic_io_ready,
+          dmagic_cs_next     => dmagic_cs_next,
+          dmagic_rdata       => dmagic_rdata,
+          
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
           vic_rdata => vic_rdata,
