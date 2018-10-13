@@ -108,8 +108,6 @@ architecture Behavioural of bus_arbiter is
   
   attribute keep_hierarchy of Behavioural : architecture is "yes";
   
-  -- Microcode data and ALU routing signals follow:
-
   type bus_master_type is (
     CPU,
     DMAgic
@@ -117,7 +115,8 @@ architecture Behavioural of bus_arbiter is
 
   -- bus_master_next always controls who is driving the signals going into the bus interface    
   signal bus_master_next : bus_master_type;
-  -- bus_master controls which device is connected to the signals coming back from the bus interface
+  -- bus_master controls which device is connected to the signals coming back from the bus interface,
+  -- and who is driving the ACK signal from the CPU/DMAgic side.
   signal bus_master : bus_master_type;
   --
   
@@ -164,7 +163,13 @@ begin
       cpu_read_data     <= bus_read_data;
       dmagic_ready      <= '0';
       dmagic_read_data  <= x"FF";
-      bus_ack           <= cpu_ack;
+      -- A note on this.  When dmagic is performing a memory access on behalf of the CPU, 
+      -- the bus interface would normally need to wait one more clock before the bus master
+      -- signal would switch to dmagic's ack signal.  This would cause a single cycle bubble
+      -- even though the address signals were already driving dmagic signals below.  There's
+      -- no point delaying the ack because the CPU is already waiting.   So, I treat dmagic_cpu_req
+      -- as another way to force ACK to true to eliminate the bubble.
+      bus_ack           <= cpu_ack or dmagic_cpu_req;
     else
       cpu_ready         <= '0';
       cpu_read_data     <= x"FF";
@@ -220,13 +225,7 @@ begin
         bus_master_next <= CPU;
       end if;
     else -- The current bus master is the CPU, but DMAgic wants it.
-      -- TODO - I'd like to also support having DMAgic perform a read or write on the CPU's
-      -- behalf, which will involve stealing the bus from the CPU mid-cycle.  I think we'd
-      -- need special signaling from DMAgic to let us know when it is being asked to do this,
-      -- in which case I think it'd be ok.  It's just going to take a few cycles I think for
-      -- the bus interface to switch over.  DMAgic will have to convince the bus interface
-      -- to move forward and accept another address, and 
-      if dmagic_cpu_req='1' then -- Special DMA cycle performed by DMAgic on behalf of CPU (i.e. flat 20-bit addressing via PIO)
+      if dmagic_cpu_req='1' then -- Special DMA cycle performed by DMAgic on behalf of CPU (i.e. flat 20-bit access via PIO)
         bus_master_next <= DMAgic;
       elsif cpu_ack='1' and dmagic_dma_req='1' then     -- CPU is finished w/bus cycle and DMAgic is asking for the bus
         bus_master_next <= DMAgic;

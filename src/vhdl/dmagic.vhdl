@@ -102,28 +102,68 @@ architecture Behavioural of dmagic is
   type dmagic_state_type is (
     DMAgic_Idle,
     DMAgic_CPUAccessRead,
-    DMAgic_CPUAccessReadData,
+    DMAgic_CPUAccessReadWait,
     DMAgic_CPUAccessWrite,
     DMAgic_CPUAccessAck
     );
 
   signal dmagic_state : dmagic_state_type;
   signal dmagic_state_next : dmagic_state_type;
+
+  type dmagic_address_op is (
+    Addr_Idle,
+    Addr_CPU,
+    Addr_Src,
+    Addr_Dst
+  );
+  
+  signal dmagic_addr_op_next : dmagic_address_op;
+  signal dmagic_write_next : std_logic;
+  signal dmagic_wdata_next : unsigned(7 downto 0);  -- FIXME, should be std_logic_vector
+  
+  type dmagic_iodata_op is (
+    Data_Idle,
+    Data_Addr0,
+    Data_Addr1,
+    Data_Addr2,
+    Data_Index,
+    Data_Read
+  );
+  
+  signal dmagic_data_op_next : dmagic_iodata_op;
   
   -- Our PIO address
   signal dmagic_pio_addr : unsigned(19 downto 0);
   signal dmagic_pio_index : unsigned(7 downto 0);
+    
+  signal index_increment : std_logic;
+  signal load_addr0 : std_logic;
+  signal load_addr1 : std_logic;
+  signal load_addr2 : std_logic;
+  signal load_index : std_logic;
+
   --attribute mark_debug of dmagic_state : signal is "true";
   --attribute mark_debug of dmagic_state_next : signal is "true";
-    
+  --attribute mark_debug of dmagic_pio_addr : signal is "true";
+  --attribute mark_debug of dmagic_pio_index : signal is "true";
+  --
+  --attribute mark_debug of dmagic_addr_op_next : signal is "true";
+  --attribute mark_debug of dmagic_write_next : signal is "true";
+  --attribute mark_debug of dmagic_wdata_next : signal is "true";
+  --attribute mark_debug of dmagic_data_op_next : signal is "true";
+  --
+  --attribute mark_debug of index_increment : signal is "true";
+  --attribute mark_debug of load_addr0 : signal is "true";
+  --attribute mark_debug of load_addr1 : signal is "true";
+  --attribute mark_debug of load_addr2 : signal is "true";
+  --attribute mark_debug of load_index : signal is "true";
+  
 begin
   
   process(clock,reset)
   
-  -- This entire implementation is horrible and needs to be redone with both a combinatorial and
-  -- clocked section.   There isnt enough control over the signals with it being purely clocked to respond
-  -- to the different clock signals as it should be able to.   Right now it's basiclly impossible for
-  -- DMAgic and the CPU to use alternate bus cycles properly.
+  variable tmp_sum : unsigned(8 downto 0);
+  
   begin    
 
   -- DMAgic state machine
@@ -131,102 +171,144 @@ begin
       
       if reset='0' then
         dmagic_state <= DMAgic_Idle;
-        dma_req   <= '0';
-        cpu_req   <= '0';
-        dmagic_pio_index <= x"00";
         
       else
-        --dmagic_state <= dmagic_state_next;
+        
+        dmagic_state <= dmagic_state_next;
       
-        if io_cs='1' and io_read_next='1' then
-          if io_address_next=x"10" then
-            io_data <= std_logic_vector(dmagic_pio_addr(7 downto 0));
-            io_ready <= '1';
-          elsif io_address_next=x"11" then
-            io_data <= std_logic_vector(dmagic_pio_addr(15 downto 8));
-            io_ready <= '1';
-          elsif io_address_next=x"12" then
-            io_data(3 downto 0) <= std_logic_vector(dmagic_pio_addr(19 downto 16));
-            io_data(7 downto 4) <= x"0";
-            io_ready <= '1';
-          elsif io_address_next=x"13" then
-            io_data <= std_logic_vector(dmagic_pio_index);
-            io_ready <= '1';
-          end if;
-        end if;
-        
-        if io_cs='1' and io_write_next='1' then
-          if io_address_next=x"10" then
-            dmagic_pio_addr(7 downto 0) <= unsigned(io_wdata_next(7 downto 0));
-            io_ready <= '1';
-          elsif io_address_next=x"11" then
-            dmagic_pio_addr(15 downto 8) <= unsigned(io_wdata_next(7 downto 0));
-            io_ready <= '1';
-          elsif io_address_next=x"12" then
-            dmagic_pio_addr(19 downto 16) <= unsigned(io_wdata_next(3 downto 0));
-            io_ready <= '1';
-          elsif io_address_next=x"13" then
-            dmagic_pio_index(7 downto 0) <= unsigned(io_wdata_next(7 downto 0));
-            io_ready <= '1';
-          end if;
-        end if;
-        
-        -- Quick and dirty hack
-        case dmagic_state is
-          when DMAgic_Idle =>
-            if io_cs='1' and (io_address_next=x"14" or io_address_next=x"15") then
-              io_ready <= '0';
-              memory_access_address_next <= std_logic_vector(dmagic_pio_addr + dmagic_pio_index);
-              memory_access_write_next <= io_write_next;
-              memory_access_wdata_next <= unsigned(io_wdata_next);
-              cpu_req <= '1';
-              ack <= '1';
-              if io_write_next='1' then
-                dmagic_state <= DMAgic_CPUAccessWrite;
-              else
-                dmagic_state <= DMAgic_CPUAccessRead;
-              end if;
-              if io_address_next(0)='1' then              -- Optional auto-increment of pio address
-                dmagic_pio_addr <= dmagic_pio_addr + 1;
-              end if;
-            end if;
-          when DMAgic_CPUAccessRead =>
-            if bus_ready='1' then
-              -- Note: We can't drive ready on the next cycle in the current implementation because
-              -- the cpu_req signal won't be dropped until the next cycle, and so it'll take one more
-              -- cycle after that for the bus interface to switch back to reading from our I/O port.
-              -- If I fix the state machine to be combinatorial then I can probably shave a cycle off
-              -- the read access time.
-              io_data <= std_logic_vector(read_data);             -- Snapshot read data into our output register so CPU can get it on the next cycle.
-              cpu_req <= '0';                                     -- Drop bus request
-              dmagic_state <= DMAgic_CPUAccessReadData;
-            end if;
-          when DMAgic_CPUAccessReadData =>
-            if io_cs='1' then                                     -- Wait for bus interface to direct control back to us before we drive ready again.
-              --io_ready <= '1';
-              dmagic_state <= DMAgic_CPUAccessAck;
-            end if;
-          when DMAgic_CPUAccessWrite =>
-              if bus_ready='1' then
-                io_ready <= '1';                  -- We can be ready as of the next cycle
-                memory_access_write_next <= '0';  -- Drop write signal
-                cpu_req <= '0';                   -- Drop bus request
-                dmagic_state <= DMAgic_CPUAccessAck;
-              end if;
-          when DMAgic_CPUAccessAck =>
-            io_ready <= '1';
-            if io_cs='0' then --- Wait for CPU to stop talking to us before we go idle so we can't accidentally trigger again.
-              dmagic_state <= DMAgic_Idle;
-            end if;
+        -- Address bus output update
+        case dmagic_addr_op_next is
+          when Addr_Idle => memory_access_write_next <= '0';          
+          when Addr_CPU  => memory_access_address_next <= std_logic_vector(dmagic_pio_addr + dmagic_pio_index);
+                            memory_access_write_next <= dmagic_write_next;
+                            memory_access_wdata_next <= dmagic_wdata_next;
+                           
           when others => null;
-            
         end case;
         
-      end if;
+        -- Data output register
+        case dmagic_data_op_next is
+          when Data_Addr0 => io_data <= std_logic_vector(dmagic_pio_addr(7 downto 0));
+          when Data_Addr1 => io_data <= std_logic_vector(dmagic_pio_addr(15 downto 8));
+          when Data_Addr2 => io_data(3 downto 0) <= std_logic_vector(dmagic_pio_addr(19 downto 16));
+                             io_data(7 downto 4) <= x"0";
+          when Data_Index => io_data <= std_logic_vector(dmagic_pio_index);
+          when Data_Read  => io_data <= std_logic_vector(read_data);
+          when others => null;
+        end case;
+        
+        -- Internal register updates
+        if index_increment='1' then
+          tmp_sum := '0' & dmagic_pio_index + 1;
+          dmagic_pio_index <= tmp_sum(7 downto 0);                
+          dmagic_pio_addr(19 downto 8) <= dmagic_pio_addr(19 downto 8) + tmp_sum(8 downto 8);  -- Increment pio addr by carry
+        else
+          if load_addr0='1' then
+            dmagic_pio_addr(7 downto 0) <= unsigned(io_wdata_next(7 downto 0));
+          elsif load_addr1='1' then
+            dmagic_pio_addr(15 downto 8) <= unsigned(io_wdata_next(7 downto 0));
+          elsif load_addr2='1' then
+            dmagic_pio_addr(19 downto 16) <= unsigned(io_wdata_next(3 downto 0));
+          elsif load_index='1' then
+            dmagic_pio_index(7 downto 0) <= unsigned(io_wdata_next(7 downto 0));
+          end if;
+        end if;        
+        
+      end if;                       -- !reset
       
     end if;                         -- if rising edge of clock
     
   end process;
       
+  -- State machine control
+  process(clock,reset,io_cs,bus_ready,dmagic_state,io_address_next,io_read_next,io_write_next)
+  
+  begin
+
+    -- Default control signal states to prevent latches.
+    dma_req <= '0';
+    cpu_req <= '0';
+    io_ready <= '1';
+    ack <= '1';
+    dmagic_addr_op_next <= Addr_Idle;
+    dmagic_data_op_next <= Data_Idle;
+    load_addr0 <= '0';
+    load_addr1 <= '0';
+    load_addr2 <= '0';
+    load_index <= '0';
+    index_increment <= '0';
+    
+    dmagic_state_next <= dmagic_state;
+
+    case dmagic_state is
+      when DMAgic_Idle =>
+        if io_cs='1' then
+          if io_address_next=x"10" then
+            load_addr0 <= io_write_next;
+            dmagic_data_op_next <= Data_Addr0;
+          elsif io_address_next=X"11" then
+            load_addr1 <= io_write_next;
+            dmagic_data_op_next <= Data_Addr1;
+          elsif io_address_next=X"12" then
+            load_addr2 <= io_write_next;
+            dmagic_data_op_next <= Data_Addr2;
+          elsif io_address_next=X"13" then
+            load_index <= io_write_next;
+            dmagic_data_op_next <= Data_Index;
+          elsif io_address_next=x"14" or io_address_next=x"15" then
+            dmagic_addr_op_next <= Addr_CPU;
+            dmagic_wdata_next <= unsigned(io_wdata_next);
+            dmagic_write_next <= io_write_next;
+            if io_write_next='1' then
+              dmagic_state_next <= DMAgic_CPUAccessWrite;
+            else
+              dmagic_state_next <= DMAgic_CPUAccessRead;
+            end if;
+            index_increment <= io_address_next(0);
+          end if; -- Register Accesses
+        end if; -- Chip select enable
+        
+        -- During DMAgic_CPUAccessRead we are driving our output signals with the data we want.  We're waiting
+        -- to be told the data is available.  We also hold io_ready low since the bus interface will sill be
+        -- feeding the CPU from FastIO (i.e. us) during this cycle and we don't have the data yet.
+      when DMAgic_CPUAccessRead =>
+        io_ready <= '0';
+        cpu_req <= '1';
+        if bus_ready='1' then
+          cpu_req <= '0'; -- Let CPU have the bus again (it should start driving our own address immediately
+          dmagic_data_op_next <= Data_Read;
+
+          -- If CPU has grabbed address bus again and is now sourcing from us again (or will on the next cycle), 
+          -- proceed directly to Ack state. Otherwise we need to go to DMAgic_CPUReadWait and wait for it to catch up.
+          if io_cs='1' then 
+            dmagic_state_next <= DMAgic_CPUAccessAck;
+          else
+            dmagic_state_next <= DMAgic_CPUAccessReadWait;
+          end if;
+
+        end if;
+      when DMAgic_CPUAccessReadWait =>
+        io_ready <= '0';
+        if io_cs='1' then                                     -- Wait for bus arbiter to direct control back to us
+          dmagic_state_next <= DMAgic_CPUAccessAck;
+        end if;
+      when DMAgic_CPUAccessWrite =>
+        io_ready <= '1';                                      -- This could be set to 1 to make this act like a posted write would save a bus cycle on writes.
+        cpu_req <= '1';
+        if bus_ready='1' then
+          cpu_req <= '0';                   -- Drop bus request
+          dmagic_state_next <= DMAgic_CPUAccessAck;
+        end if;
+      when DMAgic_CPUAccessAck =>
+        dmagic_addr_op_next <= Addr_Idle; -- Stop driving write request.
+        if io_cs='0' then --- Wait for CPU to stop talking to us before we go idle so we can't accidentally trigger again.
+          dmagic_state_next <= DMAgic_Idle;
+        end if;
+      when others => null;
+                
+    end case;
+
+  end process;
+  
 end Behavioural;
 
