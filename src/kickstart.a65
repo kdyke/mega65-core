@@ -2640,12 +2640,11 @@ um2:	sta msg_utility_item,y
 	lda zptempv	
 	sta msg_utility_item
 	ldz #4
-um4:	nop
-	lda (<zptempv32),z
+	stz $d713       ; Update index
+um4:	lda $d715       ; Load/inc
 	sta msg_utility_item,y
 	beq um3
 	iny
-	inz
 	bra um4
 um3:
 
@@ -2694,12 +2693,10 @@ ueol1:
 	; Load selected utility into memory
 	; length @ offset 36
 	ldz #36
-	nop
-	lda (<zptempv32),z
+	stz $d713               ; Set DMAgic PIO index
+	lda $d715               ; Load/inc
 	sta utility_dmalist_length+0
-	inz
-	nop
-	lda (<zptempv32),z
+	lda $d715               ; Load/inc
 	sta utility_dmalist_length+1
 	lda <zptempv32+0
 	clc
@@ -2737,12 +2734,10 @@ ueol1:
 
 	; Exit hypervisor, with PC set to entry point of utility
 	ldz #38
-	nop
-	lda (<zptempv32),z
+	stz $d713               ; Set index
+	lda $d715               ; Load/inc
 	sta hypervisor_pcl
-	inz
-	nop
-	lda (<zptempv32),z
+	lda $d715               ; Load/inc
 	sta hypervisor_pch
 
 	jsr task_set_c64_memorymap
@@ -2790,54 +2785,46 @@ utillist_next:
 
 	; Advance pointer to the next pointer
 	ldz #42
-	nop
-	lda (<zptempv32),z
+	stz $d713       ; Set PIO index
+	lda $d715       ; Load/inc
 	phx
 	tax
-	inz
-	nop
-	lda (<zptempv32),z
+	lda $d715       ; Load/inc
 	; XXX - Make sure it can't point earlier into the colour RAM here
 
 	sta <zptempv32+1
+	sta $d710+1     ; Set PIO addr1
 	stx <zptempv32
+	stx $d710+0     ; Set PIO addr2
 	plx
 	rts
 
 utillist_validity_check:
 	; See if this is a valid utility entry
 	ldz #0
+	stz $d713       ; Zero DMAgic PIO index register
 
 	; Check for magic value
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	lda $d715       ; Load value (and increment)
 	cmp #'M
 	bne ulvc_fail
-	inz
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	lda $d715       ; Load value (and increment)
 	cmp #'6
 	bne ulvc_fail
-	inz
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	lda $d715       ; Load value (and increment)
 	cmp #'5
 	bne ulvc_fail
-	inz
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	lda $d715       ; Load value (and increment)
 	cmp #'U
 	bne ulvc_fail
 
 	; Check self address
 	ldz #40
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	stz $d713       ; Set index
+	lda $d715       ; Load value (and increment)
 	cmp zptempv32
 	bne ulvc_fail
-	inz
-	nop ; 32-bit pointer access follows
-	lda (<zptempv32),z
+	lda $d715       ; Load value (and increment)
 	cmp zptempv32+1
 	bne ulvc_fail
 
@@ -2853,10 +2840,13 @@ utillist_rewind:
 	; Set pointer to first entry in colour RAM ($0850)
 	lda #<$0850
 	sta <zptempv32
+	sta $d710+0                             ; Update DMAgic PIO base address0
 	lda #>$0850
 	sta <zptempv32+1
+	sta $d710+1
 	lda #<$0FF8
 	sta <zptempv32+2
+	sta $d710+2
 	lda #>$0FF8
 	sta <zptempv32+3
 

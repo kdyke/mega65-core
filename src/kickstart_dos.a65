@@ -3215,17 +3215,17 @@ drfim_sector_loop:
 	ldx #$00
 	ldz #$00
 
-        ; set up new DMAgic PIO address
-        lda dos_file_loadaddress+0
-        sta $d710
-        lda dos_file_loadaddress+1
-        sta $d711
-        lda dos_file_loadaddress+2
-        sta $d712
-        stx $d713                       ;reset index
+	; set up new DMAgic PIO address
+	lda dos_file_loadaddress+0
+	sta $d710
+	lda dos_file_loadaddress+1
+	sta $d711
+	lda dos_file_loadaddress+2
+	sta $d712
+	stx $d713                       ;reset index
 drfim_rr1:
 	lda sd_sectorbuffer,x		; is $DE00
-        sta $d715                       ; write byte and auto-increment dest address
+	sta $d715                       ; write byte and auto-increment dest address
 	inx
 	bne drfim_rr1
 
@@ -3233,7 +3233,7 @@ drfim_rr1:
 
 drfim_rr1b:
 	lda sd_sectorbuffer+$100,x	; is $DF00
-        sta $d715                       ; write byte and auto-increment dest address
+	sta $d715                       ; write byte and auto-increment dest address
 	inx
 	bne drfim_rr1b
 
