@@ -1537,15 +1537,14 @@ begin
       --   $D800 - $DBFF in the usual IO pages.
       --   $DC00 - $DFFF in the enhanced IO pages when the correct VIC-III
       --   register is set.
-      --   $FF80000-$FF8FFFF - All 64KB of colour RAM
+      --   $80000-$8FFFF - All 64KB (32KB?) of colour RAM
       -- The colour RAM has to be dual-port since the video controller needs to
       -- access it as well, so all these have to be mapped on a single port.
-      colour_ram_address <= (others => '1');
       if io_sel_next='1' then
         -- Any I/O based color ram address is just the bottom 11 bits.  Whether we actually
         -- write or read from the upper half is controlled by the color_ram_cs_next signal.
         colour_ram_address <= unsigned("00000" & system_address_next(10 downto 0));
-      elsif register_bank(7 downto 4)=x"8" then
+      else
                                         -- colour RAM all 64KB
         colour_ram_address <= unsigned(system_address_next(15 downto 0));
       end if;
