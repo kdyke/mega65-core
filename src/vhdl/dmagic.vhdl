@@ -112,7 +112,7 @@ architecture Behavioural of dmagic is
   
   -- Our PIO address
   signal dmagic_pio_addr : unsigned(19 downto 0);
-  
+  signal dmagic_pio_index : unsigned(7 downto 0);
   --attribute mark_debug of dmagic_state : signal is "true";
   --attribute mark_debug of dmagic_state_next : signal is "true";
     
@@ -133,6 +133,7 @@ begin
         dmagic_state <= DMAgic_Idle;
         dma_req   <= '0';
         cpu_req   <= '0';
+        dmagic_pio_index <= x"00";
         
       else
         --dmagic_state <= dmagic_state_next;
@@ -148,6 +149,9 @@ begin
             io_data(3 downto 0) <= std_logic_vector(dmagic_pio_addr(19 downto 16));
             io_data(7 downto 4) <= x"0";
             io_ready <= '1';
+          elsif io_address_next=x"13" then
+            io_data <= std_logic_vector(dmagic_pio_index);
+            io_ready <= '1';
           end if;
         end if;
         
@@ -161,6 +165,9 @@ begin
           elsif io_address_next=x"12" then
             dmagic_pio_addr(19 downto 16) <= unsigned(io_wdata_next(3 downto 0));
             io_ready <= '1';
+          elsif io_address_next=x"13" then
+            dmagic_pio_index(7 downto 0) <= unsigned(io_wdata_next(7 downto 0));
+            io_ready <= '1';
           end if;
         end if;
         
@@ -169,7 +176,7 @@ begin
           when DMAgic_Idle =>
             if io_cs='1' and (io_address_next=x"14" or io_address_next=x"15") then
               io_ready <= '0';
-              memory_access_address_next <= std_logic_vector(dmagic_pio_addr);
+              memory_access_address_next <= std_logic_vector(dmagic_pio_addr + dmagic_pio_index);
               memory_access_write_next <= io_write_next;
               memory_access_wdata_next <= unsigned(io_wdata_next);
               cpu_req <= '1';
