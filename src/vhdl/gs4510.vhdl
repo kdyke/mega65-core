@@ -413,10 +413,6 @@ architecture Behavioural of gs4510 is
   -- absolute addresses
   signal reg_addr_msbs : unsigned(15 downto 0)  := (others => '0');
   signal reg_addr_lsbs : unsigned(15 downto 0)  := (others => '0');
-  -- Flag that indicates if a ($nn),Z access is using a 32-bit pointer
-  signal absolute32_addressing_enabled : std_logic := '0';
-  -- flag for progressive carry calculation when loading a 32-bit pointer
-  signal pointer_carry : std_logic := '0';
   -- Temporary value holder (used for RMW instructions)
   signal reg_t : unsigned(7 downto 0)  := (others => '0');
   signal reg_t_high : unsigned(7 downto 0)  := (others => '0');
@@ -546,9 +542,6 @@ architecture Behavioural of gs4510 is
     InnYReadVectorHigh,
     InnZReadVectorLow,
     InnZReadVectorHigh,
-    InnZReadVectorByte2,
-    InnZReadVectorByte3,
-    InnZReadVectorByte4,
     CallSubroutine,CallSubroutine2,       -- 0x2A, 0x2B
     ZPRelReadZP,                          -- 0x2C
     JumpAbsXReadArg2,
@@ -2902,7 +2895,6 @@ begin
                 -- happen immediately after a single cycle instruction, because
                 -- interrupts are only checked in InstructionFetch, not
                 -- InstructionDecode).
-                absolute32_addressing_enabled <= '0';
 
                 case memory_read_value is
                   when x"03" =>
@@ -2942,20 +2934,9 @@ begin
                   when x"D8" => flag_d <= '0';  -- CLD
                   when x"E8" => reg_x <= x_incremented; set_nz(x_incremented); -- INX
                   when x"EA" => map_interrupt_inhibit <= '0'; -- EOM
-                                -- Enable 32-bit pointer for ($nn),Z addressing
-                                -- mode
-                                absolute32_addressing_enabled <= '1';
                   when x"F8" => flag_d <= '1';  -- SED
                   when others => null;
                 end case;
-                
-                -- Preserve absolute32_addressing_enabled value if the current
-                -- instruction is ($nn),Z, so that we can use a 32-bit pointer
-                -- for that instruction.  Fortunately these all have the same
-                -- bottom five bits, being $x2, where x is odd.
-                if memory_read_value(4 downto 0) = "10010" then
-                  absolute32_addressing_enabled <= absolute32_addressing_enabled;
-                end if;
                 
                 if op_is_single_cycle(to_integer(emu6502&memory_read_value)) = '0' then
                   if (mode_lut(to_integer(emu6502&memory_read_value)) = M_immnn)
@@ -3092,9 +3073,6 @@ begin
                 report "Executing instruction " & instruction'image(instruction_lut(to_integer(emu6502&memory_read_value)))
                   severity note;                
 
-                -- See if this is a single cycle instruction in 6502 mode.
-                absolute32_addressing_enabled <= '0';
-                
                 case memory_read_value is
                   when x"0A" => reg_a <= a_asl; set_nz(a_asl); flag_c <= reg_a(7); -- ASL A
                   when x"18" => flag_c <= '0';  -- CLC
@@ -3119,9 +3097,6 @@ begin
                   when x"D8" => flag_d <= '0';  -- CLD
                   when x"E8" => reg_x <= x_incremented; set_nz(x_incremented); -- INX
                   when x"EA" => map_interrupt_inhibit <= '0'; -- EOM
-                                                              -- Enable 32-bit pointer for ($nn),Z addressing
-                                                              -- mode
-                                absolute32_addressing_enabled <= '1';
                   when x"F8" => flag_d <= '1';  -- SED
                   when others => null;
                 end case;
@@ -3624,60 +3599,8 @@ begin
               report "VAL32: InnZReadVectorLow value read as $" & to_hstring(memory_read_value)
                 & ", memory_access_address was $" & to_hstring(memory_access_address);
               reg_addr_lsbs(7 downto 0) <= memory_read_value;
-              if absolute32_addressing_enabled='1' then
-                report "VAL32: absolute32_addressing_enabled=1, so proceeding to InnZReadVectorByte2";
-                state <= InnZReadVectorByte2;
-                reg_addr <= reg_addr + 1;
-              else
-                reg_addr(7 downto 0) <= memory_read_value;
-                state <= InnZReadVectorHigh;
-              end if;
-            when InnZReadVectorByte2 =>
-                                        -- Do addition of Z register as we go along, so that we don't have
-                                        -- a 32-bit carry.
-              reg_addr <= reg_addr + 1;
-              report "VAL32/ABS32: Adding "
-                & integer'image(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0)) )
-                & " to " & integer'image(to_integer(reg_z));
-
-              temp17 :=
-                to_unsigned(to_integer(memory_read_value&reg_addr_lsbs(7 downto 0))
-                            + to_integer(reg_z),17);
-              reg_addr_lsbs <= temp17(15 downto 0);
-              pointer_carry <= temp17(16);
-              state <= InnZReadVectorByte3;
-            when InnZReadVectorByte3 =>
-                                        -- Do addition of Z register as we go along, so that we don't have
-                                        -- a 32-bit carry.
-              if pointer_carry='1' then
-                temp9 := to_unsigned(to_integer(memory_read_value)+1,9);
-              else 
-                temp9 := to_unsigned(to_integer(memory_read_value)+0,9);
-              end if;
-              reg_addr_msbs(7 downto 0) <= temp9(7 downto 0);
-              pointer_carry <= temp9(8);
-              state <= InnZReadVectorByte4;
-            when InnZReadVectorByte4 =>
-                                        -- Do addition of Z register as we go along, so that we don't have
-                                        -- a 32-bit carry.
-              if pointer_carry='1' then
-                temp9 := to_unsigned(to_integer(memory_read_value)+1,9);
-              else 
-                temp9 := to_unsigned(to_integer(memory_read_value)+0,9);
-              end if;
-              reg_addr_msbs(15 downto 8) <= temp9(7 downto 0);
-              reg_addr(15 downto 0) <= reg_addr_lsbs;
-              report "VAL32/ABS32: final address is $"
-                & to_hstring(temp9(3 downto 0))
-                & to_hstring(reg_addr_msbs(7 downto 0))
-                & to_hstring(reg_addr_lsbs);
-              if is_load='1' or is_rmw='1' then
-                report "VAL32: (ZP),Z LoadTarget";
-                state <= LoadTarget;
-              else
-                                        -- (reading next instruction argument byte as default action)
-                state <= MicrocodeInterpret;
-              end if;
+              reg_addr(7 downto 0) <= memory_read_value;
+              state <= InnZReadVectorHigh;
             when InnZReadVectorHigh =>
               reg_addr <=
                 to_unsigned(to_integer(memory_read_value&reg_addr(7 downto 0))
@@ -4182,7 +4105,7 @@ begin
     reg_dmagic_addr,mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,monitor_mem_write_drive,monitor_mem_wdata_drive,
     monitor_mem_read,monitor_mem_setpc,dmagic_src_addr,dmagic_dest_addr,viciii_iomode,reg_dmagic_transparent_value,
     reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_addr,reg_instruction,
-    reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
+    reg_sph,reg_pc_jsr,reg_b,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
     dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,proceed,
     read_data,
     rom_writeprotect,
@@ -4490,12 +4413,12 @@ begin
   		    memory_access_write := '1';
           address_op := addr_op_sp;
   		    memory_access_wdata := reg_pc_jsr(7 downto 0);
-  		  when CallSubroutine2|InnXReadVectorLow|InnSPYReadVectorLow|InnYReadVectorLow|InnZReadVectorLow|InnZReadVectorByte2|
-              InnZReadVectorByte3|JumpDereference|JumpDereference2 =>
+  		  when CallSubroutine2|InnXReadVectorLow|InnSPYReadVectorLow|InnYReadVectorLow|InnZReadVectorLow|
+              JumpDereference|JumpDereference2 =>
   		    -- Immediately start reading the next instruction
   		    memory_access_read := '1';
           address_op := addr_op_addr;        
-  		  when InnXReadVectorHigh|InnSPYReadVectorHigh|InnYReadVectorHigh|InnZReadVectorByte4|InnZReadVectorHigh =>
+  		  when InnXReadVectorHigh|InnSPYReadVectorHigh|InnYReadVectorHigh|InnZReadVectorHigh =>
   		    if is_load='1' or is_rmw='1' then
             address_op := addr_op_dummy;
   		    end if;
@@ -4610,12 +4533,8 @@ begin
     		  end if;
         when addr_op_addr32flat =>
   		    memory_access_address(15 downto 0) := reg_addr;
-  		    memory_access_resolve_address := not absolute32_addressing_enabled;
-  		    if absolute32_addressing_enabled='1' then
-  		      memory_access_address(19 downto 16) := reg_addr_msbs(3 downto 0);
-  		    else
-  		      memory_access_address(19 downto 16) := x"0";
-  		    end if;
+  		    memory_access_resolve_address := '1';
+		      memory_access_address(19 downto 16) := x"0";
       end case;
 
       map_en_var := '0';
