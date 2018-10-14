@@ -4141,7 +4141,6 @@ begin
       addr_op_sp,         -- current SP
       addr_op_pop,        -- basically SP+1
       addr_op_addr,       -- normal 16-bit address
-      addr_op_addr32flat, -- 32-bit flat address fetch
       addr_op_monitor,
       addr_op_dmagic,
       addr_op_temp
@@ -4438,13 +4437,13 @@ begin
   		    memory_access_wdata := reg_t_high;
   		  when WriteCommit =>
   		    memory_access_write := '1';
-          address_op := addr_op_addr32flat;
+          address_op := addr_op_addr;
   		    memory_access_wdata := reg_t;
   		  when LoadTarget =>
   		    -- For some addressing modes we load the target in a separate
   		    -- cycle to improve timing.
   		    memory_access_read := '1';
-          address_op := addr_op_addr32flat;
+          address_op := addr_op_addr;
   		  when MicrocodeInterpret =>
 
   		    if reg_microcode.mcStoreA='1' then memory_access_wdata := reg_a; end if;
@@ -4474,7 +4473,7 @@ begin
   		    end if;
   		    memory_access_write := reg_microcode.mcWriteMem;
   		    if reg_microcode.mcWriteMem='1' then
-            address_op := addr_op_addr32flat;
+            address_op := addr_op_addr;
   		    end if;
   		  when PushWordLow =>
           address_op := addr_op_sp;
@@ -4531,10 +4530,6 @@ begin
     		    -- constrain stack pointer to single page if E flag is set
     		    memory_access_address := x"0"&reg_sph&(reg_sp+1);
     		  end if;
-        when addr_op_addr32flat =>
-  		    memory_access_address(15 downto 0) := reg_addr;
-  		    memory_access_resolve_address := '1';
-		      memory_access_address(19 downto 16) := x"0";
       end case;
 
       map_en_var := '0';
