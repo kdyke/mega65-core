@@ -92,6 +92,7 @@ entity gs4510 is
     matrix_rain_seed : out unsigned(15 downto 0) := (others => '0');
     
     no_kickstart : in std_logic;
+    dmagic_en : in std_logic;
 
     reg_isr_out : in unsigned(7 downto 0);
     imask_ta_out : in std_logic;
@@ -1337,7 +1338,7 @@ begin
       end if;
 
       if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-        ((long_address(19 downto 4) = x"0D70") or (long_address(19 downto 4) = x"0D7F")) then
+        ((long_address(19 downto 4) = x"0D70" and dmagic_en='0') or (long_address(19 downto 4) = x"0D7F")) then
         report "Preparing to read from a DMAgicRegister";
         read_source <= DMAgicRegister;
       end if;      
@@ -1479,7 +1480,7 @@ begin
       last_write_fastio <= '0';
       
       if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-      ((long_address(19 downto 4) = x"0D70") or (long_address(19 downto 4) = x"0D7F")) then
+      ((long_address(19 downto 4) = x"0D70" and dmagic_en='0') or (long_address(19 downto 4) = x"0D7F")) then
         dmagic_write := '1';
       end if;
 
@@ -4021,7 +4022,7 @@ begin
                                         -- Mark pages dirty as necessary        
         if memory_access_write='1' then
 
-          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D700" then
+          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D700" and dmagic_en='0' then
             report "DMAgic: DMA pending";
             dma_pending <= '1';
             state <= DMAgicTrigger;
@@ -4037,7 +4038,7 @@ begin
             report "Setting PC to self (DMAgic entry)";
             reg_pc <= reg_pc;
           end if;
-          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D705" then
+          if (viciii_iomode="01" or viciii_iomode="11") and io_sel_next='1' and memory_access_address = x"0D705" and dmagic_en='0'  then
             report "DMAgic: Enhanced DMA pending";
             dma_pending <= '1';
             state <= DMAgicTrigger;
@@ -4171,7 +4172,7 @@ begin
         
     -- Hold previous bus values by default unless we know we are making forward progress.
     memory_access_read := memory_access_read_hold;
-    memory_access_write := '0';
+    memory_access_write := memory_access_write_hold;
     memory_access_resolve_address := memory_access_resolve_address_hold;
     memory_access_address := memory_access_address_hold;
     memory_access_wdata := memory_access_wdata_hold;

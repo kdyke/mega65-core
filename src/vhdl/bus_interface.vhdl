@@ -102,6 +102,8 @@ entity bus_interface is
     dmagic_rdata : in std_logic_vector(7 downto 0);
     dmagic_io_ready : in std_logic;
     
+    dmagic_en : in std_logic;
+    
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
     ---------------------------------------------------------------------------
@@ -151,8 +153,13 @@ entity bus_interface is
     --attribute keep of bus_read_data : signal is "true";
     --attribute dont_touch of bus_read_data : signal is "true";
     --attribute mark_debug of bus_read_data : signal is "true";
+    --attribute mark_debug of bus_ready : signal is "true";
     --attribute mark_debug of ack : signal is "true";
-    --attribute mark_debug of memory_ready_out : signal is "true";
+    --attribute mark_debug of dmagic_cs_next : signal is "true";
+    --attribute mark_debug of colourram_at_dc00 : signal is "true";
+    --attribute mark_debug of sector_buffer_mapped : signal is "true";
+    --attribute mark_debug of colour_ram_cs_next : signal is "true";
+    
     --attribute mark_debug of vic_rdata : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
     --attribute mark_debug of vic_cs : signal is "true";
@@ -163,7 +170,6 @@ entity bus_interface is
     --attribute mark_debug of io_sel_next : signal is "true";
     --attribute mark_debug of io_sel : signal is "true";
     --attribute mark_debug of io_rdata : signal is "true";
-    --attribute mark_debug of memory_ready_out : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
     --attribute mark_debug of colour_ram_cs_next : signal is "true";
     --attribute mark_debug of charrom_write_cs_next : signal is "true";
@@ -232,10 +238,7 @@ architecture Behavioural of bus_interface is
   --
   --attribute mark_debug of cpu_resolved_memory_access_address_next: signal is "true";
   --
-  --attribute mark_debug of system_wdata: signal is "true";
-  --attribute mark_debug of system_address_next: signal is "true";
-  --attribute mark_debug of system_address: signal is "true";
-  --
+
   --attribute mark_debug of bus_proceed: signal is "true";
   --attribute mark_debug of wait_states: signal is "true";
     
@@ -254,15 +257,15 @@ begin
   
   process(clock,reset)
 
-    procedure reset_cpu_state is
+    procedure reset_bus_state is
     begin
 
       wait_states <= (others => '0');
-      bus_ready <= '1';
-      bus_device <= Shadow;
+      --bus_ready <= '1';
+      bus_device <= Unmapped;
       slow_access_ready_internal <= '0';
       
-    end procedure reset_cpu_state;
+    end procedure reset_bus_state;
 
     procedure bus_access(
       io_sel_next : in std_logic;
@@ -332,8 +335,9 @@ begin
         report "Preparing to read from Unmapped";
         bus_device <= Unmapped;
       end if;
+      
       if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-      ((long_address(19 downto 4) = x"0D70") or (long_address(19 downto 4) = x"0D7F")) then
+      ((long_address(19 downto 4) = x"0D70" and dmagic_en='0') or (long_address(19 downto 4) = x"0D7F")) then
         report "Preparing to read from a DMAgicRegister";
         bus_device <= DMAgicRegister;
       end if;      
@@ -378,6 +382,7 @@ begin
                                         -- report "reset = " & std_logic'image(reset) severity note;
       reset_drive <= reset;
       if reset_drive='0' then
+        reset_bus_state;
         wait_states <= x"00";
       else
 
@@ -517,8 +522,9 @@ begin
     -- and partly because the banking of the VIC registers is the fiddliest part.
 
     dmagic_cs_next <= '0';
-    if io_sel_next='1' then
-      if system_address_next(11 downto 4) = x"71" and viciii_iomode(0)='1' then
+    if io_sel_next='1' and viciii_iomode(0)='1' then
+      if system_address_next(11 downto 4) = x"71" or 
+         (dmagic_en='1' and system_address_next(11 downto 4) = x"70") then
         dmagic_cs_next <= '1';
       end if;
     end if;

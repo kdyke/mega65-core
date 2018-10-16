@@ -71,7 +71,8 @@ entity machine is
          cpu_game : in std_logic;
 
          no_kickstart : in std_logic;
-
+         dmagic_en : in std_logic;
+         
          flopled : out std_logic;
          flopmotor : out std_logic;
 
@@ -803,7 +804,8 @@ begin
       led(3) <= combinednmi;
       led(4) <= io_irq;
       led(5) <= io_nmi;
-      led(7 downto 6) <= (others => '0');
+      led(6) <= '0';
+      led(7) <= dmagic_en;
       led(8) <= motor;
       led(9) <= drive_led_out;
       led(10) <= cpu_hypervisor_mode;
@@ -982,6 +984,7 @@ begin
       iomode_set_toggle => iomode_set_toggle,
       
       no_kickstart => no_kickstart,
+      dmagic_en => dmagic_en,
       
       reg_isr_out => reg_isr_out,
       imask_ta_out => imask_ta_out,
@@ -1085,25 +1088,25 @@ begin
           clock => cpuclock,
           reset => reset_combined,
           
-          memory_access_address_next        => dmagic_memory_access_address_next,
-          memory_access_read_next           => dmagic_memory_access_read_next,
-          memory_access_write_next          => dmagic_memory_access_write_next,
-          memory_access_wdata_next          => dmagic_memory_access_wdata_next,
-          memory_access_io_next             => dmagic_memory_access_io_next,
-          memory_access_ext_next            => dmagic_memory_access_ext_next,
-          ack                               => dmagic_ack,
-          bus_ready                         => dmagic_ready,
-          read_data                         => dmagic_read_data,
-          dma_req                           => dmagic_dma_req,
-          cpu_req                           => dmagic_cpu_req,
+          dmagic_memory_access_address_next => dmagic_memory_access_address_next,
+          dmagic_memory_access_read_next    => dmagic_memory_access_read_next,
+          dmagic_memory_access_write_next   => dmagic_memory_access_write_next,
+          dmagic_memory_access_wdata_next   => dmagic_memory_access_wdata_next,
+          dmagic_memory_access_io_next      => dmagic_memory_access_io_next,
+          dmagic_memory_access_ext_next     => dmagic_memory_access_ext_next,
+          dmagic_ack                        => dmagic_ack,
+          dmagic_bus_ready                  => dmagic_ready,
+          dmagic_read_data                  => dmagic_read_data,
+          dmagic_dma_req                    => dmagic_dma_req,
+          dmagic_cpu_req                    => dmagic_cpu_req,
           
-          io_address_next                   => system_address_next(7 downto 0),
-          io_cs                             => dmagic_cs_next,
-          io_read_next                      => system_read_next,
-          io_write_next                     => system_write_next,
-          io_wdata_next                     => system_wdata_next,
-          io_data                           => dmagic_rdata,
-          io_ready                          => dmagic_io_ready
+          dmagic_io_address_next            => system_address_next(7 downto 0),
+          dmagic_io_cs                      => dmagic_cs_next,
+          dmagic_io_read_next               => system_read_next,
+          dmagic_io_write_next              => system_write_next,
+          dmagic_io_wdata_next              => system_wdata_next,
+          dmagic_io_data                    => dmagic_rdata,
+          dmagic_io_ready                   => dmagic_io_ready
           
           );
 
@@ -1166,6 +1169,8 @@ begin
           bus_ready                              => bus_ready,
 
           rom_writeprotect                       => rom_writeprotect,
+
+          dmagic_en => dmagic_en,
 
           monitor_waitstates => monitor_waitstates,
           

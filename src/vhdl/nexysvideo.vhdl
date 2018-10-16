@@ -178,6 +178,14 @@ entity container is
          --sseg_ca : out std_logic_vector(7 downto 0);
          --sseg_an : out std_logic_vector(7 downto 0)
          );
+
+         attribute keep_hierarchy : string;
+         attribute mark_debug : string;
+         attribute dont_touch : string;
+         attribute keep : string;
+
+         --attribute mark_debug of led_out: signal is "true";
+
 end container;
 
 architecture Behavioral of container is
@@ -359,6 +367,10 @@ end component;
   signal sawtooth_counter : integer := 0;
   signal sawtooth_level : integer := 0;
   
+  signal dmagic_en : std_logic := '0';
+  
+  --attribute mark_debug of dmagic_en: signal is "true";
+  
 begin
   
   dotclock1: entity work.dotclock100
@@ -505,6 +517,7 @@ begin
       iec_clk_external => iec_clk_i,
       
       no_kickstart => '0',
+      dmagic_en => dmagic_en,
       
       vsync           => vsync,
       hsync           => hsync,
@@ -620,8 +633,10 @@ begin
   restore_key <= not btn(1);
 
   led_out(7 downto 0) <= std_logic_vector(led(7 downto 0));
+
+  dmagic_en <= sw_in(7);
   
-  sw(15) <= sw_in(7);
+  sw(15) <= '0';
   sw(12) <= sw_in(6);
   sw(5 downto 0) <= sw_in(5 downto 0);
   
