@@ -367,10 +367,6 @@ end component;
   signal sawtooth_counter : integer := 0;
   signal sawtooth_level : integer := 0;
   
-  signal dmagic_en : std_logic := '0';
-  
-  --attribute mark_debug of dmagic_en: signal is "true";
-  
 begin
   
   dotclock1: entity work.dotclock100
@@ -517,7 +513,6 @@ begin
       iec_clk_external => iec_clk_i,
       
       no_kickstart => '0',
-      dmagic_en => dmagic_en,
       
       vsync           => vsync,
       hsync           => hsync,
@@ -634,8 +629,6 @@ begin
 
   led_out(7 downto 0) <= std_logic_vector(led(7 downto 0));
 
-  dmagic_en <= sw_in(7);
-  
   sw(15) <= '0';
   sw(12) <= sw_in(6);
   sw(5 downto 0) <= sw_in(5 downto 0);

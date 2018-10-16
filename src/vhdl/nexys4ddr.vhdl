@@ -270,8 +270,6 @@ architecture Behavioral of container is
   signal lcd_vsync : std_logic;
   signal lcd_display_enable : std_logic;
   
-  signal dmagic_en : std_logic;
-  
 begin
   
   dotclock1: entity work.dotclock100
@@ -398,7 +396,6 @@ begin
       iec_clk_external => iec_clk_i,
       
       no_kickstart => '0',
-      dmagic_en => dmagic_en,
       
       vsync           => vsync,
       hsync           => hsync,
@@ -537,7 +534,6 @@ begin
   nmi <= not btn(4);
   restore_key <= not btn(1);
 
-  dmagic_en <= sw(13);
   led(13) <= sw(13);
   
   process (cpuclock)

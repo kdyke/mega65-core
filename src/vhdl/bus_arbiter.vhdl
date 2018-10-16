@@ -106,7 +106,7 @@ end entity bus_arbiter;
 
 architecture Behavioural of bus_arbiter is
   
-  attribute keep_hierarchy of Behavioural : architecture is "yes";
+  --attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   type bus_master_type is (
     CPU,

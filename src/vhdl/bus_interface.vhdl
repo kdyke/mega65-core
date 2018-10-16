@@ -102,8 +102,6 @@ entity bus_interface is
     dmagic_rdata : in std_logic_vector(7 downto 0);
     dmagic_io_ready : in std_logic;
     
-    dmagic_en : in std_logic;
-    
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
     ---------------------------------------------------------------------------
@@ -140,6 +138,7 @@ entity bus_interface is
     --attribute mark_debug of system_read_next: signal is "true";
     --attribute mark_debug of system_write_next: signal is "true";
     --attribute mark_debug of system_wdata_next: signal is "true";
+    
     --
     --attribute mark_debug of system_address: signal is "true";
     --attribute mark_debug of system_read: signal is "true";
@@ -178,7 +177,7 @@ end entity bus_interface;
 
 architecture Behavioural of bus_interface is
   
-  attribute keep_hierarchy of Behavioural : architecture is "yes";
+  --attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   signal reset_drive : std_logic := '0';
 
@@ -337,7 +336,7 @@ begin
       end if;
       
       if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-      ((long_address(19 downto 4) = x"0D70" and dmagic_en='0') or (long_address(19 downto 4) = x"0D7F")) then
+        (long_address(19 downto 4) = x"0D7F") then
         report "Preparing to read from a DMAgicRegister";
         bus_device <= DMAgicRegister;
       end if;      
@@ -524,7 +523,7 @@ begin
     dmagic_cs_next <= '0';
     if io_sel_next='1' and viciii_iomode(0)='1' then
       if system_address_next(11 downto 4) = x"71" or 
-         (dmagic_en='1' and system_address_next(11 downto 4) = x"70") then
+         system_address_next(11 downto 4) = x"70" then
         dmagic_cs_next <= '1';
       end if;
     end if;

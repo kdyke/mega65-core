@@ -71,7 +71,6 @@ entity machine is
          cpu_game : in std_logic;
 
          no_kickstart : in std_logic;
-         dmagic_en : in std_logic;
          
          flopled : out std_logic;
          flopmotor : out std_logic;
@@ -805,7 +804,7 @@ begin
       led(4) <= io_irq;
       led(5) <= io_nmi;
       led(6) <= '0';
-      led(7) <= dmagic_en;
+      led(7) <= '0';
       led(8) <= motor;
       led(9) <= drive_led_out;
       led(10) <= cpu_hypervisor_mode;
@@ -984,7 +983,6 @@ begin
       iomode_set_toggle => iomode_set_toggle,
       
       no_kickstart => no_kickstart,
-      dmagic_en => dmagic_en,
       
       reg_isr_out => reg_isr_out,
       imask_ta_out => imask_ta_out,
@@ -1169,8 +1167,6 @@ begin
           bus_ready                              => bus_ready,
 
           rom_writeprotect                       => rom_writeprotect,
-
-          dmagic_en => dmagic_en,
 
           monitor_waitstates => monitor_waitstates,
           

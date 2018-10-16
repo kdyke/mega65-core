@@ -86,7 +86,7 @@ end entity dmagic;
 
 architecture Behavioural of dmagic is
   
-  attribute keep_hierarchy of Behavioural : architecture is "yes";
+  -- attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   -- Microcode data and ALU routing signals follow:
 
