@@ -183,6 +183,10 @@ entity gs4510 is
     cpu_ready : out std_logic;
     map_en_next : inout std_logic;
     rom_writeprotect : inout std_logic := '0';
+    
+    hypervisor_entry : out std_logic;
+    hypervisor_exit : out std_logic;
+    
     cpuport_ddr_out : out  unsigned(7 downto 0);
     cpuport_value_out : out unsigned(7 downto 0) := x"3F"  
     );
@@ -230,8 +234,6 @@ architecture Behavioural of gs4510 is
   signal last_byte2 : unsigned(7 downto 0)  := (others => '0');
   signal last_byte3 : unsigned(7 downto 0)  := (others => '0');
   signal last_bytecount : integer range 0 to 3 := 0;
-  signal last_action : character := ' ';
-  signal last_address : unsigned(19 downto 0)  := (others => '0'); -- FIXME
   signal last_value : unsigned(7 downto 0)  := (others => '0');
 
   signal read_data : unsigned(7 downto 0)  := (others => '0');
@@ -246,9 +248,8 @@ architecture Behavioural of gs4510 is
   signal last_write_address : unsigned(19 downto 0)  := (others => '0');
   -- Registers to hold delayed write to hypervisor and related CPU registers
   -- to improve CPU timing closure.
-  signal last_write_value : unsigned(7 downto 0)  := (others => '0');
   signal last_write_pending : std_logic := '0';
-  signal last_write_fastio : std_logic := '0';
+
   -- Flag used to ensure monitor serial character out busy flag gets asserted
   -- immediately on writing a character, without having to wait for the uart
   -- monitor to have a serial port tick (which is when it checks on that side)
@@ -382,7 +383,6 @@ architecture Behavioural of gs4510 is
   signal hyperport_num : unsigned(5 downto 0);
   signal cpuport_ddr : unsigned(7 downto 0) := x"FF";
   signal cpuport_value : unsigned(7 downto 0) := x"3F";
-  signal the_read_address : unsigned(19 downto 0);
   
   signal monitor_mem_trace_toggle_last : std_logic := '0';
 
@@ -946,7 +946,6 @@ architecture Behavioural of gs4510 is
     --attribute mark_debug of proceed: signal is "true";
     --
     --attribute mark_debug of last_write_address : signal is "true";
-    --attribute mark_debug of last_write_value : signal is "true";
     --attribute mark_debug of last_write_pending : signal is "true";
         
 begin
@@ -1212,35 +1211,28 @@ begin
 
     -- TODO - Boot all of this out of the CPU core, it doesn't belong here at all.
     procedure read_long_address(
-      real_long_address : in unsigned(19 downto 0);
+      memory_access_address : in unsigned(19 downto 0);
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
-      variable long_address : unsigned(19 downto 0);
     begin
 
-      last_action <= 'R'; last_address <= real_long_address;
-      
-      long_address := long_address_read;
-      
-      report "Reading from long address $" & to_hstring(long_address) severity note;
+      report "Reading from long address $" & to_hstring(memory_access_address) severity note;
       mem_reading <= '1';
       
-      the_read_address <= long_address;
-
-      report "MEMORY long_address = $" & to_hstring(long_address);
+      report "MEMORY long_address = $" & to_hstring(memory_access_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if io_sel_next='1' and long_address(15 downto 6)&"00" = x"D64" and hypervisor_mode='1' then
+      if io_sel_next='1' and memory_access_address(15 downto 6)&"00" = x"D64" and hypervisor_mode='1' then
         report "Preparing for reading hypervisor register";
         read_source <= HypervisorRegister;
         -- One cycle wait-state on hypervisor registers to remove the register
         -- decode from the critical path of memory access.
-        hyperport_num <= real_long_address(5 downto 0);
-      elsif (long_address = x"00000") or (long_address = x"00001") then
+        hyperport_num <= memory_access_address(5 downto 0);
+      elsif (memory_access_address = x"00000") or (memory_access_address = x"00001") then
         report "Preparing to read from a CPUPort";
         read_source <= CPUPort;
-        cpuport_num <= real_long_address(3 downto 0);
-      elsif (io_sel_next='1' and long_address = x"0d0a0") then
+        cpuport_num <= memory_access_address(3 downto 0);
+      elsif (io_sel_next='1' and memory_access_address = x"0d0a0") then
         report "Preparing to read from CPU memory expansion controller port";
         read_source <= CPUPort;
         cpuport_num <= "0010";        
@@ -1343,7 +1335,7 @@ begin
 
     -- TODO - Get this out of this file.   It doesn't belong here (nor as part of the real CPU core at all)
     procedure write_long_byte(
-      real_long_address       : in unsigned(19 downto 0);
+      memory_access_address       : in unsigned(19 downto 0);
       value              : in unsigned(7 downto 0);
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
@@ -1351,15 +1343,14 @@ begin
     begin
       -- Schedule the memory write to the appropriate destination.
 
-      last_action <= 'W'; last_value <= value; last_address <= real_long_address;
+      last_value <= value;
       
-      long_address := long_address_write;
+      long_address := memory_access_address;
       
-      last_write_address <= real_long_address;
-      last_write_fastio <= '0';
+      last_write_address <= memory_access_address;
       
       -- Write to CPU port
-      if (io_sel_next='0' and long_address = x"000000") then
+      if (io_sel_next='0' and memory_access_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
         if value = x"40" then
           force_fast <= '0';
@@ -1368,7 +1359,7 @@ begin
         else
           cpuport_ddr <= value;
         end if;
-      elsif (io_sel_next='0' and long_address = x"000001") then
+      elsif (io_sel_next='0' and memory_access_address = x"000001") then
         report "MEMORY: Writing to CPU PORT register" severity note;
         cpuport_value <= value;
       end if;
@@ -1381,9 +1372,7 @@ begin
         -- registers (except $D67F) has the effect delayed by one cycle. Should
         -- only matter if you run self-modifying code in these registers from the
         -- hypervisor. If you do that, then you probably deserve to see problems.
-        last_write_value <= value;
         last_write_pending <= '1';
-        last_write_fastio <= '1';
 
       else
         -- Don't let unmapped memory jam things up
@@ -3600,17 +3589,11 @@ begin
     variable io_sel_next_var : std_logic := '0';
     variable ext_sel_next_var : std_logic := '0';
     
-    variable long_address_read_var : unsigned(19 downto 0) := x"FFFFF";
-    variable long_address_write_var : unsigned(19 downto 0) := x"FFFFF";
-
     variable temp_addr : unsigned(15 downto 0);    
     variable stack_pop : std_logic;
     variable stack_push : std_logic;
     variable virtual_reg_p : std_logic_vector(7 downto 0);
   
-    -- temp hack as I work to move this code around...
-    variable long_address : unsigned(19 downto 0);
-
     type address_op_t is (
       addr_op_dummy,
       addr_op_pc,
@@ -3626,7 +3609,6 @@ begin
     variable blocknum : integer;
     variable reg_offset : unsigned(11 downto 0);
     variable map_en_var : std_logic;
-    variable pre_map_memory_access_address_next_var : unsigned(19 downto 0);
     
     --attribute mark_debug of address_op : variable is "true";
     --attribute mark_debug of memory_access_resolve_address : variable is "true";
@@ -3652,12 +3634,7 @@ begin
     memory_access_address := memory_access_address_hold;
     memory_access_wdata := memory_access_wdata_hold;
     memory_access_io := memory_access_io_hold;
-    -- By default, shadow/rom addresses hold previous values    
-    long_address_write_var := x"FFFFF";
-    long_address_read_var := x"FFFFF";
 
-    pre_map_memory_access_address_next_var := x"00000";
-    
     temp_addr := x"0000";
 
     map_en_next <= map_en_hold;
@@ -3690,6 +3667,10 @@ begin
     -- could use to detect a "real" read versus just a random "bus still has old address".
     
     -- TODO - Recombine the different "ready" signals into a single "ready" signal that's used everywhere.
+    
+    hypervisor_entry <= '0';
+    hypervisor_exit <= '0';
+    
     if ready='1' and phi_pause='0' then
     
       -- By default read next byte in instruction stream.
@@ -3903,6 +3884,10 @@ begin
           address_op := addr_op_addr;        
   		    memory_access_write := '1';
   		    memory_access_wdata := reg_t_high;
+        when TrapToHypervisor =>
+          hypervisor_entry <= '1';
+        when ReturnFromHypervisor =>
+          hypervisor_exit <= '1';        
   		  when others =>
   		    null;
   		end case;            
@@ -3965,19 +3950,6 @@ begin
       
       map_en_next <= map_en_var;
             
-      -- Default shadow memory address is passthrough...
-	    long_address := memory_access_address;
-
-  		if memory_access_write='1' then
-        
-  		  long_address_write_var := long_address;
-		                
-      elsif memory_access_read='1' then
-		   
-  		  long_address_read_var := long_address;
-		  
-      end if;
-
     end if;
 
     -- Assign outputs to signals that clocked side can see and use...
@@ -3987,10 +3959,6 @@ begin
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
     memory_access_io_next <= memory_access_io;
-    
-    -- FIXME - There's not really a reason for these to be different.
-    long_address_read <= long_address_read_var;
-    long_address_write <= long_address_write_var;
     
     cpuport_ddr_out <= cpuport_ddr;
     cpuport_value_out <= cpuport_value;
