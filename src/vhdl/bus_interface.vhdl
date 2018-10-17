@@ -92,7 +92,8 @@ entity bus_interface is
     vic_ready : in std_logic;
     
     colour_ram_data : in std_logic_vector(7 downto 0);
-
+    colour_ram_ready : in std_logic;
+    
     colour_ram_cs_next : inout std_logic := '0';
     charrom_write_cs_next : out std_logic := '0';
     vic_cs_next : inout std_logic := '0';
@@ -198,7 +199,6 @@ architecture Behavioural of bus_interface is
   -- consistent.
   signal shadow_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
-  signal colour_ram_ready : std_logic := '1';
   signal cpu_internal_ready : std_logic := '1';
   signal io_ready : std_logic := '0';
   

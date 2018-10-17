@@ -161,6 +161,8 @@ entity viciv is
     ack : in std_logic;
     
     colour_ram_rdata : out std_logic_vector(7 downto 0);
+    colour_ram_ready : out std_logic;
+    
     colour_ram_cs_next : in std_logic;
     charrom_write_cs_next : in std_logic;
 
@@ -1578,6 +1580,8 @@ begin
         -- Default is output register.
         vic_source <= VicRegister;
         vic_ready <= vic_cs;
+
+        colour_ram_ready <= colour_ram_cs_next;
         
         -- There are two sources of data we need to provide.  One is from the set of internal registers,
         -- the other is from the palette memory.  For the former we can provide those in a clocked manner,
