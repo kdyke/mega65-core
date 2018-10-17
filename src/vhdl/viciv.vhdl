@@ -157,6 +157,8 @@ entity viciv is
     fastio_wdata : in std_logic_vector(7 downto 0);
     
     vic_rdata : out std_logic_vector(7 downto 0);
+    vic_ready : out std_logic;
+    ack : in std_logic;
     
     colour_ram_rdata : out std_logic_vector(7 downto 0);
     colour_ram_cs_next : in std_logic;
@@ -1575,7 +1577,8 @@ begin
       if rising_edge(ioclock) then
         -- Default is output register.
         vic_source <= VicRegister;
-      
+        vic_ready <= vic_cs;
+        
         -- There are two sources of data we need to provide.  One is from the set of internal registers,
         -- the other is from the palette memory.  For the former we can provide those in a clocked manner,
         -- but for the latter the memories themselves require a clock cycle.   If we always used a clocked
@@ -2042,7 +2045,7 @@ begin
       clear_collisionspritesprite <= clear_collisionspritesprite_1;
       
       -- $D000 registers
-      if fastio_write='1' and io_sel='1'
+      if fastio_write='1' and io_sel='1' and ack='1'
         and (fastio_addr(19) = '0' or fastio_addr(19) = '1') then
         if register_number>=0 and register_number<8 then
           -- compatibility sprite coordinates

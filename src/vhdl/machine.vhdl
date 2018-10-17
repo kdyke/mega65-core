@@ -445,6 +445,8 @@ architecture Behavioral of machine is
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
   signal vic_rdata : std_logic_vector(7 downto 0);
+  signal vic_ready : std_logic;
+  
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
 
   --signal chipram_we : STD_LOGIC;
@@ -1205,6 +1207,7 @@ begin
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
           vic_rdata => vic_rdata,
+          vic_ready => vic_ready,
           colour_ram_data => colour_ram_fastio_rdata,
 
           colour_ram_cs_next => colour_ram_cs_next,
@@ -1371,6 +1374,8 @@ begin
       fastio_wdata    => system_wdata,
       vic_cs          => vic_cs,
       vic_rdata       => vic_rdata,
+      vic_ready       => vic_ready,
+      ack             => bus_ack,
       
       io_sel          => io_sel,
       io_sel_next         => io_sel_next,

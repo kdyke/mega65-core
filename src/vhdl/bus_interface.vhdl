@@ -89,6 +89,8 @@ entity bus_interface is
     
     sector_buffer_mapped : in std_logic;
     vic_rdata : in std_logic_vector(7 downto 0);
+    vic_ready : in std_logic;
+    
     colour_ram_data : in std_logic_vector(7 downto 0);
 
     colour_ram_cs_next : inout std_logic := '0';
@@ -129,8 +131,6 @@ entity bus_interface is
     --attribute mark_debug of ext_sel: signal is "true";
     --attribute mark_debug of io_sel: signal is "true";
     --
-    --attribute mark_debug of  system_wdata_next: signal is "true";
-    --
     --attribute mark_debug of kickstart_rdata: signal is "true";
     --attribute mark_debug of kickstart_cs_next: signal is "true";
     --
@@ -157,9 +157,9 @@ entity bus_interface is
     --attribute mark_debug of dmagic_cs_next : signal is "true";
     --attribute mark_debug of colourram_at_dc00 : signal is "true";
     --attribute mark_debug of sector_buffer_mapped : signal is "true";
-    --attribute mark_debug of colour_ram_cs_next : signal is "true";
     
     --attribute mark_debug of vic_rdata : signal is "true";
+    --attribute mark_debug of vic_ready : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
     --attribute mark_debug of vic_cs : signal is "true";
     --attribute mark_debug of viciii_iomode : signal is "true";
@@ -199,7 +199,6 @@ architecture Behavioural of bus_interface is
   signal shadow_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
   signal colour_ram_ready : std_logic := '1';
-  signal vic_ready : std_logic := '1';
   signal cpu_internal_ready : std_logic := '1';
   signal io_ready : std_logic := '0';
   
@@ -567,7 +566,7 @@ begin
       bus_ready <= colour_ram_ready;
     elsif(bus_device = VICIV) then
       bus_read_data <= unsigned(vic_rdata);
-      bus_ready <= io_ready;  -- This is now using same wait states as other I/O
+      bus_ready <= vic_ready;
     elsif(bus_device = FastIO) then
       bus_read_data <= unsigned(io_rdata);
       bus_ready <= io_ready;
