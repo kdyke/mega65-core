@@ -570,7 +570,10 @@ begin
     elsif(bus_device = FastIO) then
       bus_read_data <= unsigned(io_rdata);
       bus_ready <= io_ready;
-    elsif bus_device = CPUPort or bus_device=HypervisorRegister or bus_device=DMAgicRegister then
+    elsif bus_device = CPUPort then
+      bus_read_data <= x"55";           --cpuport_data;
+      bus_ready <= cpu_internal_ready;  --cpuport_ready;
+    elsif bus_device=HypervisorRegister then
       bus_read_data <= x"55";
       bus_ready <= cpu_internal_ready; -- TODO - This is temporary until we update internal CPU logic to do this for itself.
     elsif bus_device = DMAgicNew then

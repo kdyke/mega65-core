@@ -445,16 +445,9 @@ architecture Behavioural of gs4510 is
   signal vector_read_stage : integer range 0 to 15 := 0;
 
   type memory_source is (
-    DMAgicRegister,         -- 0x00
     HypervisorRegister,     -- 0x01
     CPUPort,                -- 0x02
-    Shadow,                 -- 0x03
-    FastIO,                 -- 0x04
-    ColourRAM,              -- 0x05
-    VICIV,                  -- 0x06
-    Kickstart,              -- 0x07
-    SlowRAM,                -- 0x08
-    Unmapped                -- 0x09
+    External                -- 0x03
     );
 
   signal read_source : memory_source;
@@ -1251,24 +1244,9 @@ begin
         report "Preparing to read from CPU memory expansion controller port";
         read_source <= CPUPort;
         cpuport_num <= "0010";        
-      elsif io_sel_next='0' and ext_sel_next='0' and long_address(19)='0' and long_address(18)='0' then
-        read_source <= Shadow;
-      -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
-      elsif io_sel_next='0' and hypervisor_mode='1' and long_address(19 downto 14)&"00" = x"F8" then
-        read_source <= Kickstart;
-      elsif io_sel_next='1' or long_address(19 downto 16) = x"8" then
-        read_source <= FastIO;
-      elsif ext_sel_next='1' then
-        read_source <= SlowRAM;
       else
-        read_source <= Unmapped;
+        read_source <= External;
       end if;
-
-      if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-        (long_address(19 downto 4) = x"0D7F") then
-        report "Preparing to read from a DMAgicRegister";
-        read_source <= DMAgicRegister;
-      end if;      
 
     end read_long_address;
     
@@ -1280,25 +1258,6 @@ begin
       -- CPU hosted IO registers
       report "Read source is " & memory_source'image(read_source);
       case read_source is
-        when DMAgicRegister =>
-          -- Actually, this is all of $D700-$D7FF decoded by the CPU at present
-          report "Reading CPU register (DMAgicRegister path)";
-          case the_read_address(7 downto 0) is
-
-            when x"fc" => return unsigned(chipselect_enables);
-            when x"fd" =>
-              report "Reading $D7FD";
-              value(7) := force_exrom;
-              value(6) := force_game;
-              value(5) := gated_exrom;
-              value(4) := gated_game;
-              value(3) := exrom;
-              value(2) := game;
-              value(1) := cartridge_enable;              
-              value(0) := '0';
-              return value;
-            when others => return x"ff";
-          end case;
         when HypervisorRegister =>
           report "HYPERPORT: Reading hypervisor register";
           case hyperport_num is
@@ -1389,7 +1348,6 @@ begin
       io_sel_next : in std_logic;
       ext_sel_next : in std_logic) is
       variable long_address : unsigned(19 downto 0);
-      variable dmagic_write : std_logic;
     begin
       -- Schedule the memory write to the appropriate destination.
 
@@ -1400,11 +1358,6 @@ begin
       last_write_address <= real_long_address;
       last_write_fastio <= '0';
       
-      if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-        (long_address(19 downto 4) = x"0D7F") then
-        dmagic_write := '1';
-      end if;
-
       -- Write to CPU port
       if (io_sel_next='0' and long_address = x"000000") then
         report "MEMORY: Writing to CPU DDR register" severity note;
@@ -1418,29 +1371,6 @@ begin
       elsif (io_sel_next='0' and long_address = x"000001") then
         report "MEMORY: Writing to CPU PORT register" severity note;
         cpuport_value <= value;
-      -- Write to DMAgic registers if required
-      elsif (dmagic_write='1' and long_address(7 downto 0) = x"FA") then
-        -- @IO:GS $D7FA.0 DEBUG 1/2/3.5MHz CPU speed fine adjustment
-        cpu_speed_bias <= to_integer(value);
-      elsif (dmagic_write='1' and long_address(7 downto 0) = x"FB") then
-        -- @IO:GS $D7FB.0 DEBUG 1=charge extra cycle(s) for branches taken
-        charge_for_branches_taken <= value(0);
-      elsif (dmagic_write='1' and long_address(7 downto 0) = x"FC") then
-        -- @IO:GS $D7FC DEBUG chip-select enables for various devices
-        chipselect_enables <= std_logic_vector(value);
-      elsif (dmagic_write='1' and long_address(7 downto 0) = x"FD") then
-        -- @IO:GS $D7FD.7 Override for /EXROM : set to 0 to enable
-        -- @IO:GS $D7FD.6 Override for /GAME : set to 0 to enable
-        force_exrom <= value(7);
-        force_game <= value(6);
-      elsif (dmagic_write='1' and long_address(7 downto 0) = x"ff") then
-        -- re-enable kickstart ROM.  This is only to allow for easier development
-        -- of kickstart ROMs.
-        if value = x"4B" then
-          reg_offset_high <= x"F00";
-          reg_map <= "10000000";
-          reg_offset_low <= x"000";
-        end if;
       end if;
       
       if io_sel_next='1' then
@@ -4070,7 +4000,7 @@ begin
   -- read_data input mux - FIXME, This needs to go away ASAP.
   process (read_source, memory_read_data, read_data_copy)
   begin
-    if((read_source /= CPUPort) and (read_source /= DMAgicRegister) and (read_source /= HypervisorRegister)) then
+    if((read_source /= CPUPort) and (read_source /= HypervisorRegister)) then
       read_data <= memory_read_data;
     else
       read_data <= read_data_copy;
