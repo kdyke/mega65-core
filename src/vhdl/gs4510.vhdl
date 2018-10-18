@@ -270,6 +270,7 @@ architecture Behavioural of gs4510 is
   signal phi_counter : unsigned(16 downto 0) := (others => '0');
   signal phi_pause : std_logic := '0';
   signal phi_backlog : integer range 0 to 127 := 0;
+  signal phi_backlog_next : integer range 0 to 127 := 0;
   signal phi_add_backlog : std_logic := '0';
   signal charge_for_branches_taken : std_logic := '1';
   signal phi_new_backlog : integer range 0 to 15 := 0;
@@ -1681,44 +1682,9 @@ begin
         when others =>
                                         -- Full speed = 1 clock tick per cycle
           phi_counter(16) <= phi_counter(16) xor '1';
-          phi_backlog <= 0;
-          phi_pause <= '0';
       end case;
-      if cpuspeed_internal /= x"50" then
-        if last_phi16 /= phi_counter(16) then
-                                        -- phi2 cycle has passed
-          if phi_backlog = 1 or phi_backlog=0 then
-            if phi_add_backlog = '0' then
-                                        -- We have just finished our backlog, allow CPU to proceed
-              phi_backlog <= 0;
-              phi_pause <= '0';
-            else
-                                        -- We would have finished the back log, but we have new backlog
-                                        -- to process
-              phi_backlog <= phi_new_backlog;
-              phi_pause <= '1';
-            end if;            
-          else
-            if phi_add_backlog = '0' then
-              phi_backlog <= phi_backlog - 1;
-              phi_pause <= '1';
-            else
-              phi_backlog <= phi_backlog - 1 + phi_new_backlog;
-              phi_pause <= '1';
-            end if;
-          end if;
-        else
-          if phi_add_backlog = '1' then
-            phi_backlog <= phi_backlog + phi_new_backlog;
-            phi_pause <= '1';
-          end if;
-        end if;
-      else
-                                        -- Full speed - never pause
-        phi_backlog <= 0;
-        phi_pause <= '0';
-      end if;
-      
+      phi_backlog <= phi_backlog_next;
+            
                                         --Check for system-generated traps (matrix mode, and double tap restore)
       if hyper_trap = '0' and hyper_trap_last = '1' then
         hyper_trap_edge <= '1';
@@ -3973,6 +3939,36 @@ begin
     else
       read_data <= read_data_copy;
     end if;  
+  end process;
+  
+  process(phi_backlog, phi_add_backlog, phi_new_backlog, cpuspeed_internal, last_phi16, phi_counter)
+  variable phi_decrement : integer range 0 to 1;
+  variable phi_increment : integer range 0 to 127;
+  begin
+    
+    if phi_backlog /= 0 then
+      phi_pause <= '1';
+    else
+      phi_pause <= '0';
+    end if;
+
+    if phi_backlog /= 0 and last_phi16 /= phi_counter(16) then
+      phi_decrement := 1;
+    else
+      phi_decrement := 0;
+    end if;
+  
+    if phi_add_backlog='1' then
+      phi_increment := phi_new_backlog;
+    else
+      phi_increment := 0;
+    end if;
+  
+    if cpuspeed_internal /= x"50" then      
+      phi_backlog_next <= phi_backlog + phi_increment - phi_decrement;
+    else
+      phi_backlog_next <= 0;
+    end if;
   end process;
   
 end Behavioural;
