@@ -265,6 +265,8 @@ entity machine is
          UART_TXD : out std_logic;
          RsRx : in std_logic;
          
+         phi_special : in std_logic;
+         
          sseg_ca : out std_logic_vector(7 downto 0);
          sseg_an : out std_logic_vector(7 downto 0)
          );
@@ -987,6 +989,8 @@ begin
       
       no_kickstart => no_kickstart,
       
+      phi_special => phi_special,
+      
       reg_isr_out => reg_isr_out,
       imask_ta_out => imask_ta_out,
       
@@ -1103,6 +1107,7 @@ begin
           
           dmagic_io_address_next            => system_address_next(7 downto 0),
           dmagic_io_cs                      => dmagic_cs_next,
+          dmagic_io_ack                     => cpu_ack,               -- Must be CPU directly, otherwise we might source from ourselves for CPU accesses.
           dmagic_io_read_next               => system_read_next,
           dmagic_io_write_next              => system_write_next,
           dmagic_io_wdata_next              => system_wdata_next,
@@ -1531,7 +1536,8 @@ begin
       r_next => system_read, 
       w_next => system_write,
       data_i_next => system_wdata, 
-
+      ack => bus_ack,
+      
       data_o => io_rdata,
       
       colourram_at_dc00 => colourram_at_dc00,

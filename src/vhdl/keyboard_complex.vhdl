@@ -29,6 +29,9 @@ entity keyboard_complex is
     -- Joysticks
     joya : in std_logic_vector(4 downto 0);
     joyb : in std_logic_vector(4 downto 0);
+
+    btn : in std_logic_vector(4 downto 0);
+    
     -- Widget board
     pmod_clock : in std_logic;
     pmod_start_of_sequence : in std_logic;
@@ -240,6 +243,8 @@ begin
     joya_real => joya,
     joyb_real => joyb,
 
+    btn => btn,
+    
     widget_disable => widget_disable,
     matrix_col_widget => widget_matrix_col,
     joya_widget => widget_joya,

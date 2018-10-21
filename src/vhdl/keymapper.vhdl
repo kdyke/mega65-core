@@ -38,6 +38,8 @@ entity keymapper is
     capslock_widget : in std_logic;
     restore_widget : in std_logic;
 
+    btn : in std_logic_vector(4 downto 0);
+
     ps2_disable : in std_logic;
     matrix_col_ps2 : in std_logic_vector(7 downto 0);
     joya_ps2 : in std_logic_vector(4 downto 0);
@@ -241,6 +243,7 @@ begin  -- behavioural
       joya(4) <= '1' and (joya_physkey(4) or joykey_disable)
                  and (joya_widget(4) or widget_disable)
                  and (joya_real(4) or joyreal_disable)
+                 and (not btn(0))
                  and (joya_ps2(4) or ps2_disable);
       joyb(4) <= '1' and (joyb_physkey(4) or joykey_disable)
                  and (joyb_widget(4) or widget_disable)

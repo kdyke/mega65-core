@@ -612,7 +612,9 @@ begin
 
       UART_TXD => UART_TXD,
       RsRx => RsRx,
-                
+      
+      phi_special => sw_in(7),
+      
       sseg_ca => sseg_ca,
       sseg_an => sseg_an
       );
@@ -623,7 +625,7 @@ begin
       --sdMOSI <= '0';
   
   -- Hardware buttons for triggering IRQ & NMI
-  irq <= not btn(0);
+  irq <= not btn(2);
   nmi <= not btn(4);
   restore_key <= not btn(1);
 

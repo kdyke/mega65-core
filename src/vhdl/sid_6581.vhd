@@ -88,6 +88,7 @@ entity sid6581 is
 		reset				: in  std_logic;		-- high active signal (reset when reset = '1')
 		cs					: in  std_logic;		-- "chip select", when this signal is '1' this model can be accessed
 		we					: in std_logic;		-- when '1' this model can be written to, otherwise access is considered as read
+		ack					: in std_logic;		-- gates write cycles
 
 		addr				: in  unsigned(4 downto 0);	-- address lines
 		di					: in  unsigned(7 downto 0);	-- data in (to chip)
@@ -358,7 +359,7 @@ begin
 				do_buf 				<= (others => '0');
 
 				if (cs='1') then
-					if (we='1') then	-- Write to SID-register
+					if (we='1' and ack='1') then	-- Write to SID-register
 								------------------------
 						case addr is
 							-------------------------------------- Voice-1	

@@ -270,6 +270,8 @@ architecture Behavioral of container is
   signal lcd_vsync : std_logic;
   signal lcd_display_enable : std_logic;
   
+  signal phi_special : std_logic;
+  
 begin
   
   dotclock1: entity work.dotclock100
@@ -508,6 +510,8 @@ begin
       led(15 downto 13) => dummy,
       sw => sw,
       btn => btn,
+      
+      phi_special => phi_special,
 
       UART_TXD => UART_TXD,
       RsRx => RsRx,
@@ -530,11 +534,12 @@ begin
     jbhi(10) <= lcd_display_enable;
   
   -- Hardware buttons for triggering IRQ & NMI
-  irq <= not btn(0);
+  irq <= not btn(2);
   nmi <= not btn(4);
   restore_key <= not btn(1);
 
   led(13) <= sw(13);
+  phi_special <= sw(13);
   
   process (cpuclock)
   begin

@@ -180,9 +180,11 @@ entity gs4510 is
     memory_access_io_next : inout std_logic;
     memory_read_data : in unsigned(7 downto 0);
     ready : in std_logic;
-    cpu_ready : out std_logic;
+    cpu_ready : inout std_logic;
     map_en_next : inout std_logic;
     rom_writeprotect : inout std_logic := '0';
+    
+    phi_special : in std_logic; -- External switch to test 25Mhz stepping
     
     hypervisor_entry : out std_logic;
     hypervisor_exit : out std_logic;
@@ -195,7 +197,16 @@ entity gs4510 is
     attribute keep : string;
     attribute dont_touch : string;
 
-    --attribute mark_debug of cpu_memory_ready: signal is "true";
+    --attribute mark_debug of cpu_ready: signal is "true";
+    --attribute mark_debug of ready: signal is "true";
+    --attribute mark_debug of chipselect_enables : signal is "true";
+    --attribute mark_debug of viciii_iomode: signal is "true";
+
+
+    --attribute mark_debug of phi_special: signal is "true";
+    --attribute mark_debug of reset: signal is "true";
+    --attribute mark_debug of reset_out: signal is "true";
+    
     --attribute mark_debug of reset: signal is "true";
 
     --attribute mark_debug of cpu_memory_read_data : signal is "true";
@@ -268,7 +279,9 @@ architecture Behavioural of gs4510 is
     to_unsigned(pal3point5mhz_times_65536 / cpufrequency,17);
   signal phi_export_counter : unsigned(16 downto 0) := (others => '0');
   signal phi_counter : unsigned(16 downto 0) := (others => '0');
-  signal phi_pause : std_logic := '0';
+  signal phi_en : std_logic := '1';
+  signal phi_step : std_logic := '0';
+  signal phi_step_toggle : std_logic := '0';
   signal phi_backlog : integer range 0 to 127 := 0;
   signal phi_backlog_next : integer range 0 to 127 := 0;
   signal phi_add_backlog : std_logic := '0';
@@ -398,9 +411,6 @@ architecture Behavioural of gs4510 is
   signal mem_reading_p : std_logic := '0';
   -- serial monitor is reading data 
   signal monitor_mem_reading : std_logic := '0';
-
-  -- Is CPU free to proceed with processing an instruction?
-  signal proceed : std_logic := '1';
 
   signal read_data_copy : unsigned(7 downto 0);
   
@@ -925,7 +935,10 @@ architecture Behavioural of gs4510 is
     --attribute mark_debug of reg_offset_high: signal is "true";
     --attribute mark_debug of reg_offset_low: signal is "true";
     --attribute mark_debug of reg_map: signal is "true";
-    --attribute mark_debug of phi_pause : signal is "true";
+    --attribute mark_debug of phi_en : signal is "true";
+    --attribute mark_debug of phi_step : signal is "true";
+    --attribute mark_debug of phi_step_toggle : signal is "true";
+    --attribute mark_debug of phi_counter : signal is "true";
     --attribute mark_debug of monitor_mem_reading : signal is "true";
     --
     --attribute mark_debug of memory_access_address_next: signal is "true";
@@ -943,8 +956,6 @@ architecture Behavioural of gs4510 is
     --attribute mark_debug of reg_opcode: signal is "true";
     --
     --attribute mark_debug of state: signal is "true";
-    --
-    --attribute mark_debug of proceed: signal is "true";
     --
     --attribute mark_debug of last_write_address : signal is "true";
     --attribute mark_debug of last_write_pending : signal is "true";
@@ -1636,6 +1647,20 @@ begin
                                         -- BEGINNING OF MAIN PROCESS FOR CPU
     if rising_edge(clock) and all_pause='0' then
       
+      phi_step_toggle <= not phi_step_toggle;
+      
+      -- If phi_step is '1' on a clock edge then phi_en is asserted until the CPU can finish the next bus cycle (ready is asserted).
+      -- This lets us hide internal FPGA wait states while maintaining 1Mhz/3.5Mhz clock pacing.
+      if phi_special='1' then -- 25Mhz
+        if phi_step_toggle='1'then
+          phi_en <= '1';
+        end if;
+      else
+        if phi_step='1' then
+          phi_en <= '1';
+        end if;
+      end if;
+      
       dat_bitplane_addresses_drive <= dat_bitplane_addresses;
       dat_offset_drive <= dat_offset;
       
@@ -2016,25 +2041,24 @@ begin
       if reset_drive='0' or watchdog_reset='1' then
         reset_out <= '0';
         state <= ResetLow;
-        proceed <= '0';
+
         watchdog_fed <= '0';
         watchdog_countdown <= 65535;
         report "resetting cpu: reset_drive = " & std_logic'image(reset_drive)
           & ", watchdog_reset=" & std_logic'image(watchdog_reset);
         reset_cpu_state;
-      elsif phi_pause = '1' then
+      elsif cpu_ready = '0' then
                                         -- Wait for time to catch up with CPU instructions when running at low
                                         -- speed (CPU actually runs at full speed, and just gets held here if it
                                         -- gets too far ahead.  This gives us quite accurate timing at an instruction
                                         -- level, with a jitter of ~1 instruction at any point in time, which should
                                         -- be sufficient even for most fast loaders.
         report "PHI pause : " & integer'image(phi_backlog) & " CPU cycles remaining.";
-        proceed <= '0';
       else
 
         reset_out <= '1';
         
-        if ready = '1' then
+        if cpu_ready = '1' then
                                         -- End of wait states, so clear memory writing and reading
           if mem_reading='1' then
 --            report "resetting mem_reading (read $" & to_hstring(memory_read_value) & ")" severity note;
@@ -2044,14 +2068,20 @@ begin
 
         end if;
         
-        monitor_proceed <= ready and not phi_pause;
+        monitor_proceed <= cpu_ready;
+        
         monitor_request_reflected <= monitor_mem_attention_request_drive;
 
-        report "CPU state : proceed=" & std_logic'image(proceed);
-        if phi_pause='0' and ready='1' then
+        if cpu_ready='1' then
                                         -- Main state machine for CPU
           report "CPU state = " & processor_state'image(state) & ", PC=$" & to_hstring(reg_pc) severity note;
 
+          if phi_special='1' then       -- Special 25Mhz mode
+            phi_en <= phi_step_toggle;
+          else
+            phi_en <= phi_step;
+          end if;
+          
           pop_a <= '0'; pop_x <= '0'; pop_y <= '0'; pop_z <= '0';
           pop_p <= '0';
           
@@ -2182,7 +2212,6 @@ begin
                                         -- otherwise just read from memory
                     monitor_mem_reading <= '1';
                     mem_reading <= '1';
-                    --proceed <= '0';
                     state <= MonitorMemoryAccess;
                   end if;
                 end if;
@@ -3540,7 +3569,7 @@ begin
     monitor_mem_read,monitor_mem_setpc,viciii_iomode,
     reg_addressingmode,is_load,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,reg_microcode,reg_t_high,
-    is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,proceed,
+    is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,
     read_data,
     rom_writeprotect,
     read_source, io_sel_next, ext_sel_next
@@ -3606,13 +3635,13 @@ begin
     map_en_next <= map_en_hold;
     map_en_var := '0';
 
-    cpu_ready <= ready and not phi_pause;
+    cpu_ready <= ready and phi_en;
 
     -- Don't output next address unless we are unblocked.    Unfortunately some of the different
-    -- signals can be out of phase and so we have to test multiple of them.  In particular, phi_pause
-    -- can be true before proceed gets set to 0, and if we drive the next address we can cause
+    -- signals can be out of phase and so we have to test multiple of them.  In particular, phi_en
+    -- can be false before ready gets set to 0, and if we drive the next address we can cause
     -- the bus interface to latch (and then hold) an address it shouldn't see yet, which can then
-    -- cause the data we read to change too soon.  The case I was hitting was a phi_pause just as
+    -- cause the data we read to change too soon.  The case I was hitting was phi_en=0 just as
     -- we were pushing the PC for a JSR.  The CPU was pausing right as it went to the first push
     -- state, driving the new address to the output "next" signal.  But then we're stop on the next
     -- cycle when proceed went to 0.  Then the bus interface would latch the stack address into the shadow
@@ -3620,24 +3649,28 @@ begin
     -- to disappear.  Then when we resumed we'd pick up the wrong data.
     
     -- This fixes it by making sure that if we're going to pause for any reason that we hold the bus
-    -- in its last state.   The concern here is that a phi_pause during a write cycle might cause multiple
+    -- in its last state.   The concern here is that phi_en=0 during a write cycle might cause multiple
     -- writes, but that's mitigated by the fact that the write signal does NOT hold its value until we
     -- are unblocked so we only pulse the write signal on the very last bus cycle before we proceed to
-    -- the next "real" clock.
+    -- the next "real" clock.   **Actually, that's not true any more and the write signal IS held, and needs
+    -- to be because it we get kicked off the bus by DMAgic, we need to still be driving write high
+    -- when we get back on the bus.
     
-    -- The other thing that probably needs to be mitigated somehow (if it isn't already) is that a phi_pause
+    -- The other thing that probably needs to be mitigated somehow (if it isn't already) is that phi_en=0
     -- shouldn't cause multiple I/O reads.  Otherwise if we get stuck reading a register that clears
     -- interrupts then we might keep re-reading the same register over and over again.  But, I think
     -- that could again be mitigated by having the bus interface ignore I/O reads if the CPU isn't moving
     -- forward.   Really what's needed here is a "CPU is actively on the bus" signal, which the I/O devices
     -- could use to detect a "real" read versus just a random "bus still has old address".
     
-    -- TODO - Recombine the different "ready" signals into a single "ready" signal that's used everywhere.
+    -- The way I'm dealing with both of these cases now is that the devices that have side effects now see
+    -- the CPU 'ack' signal that says the CPU is ready to move on to the next bus cycle.   They use the 'ack'
+    -- to gate the side effect stuff as it will only get pulsed once per bus cycle.
     
     hypervisor_entry <= '0';
     hypervisor_exit <= '0';
     
-    if ready='1' and phi_pause='0' then
+    if cpu_ready='1' then
     
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
@@ -3946,29 +3979,49 @@ begin
   variable phi_increment : integer range 0 to 127;
   begin
     
-    if phi_backlog /= 0 then
-      phi_pause <= '1';
+    --if phi_backlog /= 0 then
+    --  phi_en <= '0';
+    --else
+    --  phi_en <= '1';
+    --end if;
+    --
+    --if phi_backlog /= 0 and last_phi16 /= phi_counter(16) then
+    --  phi_decrement := 1;
+    --else
+    --  phi_decrement := 0;
+    --end if;
+    --
+    --if phi_add_backlog='1' then
+    --  phi_increment := phi_new_backlog;
+    --else
+    --  phi_increment := 0;
+    --end if;
+    --
+    --if cpuspeed_internal /= x"50" then      
+    --  phi_backlog_next <= phi_backlog + phi_increment - phi_decrement;
+    --else
+    --  phi_backlog_next <= 0;
+    --end if;
+    
+    -- Simplified version that ignores timing tables, as an experiement to see how far off it is.
+    -- With the new 65CE02 core, we'd be cycle accurate except when running at 1Mhz where we'd need
+    -- either different microcode or external pauses (like the C65 did) or even crazier, a different
+    -- CPU core entirely.  This now has logic to let the CPU always finish the current bus cycle to
+    -- hide any FPGA design wait states so they don't count toward the 1Mhz or 3.5Mhz execution speeds.
+    
+    -- Note: There's a bug somewhere that if phi_en toggles every other clock, something goes wrong on bootup.
+    -- It's not clear where the actual bug is yet but for now so long as we're not trying to fake 25Mhz or
+    -- so things seem ok at slower speeds.
+    if cpuspeed_internal /= x"50" then
+      if last_phi16 /= phi_counter(16) then
+        phi_step <= '1';
+      else
+        phi_step <= '0';
+      end if;
     else
-      phi_pause <= '0';
+      phi_step <= '1';
     end if;
-
-    if phi_backlog /= 0 and last_phi16 /= phi_counter(16) then
-      phi_decrement := 1;
-    else
-      phi_decrement := 0;
-    end if;
-  
-    if phi_add_backlog='1' then
-      phi_increment := phi_new_backlog;
-    else
-      phi_increment := 0;
-    end if;
-  
-    if cpuspeed_internal /= x"50" then      
-      phi_backlog_next <= phi_backlog + phi_increment - phi_decrement;
-    else
-      phi_backlog_next <= 0;
-    end if;
+    
   end process;
   
 end Behavioural;

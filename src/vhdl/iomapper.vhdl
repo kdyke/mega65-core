@@ -58,6 +58,7 @@ entity iomapper is
         w_next : in std_logic;
         data_i_next : in std_logic_vector(7 downto 0);
         io_sel_next : in std_logic;
+        ack : in std_logic;
         
 --        address : in std_logic_vector(19 downto 0);
 --        r : in std_logic;
@@ -726,6 +727,8 @@ begin
 
       joya_rotate => joya_rotate,
       joyb_rotate => joyb_rotate,
+
+      btn => btn,
       
     ioclock       => clk,
     restore_out => restore_nmi,
@@ -814,6 +817,7 @@ begin
     reset => reset_high,
     cs => leftsid_cs,
     we => w_next,
+    ack => ack,
     addr => unsigned(address_next(4 downto 0)),
     di => unsigned(data_i_next),
     std_logic_vector(do) => sid_left_o,
@@ -830,6 +834,7 @@ begin
     reset => reset_high,
     cs => rightsid_cs,
     we => w_next,
+    ack => ack,
     addr => unsigned(address_next(4 downto 0)),
     di => unsigned(data_i_next),
     std_logic_vector(do) => sid_right_o,
@@ -966,6 +971,7 @@ begin
     fastio_read => r_next,
     fastio_wdata => unsigned(data_i_next),
     fastio_rdata_sel => sdcardio_o,
+    fastio_ack => ack,
     colourram_at_dc00 => colourram_at_dc00,
     viciii_iomode => viciii_iomode,
     sectorbuffermapped => sector_buffer_mapped,

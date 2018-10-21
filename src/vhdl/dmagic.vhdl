@@ -49,6 +49,7 @@ entity dmagic is
     -- for register accesses.
     dmagic_io_address_next : in std_logic_vector(7 downto 0);
     dmagic_io_cs : in std_logic;
+    dmagic_io_ack : in std_logic;
     dmagic_io_read_next : in std_logic;
     dmagic_io_write_next : in std_logic;
     dmagic_io_wdata_next : in std_logic_vector(7 downto 0);
@@ -76,6 +77,7 @@ entity dmagic is
     --
     --attribute mark_debug of dmagic_io_address_next: signal is "true";
     --attribute mark_debug of dmagic_io_cs: signal is "true";
+    --attribute mark_debug of dmagic_io_ack: signal is "true";
     --attribute mark_debug of dmagic_io_read_next: signal is "true";
     --attribute mark_debug of dmagic_io_write_next: signal is "true";
     --attribute mark_debug of dmagic_io_wdata_next: signal is "true";
@@ -340,7 +342,7 @@ begin
                              dmagic_io_data(7 downto 4) <= x"0";
           when Data_Index => dmagic_io_data <= std_logic_vector(dmagic_pio_index);
           when Data_Read  => dmagic_io_data <= std_logic_vector(dmagic_read_data);
-          when others     => dmagic_io_data <= x"FF";
+          when others     => null;
         end case;
 
         if load_src_pio='1' then
@@ -647,7 +649,7 @@ begin
     load_mod0 <= '0';
     load_mod1 <= '0';
     
-    if dmagic_io_cs='1' then
+    if dmagic_io_cs='1' and dmagic_io_ack='1' then
       if dmagic_io_address_next=x"00" or dmagic_io_address_next=x"05" or dmagic_io_address_next=x"0E" then
         load_list_addr0 <= dmagic_io_write_next;
         dmagic_data_op_next <= Data_List0;
@@ -714,7 +716,7 @@ begin
 
           -- If CPU has grabbed address bus again and is now sourcing from us again (or will on the next cycle), 
           -- proceed directly to Ack state. Otherwise we need to go to DMAgic_CPUReadWait and wait for it to catch up.
-          if dmagic_io_cs='1' then 
+          if dmagic_io_cs='1' and dmagic_io_ack='1' then 
             dmagic_state_next <= DMAgic_CPUAccessAck;
           else
             dmagic_state_next <= DMAgic_CPUAccessReadWait;
@@ -724,7 +726,7 @@ begin
       
       when DMAgic_CPUAccessReadWait =>
         dmagic_io_ready <= '0';
-        if dmagic_io_cs='1' then                                     -- Wait for bus arbiter to direct control back to us
+        if dmagic_io_cs='1' and dmagic_io_ack='1' then               -- Wait for bus arbiter to direct control back to us
           dmagic_state_next <= DMAgic_CPUAccessAck;
         end if;
       

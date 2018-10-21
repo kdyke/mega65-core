@@ -81,6 +81,7 @@ entity sdcardio is
     fastio_read : in std_logic;
     fastio_wdata : in unsigned(7 downto 0);
     fastio_rdata_sel : out std_logic_vector(7 downto 0);
+    fastio_ack : in std_logic;
     
     virtualise_f011 : in std_logic;
     
@@ -1244,7 +1245,7 @@ begin  -- behavioural
       
       -- Advance f011 buffer position when reading from data register
       last_was_d087 <= '0';
-      if fastio_read='1' then
+      if fastio_read='1' and fastio_ack='1' then
         if (viciii_iomode="01" or viciii_iomode="11") and (fastio_addr(19 downto 0) = x"0D087") then
           if last_was_d087='0' then
             report "$D087 access : advancing CPU sector buffer pointer";
@@ -1362,7 +1363,7 @@ begin  -- behavioural
         sectorbuffermapped2 <= sector_buffer_mapped;
       end if;
       
-      if fastio_write='1' then
+      if fastio_write='1' and fastio_ack='1' then
         if f011_cs='1' then
           -- ================================================================== START
           -- the section below is for the F011
@@ -2050,7 +2051,7 @@ begin  -- behavioural
           hyper_trap_f011_read <= '0';
           hyper_trap_f011_write <= '0';
 
-          if sectorbuffercs='1' and fastio_write='1' then
+          if sectorbuffercs='1' and fastio_write='1' and fastio_ack='1' then
             -- Writing via memory mapped sector buffer
 
             if hypervisor_mode='0' then
