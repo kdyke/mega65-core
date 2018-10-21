@@ -160,21 +160,21 @@ begin
       matrix_col_idx => matrix_col_idx
       );
   
-  phykbd0: entity work.keyboard_to_matrix
-    port map (
-      clk => ioclock,
-      porta_pins => porta_pins,
-      portb_pins => portb_pins,
-      keyboard_column8_out => keyboard_column8_out,
-      key_left => key_left,
-      key_up => key_up,
-
-      scan_mode => scan_mode,
-      scan_rate => scan_rate,
-
-      matrix_col => keyboard_matrix_col,
-      matrix_col_idx => matrix_col_idx
-      );
+  --phykbd0: entity work.keyboard_to_matrix
+  --  port map (
+  --    clk => ioclock,
+  --    porta_pins => porta_pins,
+  --    portb_pins => portb_pins,
+  --    keyboard_column8_out => keyboard_column8_out,
+  --    key_left => key_left,
+  --    key_up => key_up,
+  --
+  --    scan_mode => scan_mode,
+  --    scan_rate => scan_rate,
+  --
+  --    matrix_col => keyboard_matrix_col,
+  --    matrix_col_idx => matrix_col_idx
+  --    );
 
   widget0: entity work.widget_to_matrix port map(
     ioclock => ioclock,
