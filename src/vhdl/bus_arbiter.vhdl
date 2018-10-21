@@ -123,20 +123,6 @@ architecture Behavioural of bus_arbiter is
   --attribute mark_debug of bus_master_next: signal is "true";
   --attribute mark_debug of bus_master: signal is "true";
   
-  --attribute mark_debug of bus_proceed: signal is "true";
-  --attribute mark_debug of wait_states: signal is "true";
-    
-  --attribute mark_debug of colour_ram_cs : signal is "true";
-  --attribute mark_debug of colourram_at_dc00 : signal is "true";
-  --attribute mark_debug of sector_buffer_mapped : signal is "true";
-  --attribute mark_debug of kickstart_cs_next : signal is "true";
-  --attribute mark_debug of colour_ram_cs_next : signal is "true";
-  --attribute mark_debug of bus_device : signal is "true";
-  --attribute mark_debug of wait_states : signal is "true";
-  --attribute mark_debug of wait_states_next : signal is "true";
-  --attribute mark_debug of io_ready : signal is "true";
-  --attribute mark_debug of cpu_internal_ready : signal is "true";
-  
 begin
   
   process(clock,reset)
