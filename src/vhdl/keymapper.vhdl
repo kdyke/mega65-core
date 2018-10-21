@@ -138,10 +138,10 @@ architecture behavioural of keymapper is
   
   component kb_matrix_ram is
     port (ClkA : in std_logic;
-          addressa : in integer range 0 to 8;
+          addressa : in integer range 0 to 15;
           wea : in std_logic;
           dia : in unsigned(7 downto 0);
-          addressb : in integer range 0 to 8;
+          addressb : in integer range 0 to 15;
           dob : out unsigned(7 downto 0)
           );
   end component;
