@@ -228,7 +228,7 @@ architecture Behavioural of dmagic is
   signal start_cpu_write : std_logic;
   signal start_cpu_read : std_logic;
   
-  --signal dmagic_serial : unsigned(15 downto 0);
+  signal dmagic_serial : unsigned(15 downto 0);
   
   --attribute mark_debug of dmagic_state : signal is "true";  
   --attribute mark_debug of dmagic_state_next : signal is "true";
@@ -315,14 +315,14 @@ begin
 
     -- DMAgic state machine clocked section.   This process really doesn't do any decision making. That
     -- all happens in the combinatorial logic.  This is done as a Mealy machine so we can respond to certain
-    -- external signals without needing another clock edge.  This is important so we can so single cycle
+    -- external signals without needing another clock edge.  This is important so we can do single cycle
     -- memory accesses for PIO, for example.
     if rising_edge(clock) then
       
       if reset='0' then
         dmagic_state <= DMAgic_Idle;
         support_f01b <= '0';
-        --dmagic_serial <= x"0000";
+        dmagic_serial <= x"0000";
         
       else
         
@@ -387,9 +387,9 @@ begin
           end if;
         end if;
 
-        --if start_job='1' then
-        --  dmagic_serial <= dmagic_serial + 1;
-        --end if;
+        if start_job='1' then
+          dmagic_serial <= dmagic_serial + 1;
+        end if;
         
         if increment_index='1' then
           tmp_sum := '0' & dmagic_pio_index + 1;
