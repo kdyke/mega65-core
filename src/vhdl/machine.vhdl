@@ -279,6 +279,38 @@ architecture Behavioral of machine is
   attribute mark_debug : string;
   attribute dont_touch : string;
 
+  component dmagic is
+    port (
+      clk : in std_logic;
+      reset : in std_logic;
+
+      -- DMAgic (system) bus interface signals
+      dmagic_memory_access_address_next : out std_logic_vector(19 downto 0) := x"00000";
+      dmagic_memory_access_read_next : out std_logic := '0';
+      dmagic_memory_access_write_next : out std_logic := '0';
+      dmagic_memory_access_wdata_next : out unsigned(7 downto 0) := x"00";
+      dmagic_memory_access_io_next : out std_logic := '0';
+      dmagic_memory_access_ext_next : out std_logic := '0';
+      dmagic_ack : out std_logic := '0';
+      dmagic_bus_ready : in std_logic;
+      dmagic_read_data : in unsigned(7 downto 0);
+      dmagic_dma_req : out std_logic := '0';
+      dmagic_cpu_req : out std_logic := '0';
+
+      -- These are the bus signals connected to the I/O device bus, used
+      -- for register accesses.
+      dmagic_io_address_next : in std_logic_vector(7 downto 0);
+      dmagic_io_cs : in std_logic;
+      dmagic_io_ack : in std_logic;
+      dmagic_io_read_next : in std_logic;
+      dmagic_io_write_next : in std_logic;
+      dmagic_io_wdata_next : in std_logic_vector(7 downto 0);
+      dmagic_io_data : out std_logic_vector(7 downto 0);
+      dmagic_io_ready : out std_logic
+
+      );
+  end component;
+      
   component uart_monitor is
     port (
       reset : in std_logic;
@@ -1088,9 +1120,9 @@ begin
         resolved_address => cpu_resolved_memory_access_address_next
       );
   
-      dmagic0: entity work.dmagic
+      dmagic0: dmagic
       port map(
-          clock => cpuclock,
+          clk => cpuclock,
           reset => reset_combined,
           
           dmagic_memory_access_address_next => dmagic_memory_access_address_next,

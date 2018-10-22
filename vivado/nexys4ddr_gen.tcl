@@ -160,7 +160,6 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/gs4510.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/bus_interface.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/bus_arbiter.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/dmagic.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/address_resolver.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/divider32.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/shifter32.vhdl"]"\
@@ -198,6 +197,7 @@ set files [list \
  "[file normalize "$origin_dir/src/verilog/monitor/monitor_ctrl.v"]"\
  "[file normalize "$origin_dir/src/verilog/monitor/monitor_bus.v"]"\
  "[file normalize "$origin_dir/src/verilog/monitor/asym_ram_sdp.v"]"\
+ "[file normalize "$origin_dir/src/verilog/dmagic/dmagic.v"]"\
 ]
 set imported_files [add_files -fileset sources_1 $files]
 
@@ -477,10 +477,6 @@ set file "vhdl/bus_arbiter.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/dmagic.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
 set file "vhdl/address_resolver.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
@@ -610,6 +606,10 @@ set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
 set file "verilog/monitor/asym_ram_sdp.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/dmagic/dmagic.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
