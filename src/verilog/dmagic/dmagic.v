@@ -65,7 +65,8 @@ parameter DMAgic_Idle                   = 4'h00,
 
 parameter Addr_List   = 2'h00,
           Addr_Src    = 2'h01,
-          Addr_Dst    = 2'h02;
+          Addr_Dst    = 2'h02,
+          Addr_PIO    = 2'h03;
 
 `DBG reg [1:0] dmagic_addr_sel_next;
 `DBG reg [7:0] dmagic_wdata_next;          
@@ -105,13 +106,14 @@ parameter Data_Idle                     = 4'h00,
 `DBG reg load_cmd;
 
 // Our PIO address
-`DBG reg [19:0] dmagic_pio_addr;
+`DBG reg [19:0] dmagic_pio_addr, dmagic_pio_base_addr;
 `DBG reg [7:0] dmagic_pio_index;
+`DBG reg load_pio;
 
-`DBG reg increment_index, load_pio_addr0, load_pio_addr1, load_pio_addr2, load_pio_index;
+`DBG reg increment_index, load_pio_base_addr0, load_pio_base_addr1, load_pio_base_addr2, load_pio_index;
 `DBG reg load_list_addr0, load_list_addr1, load_list_addr2, increment_list_addr;
 
-`DBG reg load_src_pio, load_src_addr0, load_src_addr1, load_src_addr2, update_src_addr;  
+`DBG reg load_src_addr0, load_src_addr1, load_src_addr2, update_src_addr;  
 `DBG reg load_dst_addr0, load_dst_addr1, load_dst_addr2, update_dst_addr;
 
 `DBG reg load_status;
@@ -161,16 +163,16 @@ begin
       Data_List1:     dmagic_io_data <= dmagic_list_addr[15:8];
       Data_List2:     dmagic_io_data <= {4'h0, dmagic_list_addr[19:16]};
       Data_Status:    dmagic_io_data <= {7'h0, support_f01b};
-      Data_Addr0:     dmagic_io_data <= dmagic_pio_addr[7:0];
-      Data_Addr1:     dmagic_io_data <= dmagic_pio_addr[15:8];
-      Data_Addr2:     dmagic_io_data <= {4'h0, dmagic_pio_addr[19:16]};
+      Data_Addr0:     dmagic_io_data <= dmagic_pio_base_addr[7:0];
+      Data_Addr1:     dmagic_io_data <= dmagic_pio_base_addr[15:8];
+      Data_Addr2:     dmagic_io_data <= {4'h0, dmagic_pio_base_addr[19:16]};
       Data_Index:     dmagic_io_data <= dmagic_pio_index;
       Data_Read:      dmagic_io_data <= dmagic_read_data;
       default:
           ;
     endcase
 
-    if (load_src_pio)
+    if (load_pio)
       dmagic_wdata_next <= dmagic_io_wdata_next;
     else if (load_wdata_fill)
       dmagic_wdata_next <= dmagic_src_addr[7:0];
@@ -178,10 +180,10 @@ begin
       dmagic_wdata_next <= dmagic_read_data;
             
     // Clocked register updates
-    if (load_src_pio) begin
-      dmagic_src_addr <= dmagic_pio_addr + dmagic_pio_index;
-      dmagic_src_io <= 0;
-    end else if (update_src_addr)
+    if (load_pio)
+      dmagic_pio_addr <= dmagic_pio_base_addr + dmagic_pio_index;
+      
+    if (update_src_addr)
       dmagic_src_addr <= dmagic_src_addr_next;
     else begin
       if (load_src_addr0)
@@ -213,14 +215,14 @@ begin
     if (increment_index) begin
       tmp_sum = dmagic_pio_index + 1;
       dmagic_pio_index <= tmp_sum[7:0];
-      dmagic_pio_addr[19:8] <= dmagic_pio_addr[19:8] + tmp_sum[8]; // Increment pio addr by carry
+      dmagic_pio_base_addr[19:8] <= dmagic_pio_base_addr[19:8] + tmp_sum[8]; // Increment pio addr by carry
     end else begin
-      if (load_pio_addr0)
-        dmagic_pio_addr[7:0] <= dmagic_io_wdata_next;
-      if (load_pio_addr1)
-        dmagic_pio_addr[15:8] <= dmagic_io_wdata_next;
-      if (load_pio_addr2)
-        dmagic_pio_addr[19:16] <= dmagic_io_wdata_next[3:0];
+      if (load_pio_base_addr0)
+        dmagic_pio_base_addr[7:0] <= dmagic_io_wdata_next;
+      if (load_pio_base_addr1)
+        dmagic_pio_base_addr[15:8] <= dmagic_io_wdata_next;
+      if (load_pio_base_addr2)
+        dmagic_pio_base_addr[19:16] <= dmagic_io_wdata_next[3:0];
       if (load_pio_index)
         dmagic_pio_index <= dmagic_io_wdata_next;
     end        
@@ -311,7 +313,7 @@ end // always(@posedge clk)
 always @(*)
 begin
   case (dmagic_addr_sel_next)
-    default: begin
+    Addr_Src: begin
       dmagic_memory_access_address_next = dmagic_src_addr;
       dmagic_memory_access_io_next = dmagic_src_io;
     end
@@ -321,6 +323,10 @@ begin
     end
     Addr_List: begin
       dmagic_memory_access_address_next = dmagic_list_addr_next;
+      dmagic_memory_access_io_next = 0;
+    end
+    Addr_PIO: begin
+      dmagic_memory_access_address_next = dmagic_pio_addr;
       dmagic_memory_access_io_next = 0;
     end
   endcase
@@ -384,16 +390,16 @@ begin
   dmagic_addr_sel_next = Addr_Src;
   dmagic_data_op_next = Data_Idle;
   
-  load_pio_addr0 = 0;
-  load_pio_addr1 = 0;
-  load_pio_addr2 = 0;
+  load_pio_base_addr0 = 0;
+  load_pio_base_addr1 = 0;
+  load_pio_base_addr2 = 0;
   load_pio_index = 0;
+  load_pio = 0;
   increment_index = 0;
 
   load_src_addr0 = 0;
   load_src_addr1 = 0;
   load_src_addr2 = 0;
-  load_src_pio = 0;
   update_src_addr = 0;
 
   load_dst_addr0 = 0;
@@ -404,10 +410,9 @@ begin
   load_list_addr0 = 0;
   load_list_addr1 = 0;
   load_list_addr2 = 0;
+  increment_list_addr = 0;
   load_status = 0;
   
-  increment_list_addr = 0;
-
   list_counter_reset = 0;
   increment_list_counter = 0;
 
@@ -466,19 +471,19 @@ begin
       load_status = dmagic_io_write_next;
       dmagic_data_op_next = Data_Status;
     end else if (dmagic_io_address_next==8'h10) begin
-      load_pio_addr0 = dmagic_io_write_next;
+      load_pio_base_addr0 = dmagic_io_write_next;
       dmagic_data_op_next = Data_Addr0;
     end else if (dmagic_io_address_next==8'h11) begin
-      load_pio_addr1 = dmagic_io_write_next;
+      load_pio_base_addr1 = dmagic_io_write_next;
       dmagic_data_op_next = Data_Addr1;
     end else if (dmagic_io_address_next==8'h12) begin
-      load_pio_addr2 = dmagic_io_write_next;
+      load_pio_base_addr2 = dmagic_io_write_next;
       dmagic_data_op_next = Data_Addr2;
     end else if (dmagic_io_address_next==8'h13) begin
       load_pio_index = dmagic_io_write_next;
       dmagic_data_op_next = Data_Index;
     end else if (dmagic_io_address_next==8'h14 || dmagic_io_address_next==8'h15) begin
-      load_src_pio = 1;
+      load_pio = 1;
       increment_index = dmagic_io_address_next[0];
       if (dmagic_io_write_next)
         start_cpu_write = 1;
@@ -501,6 +506,7 @@ begin
       // feeding the CPU from FastIO (i.e. us) during this cycle and we don't have the data yet.
     end
     DMAgic_CPUAccessRead: begin
+      dmagic_addr_sel_next = Addr_PIO;
       dmagic_io_ready = 0;
       dmagic_cpu_req = 1;
       if (dmagic_bus_ready) begin
@@ -518,12 +524,14 @@ begin
     end
     
     DMAgic_CPUAccessReadWait: begin
+      dmagic_addr_sel_next = Addr_PIO;
       dmagic_io_ready = 0;
       if (dmagic_io_cs && dmagic_io_ack)              // Wait for bus arbiter to direct control back to us
         dmagic_state_next = DMAgic_CPUAccessAck;
     end
     
     DMAgic_CPUAccessWrite: begin
+      dmagic_addr_sel_next = Addr_PIO;
       dmagic_io_ready = 1;  // This is set to 1 to make this act like a posted write.
       dmagic_cpu_req = 1;
       dmagic_memory_access_write_next = 1;
