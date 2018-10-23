@@ -1,5 +1,5 @@
 // For when I want to synthesize and keep the full internal hierarchy
-//`define SCHEM_KEEP 1
+`define EN_SCHEM_KEEP 1
 `ifdef EN_SCHEM_KEEP
 `define SCHEM_KEEP_HIER (* keep_hierarchy = "yes" *)
 `else
@@ -12,6 +12,8 @@
 `else
 `define DBG
 `endif
+
+//`define DMAGIC_SKIP 1
 
 /*
 
@@ -121,9 +123,17 @@ parameter Data_Idle                     = 4'h00,
 
 `DBG reg list_counter_reset, increment_list_counter;
 
+`ifdef DMAGIC_SKIP
 `DBG reg [7:0] dmagic_src_skip, dmagic_dst_skip;
 `DBG reg load_src_skip, load_dst_skip;
 `DBG reg reset_opts;
+`define SRC_SKIP dmagic_src_skip
+`define DST_SKIP dmagic_dst_skip
+`else
+`define SRC_SKIP 1
+`define DST_SKIP 1
+`endif
+
 
 `DBG reg job_is_f018b;
 
@@ -149,8 +159,10 @@ begin
     dmagic_state <= DMAgic_Idle;
     support_f01b <= 0;
     dmagic_serial <= 0;
+`ifdef DMAGIC_SKIP
     dmagic_src_skip <= 1;
     dmagic_dst_skip <= 1;
+`endif
     job_is_f018b <= 0;
     
   end else begin
@@ -286,6 +298,7 @@ begin
     if (load_mod1)
       dmagic_modulo[15:8] <= dmagic_read_data;
     
+`ifdef DMAGIC_SKIP
     if (reset_opts) begin
       dmagic_src_skip <= 1;
       dmagic_dst_skip <= 1;
@@ -295,6 +308,7 @@ begin
       if (load_dst_skip)
         dmagic_dst_skip <= dmagic_read_data;
     end
+`endif
     
     if (set_job_is_f018a)
       job_is_f018b <= 0;
@@ -348,9 +362,9 @@ begin
     dmagic_dst_addr_next = dmagic_dst_addr;
   else begin
     if (dmagic_dst_dir==0)
-      dmagic_dst_addr_next = dmagic_dst_addr + dmagic_dst_skip;
+      dmagic_dst_addr_next = dmagic_dst_addr + `DST_SKIP;
     else
-      dmagic_dst_addr_next = dmagic_dst_addr - dmagic_dst_skip;
+      dmagic_dst_addr_next = dmagic_dst_addr - `DST_SKIP;
   end
 end
       
@@ -360,9 +374,9 @@ begin
     dmagic_src_addr_next = dmagic_src_addr;
   else begin
     if (dmagic_src_dir==0)
-      dmagic_src_addr_next = dmagic_src_addr + dmagic_src_skip;
+      dmagic_src_addr_next = dmagic_src_addr + `SRC_SKIP;
     else
-      dmagic_src_addr_next = dmagic_src_addr - dmagic_src_skip;
+      dmagic_src_addr_next = dmagic_src_addr - `SRC_SKIP;
   end
 end
 
@@ -437,9 +451,11 @@ begin
   load_srcdst_opts = 0;
   load_src_opts = 0;
   load_dst_opts = 0;
+`ifdef DMAGIC_SKIP
   reset_opts = 0;
   load_dst_skip = 0;
   load_src_skip = 0;
+`endif
   load_wdata_bus = 0;
   start_job = 0;
   start_cpu_write = 0;
@@ -590,8 +606,10 @@ begin
         dmagic_state_next = DMAgic_ReadOptions;
         
         case (dmagic_cmd)
+`ifdef DMAGIC_SKIP
           8'h83: load_src_skip = 1;
           8'h85: load_dst_skip = 1;
+`endif
           default: ;
         endcase
       end
@@ -717,7 +735,9 @@ begin
       if (dmagic_cmd[2]) begin
         dmagic_state_next = DMAgic_Start;
       end else begin
+`ifdef DMAGIC_SKIP
         reset_opts = 1;
+`endif
         dmagic_state_next = DMAgic_Idle;
       end
     end
