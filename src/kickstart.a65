@@ -2167,122 +2167,6 @@ g61:		sta $0800,x
 
 ;	========================
 
-; BG: the longpeek subroutine does not get called from kickstart,
-;     it gets called only from the kickstart_task file,
-;     so i suggest moving this subroutine to that file.
-
-longpeek:
-		; Use DMAgic to read any byte of RAM in 28bit address space.
-		; Value gets read into $BC00 (kickstart_scratchbyte0)
-		; ($FFFBC00 - $FFFBDFF)
-
-		; Patch DMA list
-		;
-		stx longpeekdmalist_src_lsb
-		sty longpeekdmalist_src_2sb
-		stz longpeekdmalist_src_msb
-		sta longpeekdmalist_src_mb 
-
-		; Set DMA list address
-		;
-		lda #>longpeekdmalist
-		sta $d701
-		lda #$0f
-		sta $d702 ; DMA list address is $xxFxxxx
-		lda #$ff
-		sta $d704 ; DMA list address is $FFxxxxx
-
-		; set bottom bits of DMA list address and trigger enhanced DMA
-		;
-		lda #<longpeekdmalist
-		sta $d705
-		rts
-
-longpeekdmalist:
-		; MEGA65 Enhanced DMA options
-		.byte $0A      ; Request format is F018A
-		.byte $80
-longpeekdmalist_src_mb:
-		.byte $FF
-		.byte $81,$FF ; destination is always $FFxxxxx
-		.byte $00 ; end of options marker
-		; F018A format request follows
-		.byte $00 ; COPY, no chain
-		; 1 byte
-		.word $0001
-		; source address
-longpeekdmalist_src_lsb:
-		.byte $00
-longpeekdmalist_src_2sb:
-		.byte $00
-longpeekdmalist_src_msb:
-		.byte $00
-		; destination address ($xxFBC00)
-		.word kickstart_scratchbyte0
-		.byte $0F 
-		.byte $00,00 ; Modulo
-
-longpoke:
-		; Use DMAgic to write any byte of RAM in C65 1MB address space.
-		; A = value
-		; X = Address LSB
-		; Y = Address MidB
-		; Z = Address Bank
-
-		; Patch DMA list
-		;
-		sta longpokevalue
-		stx longpokeaddress+0
-		sty longpokeaddress+1
-		stz longpokeaddress+2
-		tza
-		lsr
-		lsr
-		lsr
-		lsr
-		sta longpokedmalist_dest_mb ; DMAgic destination MB
-		; and disable F108B enhanced mode
-		sta $d703
-
-		; Set DMA list address
-		;
-		lda #>longpokedmalist
-		sta $d701
-		lda #$0f
-		sta $d702 ; DMA list address is $xxFxxxx
-		lda #$ff
-		sta $d704 ; DMA list address is $FFxxxxx
-
-		; set bottom bits of DMA list address and trigger enhhanced DMA
-		;
-
-		lda #<longpokedmalist
-		sta $d705
-		rts
-
-longpokedmalist:
-		; MEGA65 Enhanced DMA option list
-		.byte $0A      ; Request format is F018A
-		.byte $81
-longpokedmalist_dest_mb:
-		.byte $00
-		.byte $00 ; no more enhanced DMA options
-		; F018A dma list
-		.byte $03 ; FILL, no chain
-		; 1 byte
-		.word $0001
-		; source address (LSB = fill value)
-longpokevalue:	.byte $00
-		.word $0000
-		; destination address
-longpokeaddress:
-		.word $0000
-		.byte $0F 
-		.byte $00,00 ; Modulo
-
-
-;	========================
-		
 ; reset memory map to default
 resetmemmap:
 		; clear memory MAP MB offset register
@@ -2753,7 +2637,12 @@ ueol1:
 	ldx #$d2
 	ldy #$ff
 	ldz #$02
-	jsr longpoke
+	stx dmagic_pio_base_addr+0	; Set base address
+	sty dmagic_pio_base_addr+1
+	stz dmagic_pio_base_addr+2
+	ldz #0
+	stz dmagic_pio_index		; Clear index
+	sta dmagic_pio_data		; Do write
 
 	; Next instruction exits hypervisor to user mode
 	sta hypervisor_enterexit_trigger
@@ -2785,46 +2674,46 @@ utillist_next:
 
 	; Advance pointer to the next pointer
 	ldz #42
-	stz $d713       ; Set PIO index
-	lda $d715       ; Load/inc
+	stz dmagic_pio_index       	; Set PIO index
+	lda dmagic_pio_data_inc       	; Load/inc
 	phx
 	tax
 	lda $d715       ; Load/inc
 	; XXX - Make sure it can't point earlier into the colour RAM here
 
 	sta <zptempv32+1
-	sta $d710+1     ; Set PIO addr1
+	sta dmagic_pio_base_addr+1     	; Set PIO addr1
 	stx <zptempv32
-	stx $d710+0     ; Set PIO addr2
+	stx dmagic_pio_base_addr+0     	; Set PIO addr0
 	plx
 	rts
 
 utillist_validity_check:
 	; See if this is a valid utility entry
 	ldz #0
-	stz $d713       ; Zero DMAgic PIO index register
+	stz dmagic_pio_index       	; Zero DMAgic PIO index register
 
 	; Check for magic value
-	lda $d715       ; Load value (and increment)
+	lda dmagic_pio_data_inc		; Load value (and increment)
 	cmp #'M
 	bne ulvc_fail
-	lda $d715       ; Load value (and increment)
+	lda dmagic_pio_data_inc		; Load value (and increment)
 	cmp #'6
 	bne ulvc_fail
-	lda $d715       ; Load value (and increment)
+	lda dmagic_pio_data_inc       	; Load value (and increment)
 	cmp #'5
 	bne ulvc_fail
-	lda $d715       ; Load value (and increment)
+	lda dmagic_pio_data_inc       	; Load value (and increment)
 	cmp #'U
 	bne ulvc_fail
 
 	; Check self address
 	ldz #40
-	stz $d713       ; Set index
-	lda $d715       ; Load value (and increment)
+	stz dmagic_pio_index       	; Set index
+	lda dmagic_pio_data_inc       	; Load value (and increment)
 	cmp zptempv32
 	bne ulvc_fail
-	lda $d715       ; Load value (and increment)
+	lda dmagic_pio_data_inc       	; Load value (and increment)
 	cmp zptempv32+1
 	bne ulvc_fail
 
@@ -2840,13 +2729,13 @@ utillist_rewind:
 	; Set pointer to first entry in colour RAM ($0850)
 	lda #<$0850
 	sta <zptempv32
-	sta $d710+0                             ; Update DMAgic PIO base address0
+	sta dmagic_pio_base_addr+0	; Update DMAgic PIO base address0
 	lda #>$0850
 	sta <zptempv32+1
-	sta $d710+1
+	sta dmagic_pio_base_addr+1
 	lda #<$0FF8
 	sta <zptempv32+2
-	sta $d710+2
+	sta dmagic_pio_base_addr+2
 	lda #>$0FF8
 	sta <zptempv32+3
 

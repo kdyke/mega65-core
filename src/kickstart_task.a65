@@ -58,21 +58,18 @@ task_set_c64_memorymap:
 
 task_set_pc_to_reset_vector:
 
-	; Set PC from $FFFC in ROM, i.e., $802FFFC
+	; Set PC from $FFFC in ROM, i.e., $2FFFC
 	ldx #<reset_vector
 	ldy #>reset_vector
 	ldz #$02
 	lda #$00
-	jsr longpeek
-	lda kickstart_scratchbyte0
+	stx dmagic_pio_base_addr+0
+	sty dmagic_pio_base_addr+1
+	stz dmagic_pio_base_addr+2
+	sta dmagic_pio_index
+	lda dmagic_pio_data_inc
 	sta hypervisor_pcl
-	ldx #<reset_vector
-	inx
-	ldy #>reset_vector
-	ldz #$02
-	lda #$00
-	jsr longpeek
-	lda kickstart_scratchbyte0
+	lda dmagic_pio_data_inc
 	sta hypervisor_pch
 
 	rts

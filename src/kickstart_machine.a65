@@ -134,3 +134,9 @@
 	.alias mult48_result7 $d77f
 
 	.alias viciv_magic $d02f
+	
+	.alias dmagic_pio_base_addr $d710
+	.alias dmagic_pio_index $d713
+	.alias dmagic_pio_data $d714
+	.alias dmagic_pio_data_inc $d715
+	
