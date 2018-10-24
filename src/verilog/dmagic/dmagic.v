@@ -13,8 +13,6 @@
 `define DBG
 `endif
 
-//`define DMAGIC_SKIP 1
-
 /*
 
 Written by
@@ -89,12 +87,6 @@ parameter Data_Idle                     = 4'h00,
 `DBG reg [19:0] dmagic_list_addr, dmagic_list_addr_next;
 `DBG reg [3:0] dmagic_list_counter;
 
-`DBG reg [19:0] dmagic_src_addr, dmagic_src_addr_next;
-`DBG reg [19:0] dmagic_dst_addr, dmagic_dst_addr_next;
-
-`DBG reg dmagic_src_dir, dmagic_src_io, dmagic_src_mod, dmagic_src_hold, load_src_opts;
-`DBG reg dmagic_dst_dir, dmagic_dst_io, dmagic_dst_mod, dmagic_dst_hold, load_dst_opts;
-
 `DBG reg load_dir_cmd, load_srcdst_opts;
 
 `DBG reg [15:0] dmagic_modulo;
@@ -115,25 +107,16 @@ parameter Data_Idle                     = 4'h00,
 `DBG reg increment_index, load_pio_base_addr0, load_pio_base_addr1, load_pio_base_addr2, load_pio_index;
 `DBG reg load_list_addr0, load_list_addr1, load_list_addr2, increment_list_addr;
 
-`DBG reg load_src_addr0, load_src_addr1, load_src_addr2, update_src_addr;  
-`DBG reg load_dst_addr0, load_dst_addr1, load_dst_addr2, update_dst_addr;
+`DBG reg load_src_addr0, load_src_addr1, load_src_addr2, update_src_addr, load_src_opts;  
+`DBG wire [19:0] dmagic_src_addr, dmagic_src_io;
+
+`DBG reg load_dst_addr0, load_dst_addr1, load_dst_addr2, update_dst_addr, load_dst_opts;
+`DBG wire [19:0] dmagic_dst_addr, dmagic_dst_io;
 
 `DBG reg load_status;
 `DBG reg support_f01b;
 
 `DBG reg list_counter_reset, increment_list_counter;
-
-`ifdef DMAGIC_SKIP
-`DBG reg [7:0] dmagic_src_skip, dmagic_dst_skip;
-`DBG reg load_src_skip, load_dst_skip;
-`DBG reg reset_opts;
-`define SRC_SKIP dmagic_src_skip
-`define DST_SKIP dmagic_dst_skip
-`else
-`define SRC_SKIP 1
-`define DST_SKIP 1
-`endif
-
 
 `DBG reg job_is_f018b;
 
@@ -148,6 +131,14 @@ parameter Data_Idle                     = 4'h00,
 
 `DBG reg [8:0] tmp_sum;
    
+  dmagic_addr_reg src_addr(.clk(clk), .load_addr0(load_src_addr0), .load_addr1(load_src_addr1), .load_addr2(load_src_addr2), .update_addr(update_src_addr), 
+                           .load_opts_rdata(load_src_opts), .read_data(dmagic_read_data), .mod_hold(dmagic_read_data[1:0]), .load_mod_hold(load_srcdst_opts),
+                           .dir(dmagic_read_data[4]), .load_dir(load_dir_cmd), .addr(dmagic_src_addr), .addr_io(dmagic_src_io));
+
+  dmagic_addr_reg dst_addr(.clk(clk), .load_addr0(load_dst_addr0), .load_addr1(load_dst_addr1), .load_addr2(load_dst_addr2), .update_addr(update_dst_addr), 
+                           .load_opts_rdata(load_dst_opts), .read_data(dmagic_read_data), .mod_hold(dmagic_read_data[3:2]), .load_mod_hold(load_srcdst_opts),
+                           .dir(dmagic_read_data[5]), .load_dir(load_dir_cmd), .addr(dmagic_dst_addr), .addr_io(dmagic_dst_io));
+
 // DMAgic state machine clocked section.   This process really doesn't do any decision making. That
 // all happens in the combinatorial logic.  This is done as a Mealy machine so we can respond to certain
 // external signals without needing another clock edge.  This is important so we can do single cycle
@@ -159,10 +150,6 @@ begin
     dmagic_state <= DMAgic_Idle;
     support_f01b <= 0;
     dmagic_serial <= 0;
-`ifdef DMAGIC_SKIP
-    dmagic_src_skip <= 1;
-    dmagic_dst_skip <= 1;
-`endif
     job_is_f018b <= 0;
     
   end else begin
@@ -195,32 +182,6 @@ begin
     if (load_pio)
       dmagic_pio_addr <= dmagic_pio_base_addr + dmagic_pio_index;
       
-    if (update_src_addr)
-      dmagic_src_addr <= dmagic_src_addr_next;
-    else begin
-      if (load_src_addr0)
-        dmagic_src_addr[7:0] <= dmagic_read_data;
-      if (load_src_addr1)
-        dmagic_src_addr[15:8] <= dmagic_read_data;
-      if (load_src_addr2) begin
-        dmagic_src_addr[19:16] <= dmagic_read_data[3:0];
-        dmagic_src_io <= dmagic_read_data[7];
-      end
-    end
-
-    if (update_dst_addr)
-      dmagic_dst_addr <= dmagic_dst_addr_next;
-    else begin
-      if (load_dst_addr0)
-        dmagic_dst_addr[7:0] <= dmagic_read_data;
-      if (load_dst_addr1)
-        dmagic_dst_addr[15:8] <= dmagic_read_data;
-      if (load_dst_addr2) begin
-        dmagic_dst_addr[19:16] <= dmagic_read_data[3:0];
-        dmagic_dst_io <= dmagic_read_data[7];
-      end
-    end
-
     if (start_job)
       dmagic_serial <= dmagic_serial + 1;
     
@@ -269,47 +230,12 @@ begin
       if (load_count1)
         dmagic_count[15:8] <= dmagic_read_data;
     end
-    
-    if (load_srcdst_opts) begin
-      dmagic_src_mod     <= dmagic_read_data[0];
-      dmagic_src_hold    <= dmagic_read_data[1];
-      dmagic_dst_mod     <= dmagic_read_data[2];
-      dmagic_dst_hold    <= dmagic_read_data[3];
-    end else if (load_src_opts) begin
-      dmagic_src_mod     <= dmagic_read_data[5];
-      dmagic_src_hold    <= dmagic_read_data[4];
-    end else if (load_dst_opts) begin
-      dmagic_dst_mod     <= dmagic_read_data[5];
-      dmagic_dst_hold    <= dmagic_read_data[4];
-    end
-    
-    if (load_dir_cmd) begin
-      dmagic_src_dir    <= dmagic_read_data[4];
-      dmagic_dst_dir    <= dmagic_read_data[5];
-    end else begin
-      if (load_src_opts)
-        dmagic_src_dir    <= dmagic_read_data[6];
-      if (load_dst_opts)
-        dmagic_dst_dir    <= dmagic_read_data[6];
-    end
-    
+        
     if (load_mod0)
       dmagic_modulo[7:0] <= dmagic_read_data;
     if (load_mod1)
       dmagic_modulo[15:8] <= dmagic_read_data;
-    
-`ifdef DMAGIC_SKIP
-    if (reset_opts) begin
-      dmagic_src_skip <= 1;
-      dmagic_dst_skip <= 1;
-    end else begin
-      if (load_src_skip)
-        dmagic_src_skip <= dmagic_read_data;
-      if (load_dst_skip)
-        dmagic_dst_skip <= dmagic_read_data;
-    end
-`endif
-    
+        
     if (set_job_is_f018a)
       job_is_f018b <= 0;
     else if (set_job_is_f018b)
@@ -354,30 +280,6 @@ begin
     dmagic_memory_access_wdata_next = dmagic_read_data;
   else
     dmagic_memory_access_wdata_next = dmagic_wdata_next;
-end
-
-always @(*)
-begin
-  if (dmagic_dst_hold)
-    dmagic_dst_addr_next = dmagic_dst_addr;
-  else begin
-    if (dmagic_dst_dir==0)
-      dmagic_dst_addr_next = dmagic_dst_addr + `DST_SKIP;
-    else
-      dmagic_dst_addr_next = dmagic_dst_addr - `DST_SKIP;
-  end
-end
-      
-always @(*)
-begin
-  if (dmagic_src_hold)
-    dmagic_src_addr_next = dmagic_src_addr;
-  else begin
-    if (dmagic_src_dir==0)
-      dmagic_src_addr_next = dmagic_src_addr + `SRC_SKIP;
-    else
-      dmagic_src_addr_next = dmagic_src_addr - `SRC_SKIP;
-  end
 end
 
 always @(*)
@@ -451,11 +353,6 @@ begin
   load_srcdst_opts = 0;
   load_src_opts = 0;
   load_dst_opts = 0;
-`ifdef DMAGIC_SKIP
-  reset_opts = 0;
-  load_dst_skip = 0;
-  load_src_skip = 0;
-`endif
   load_wdata_bus = 0;
   start_job = 0;
   start_cpu_write = 0;
@@ -606,10 +503,6 @@ begin
         dmagic_state_next = DMAgic_ReadOptions;
         
         case (dmagic_cmd)
-`ifdef DMAGIC_SKIP
-          8'h83: load_src_skip = 1;
-          8'h85: load_dst_skip = 1;
-`endif
           default: ;
         endcase
       end
@@ -735,9 +628,6 @@ begin
       if (dmagic_cmd[2]) begin
         dmagic_state_next = DMAgic_Start;
       end else begin
-`ifdef DMAGIC_SKIP
-        reset_opts = 1;
-`endif
         dmagic_state_next = DMAgic_Idle;
       end
     end
@@ -749,4 +639,54 @@ begin
 
 end
   
+endmodule
+
+`SCHEM_KEEP_HIER module dmagic_addr_reg(input clk, input load_addr0, input load_addr1, input load_addr2, input update_addr, input load_opts_rdata, input [7:0] read_data,
+                       input [1:0] mod_hold, input load_mod_hold, input load_dir, input dir, output reg [19:0] addr, output reg addr_io);
+
+`DBG reg [19:0] addr_next;
+`DBG reg addr_dir, addr_mod, addr_hold;
+
+always @(posedge clk)
+begin
+  if (update_addr)
+    addr <= addr_next;
+  else begin
+    if (load_addr0)
+      addr[7:0] <= read_data;
+    if (load_addr1)
+      addr[15:8] <= read_data;
+    if (load_addr2) begin
+      addr[19:16] <= read_data[3:0];
+      addr_io <= read_data[7];
+    end
+  end
+  
+  if (load_mod_hold) begin
+    addr_mod     <= mod_hold[0];
+    addr_hold    <= mod_hold[1];
+  end else if (load_opts_rdata) begin
+    addr_mod     <= read_data[5];
+    addr_hold    <= read_data[4];
+  end
+  
+  if (load_dir)
+    addr_dir    <= dir;
+  else if (load_opts_rdata)
+    addr_dir    <= read_data[6];
+  
+end
+
+always @(*)
+begin
+  if (addr_hold)
+    addr_next = addr;
+  else begin
+    if (addr_dir==0)
+      addr_next = addr + 1;
+    else
+      addr_next = addr - 1;
+  end
+end
+                       
 endmodule
