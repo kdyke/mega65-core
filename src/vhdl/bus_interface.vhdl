@@ -216,7 +216,7 @@ architecture Behavioural of bus_interface is
   -- Is CPU free to proceed with processing an instruction?
 
   type bus_device_type is (
-    DMAgicRegister,         -- 0x00
+    DMAgicNew,              -- 0x00
     HypervisorRegister,     -- 0x01
     CPUPort,                -- 0x02
     Shadow,                 -- 0x03
@@ -225,7 +225,6 @@ architecture Behavioural of bus_interface is
     VICIV,                  -- 0x06
     Kickstart,              -- 0x07
     SlowRAM,                -- 0x08
-    DMAgicNew,              -- 0x09
     Unmapped                -- 0x0A
     );
 
@@ -333,11 +332,6 @@ begin
         bus_device <= Unmapped;
       end if;
       
-      if io_sel_next='1' and (viciii_iomode="01" or viciii_iomode="11") and 
-        (long_address(19 downto 4) = x"0D7F") then
-        report "Preparing to read from a DMAgicRegister";
-        bus_device <= DMAgicRegister;
-      end if;      
 
     end bus_access;
             
