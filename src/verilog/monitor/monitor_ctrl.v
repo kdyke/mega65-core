@@ -53,14 +53,20 @@ module monitor_ctrl(input clk, input reset, output wire reset_out,
                     `MARK_DEBUG input [7:0] di, output reg [7:0] do,
                     output reg [9:0] history_write_index, output wire history_write, output reg [9:0] history_read_index,
                     
-                    /* CPU Memory Interface */
-                    output wire [23:0] mem_address, 
-                    input [7:0] mem_rdata, 
-                    output reg [7:0] mem_wdata,
-                    output reg mem_attention_request, 
-                    input mem_attention_granted,
-                    output reg mem_read, 
-                    output reg mem_write,
+                    /* System Memory Interface */
+                    `MARK_DEBUG output reg [19:0] mem_address, 
+                    `MARK_DEBUG output reg mem_resolve_address,
+                    `MARK_DEBUG output reg mem_map_en,
+                    `MARK_DEBUG input [7:0] mem_rdata, 
+                    `MARK_DEBUG output reg [7:0] mem_wdata,
+                    `MARK_DEBUG output reg mem_attention_request, 
+                    `MARK_DEBUG input mem_attention_granted,
+                    `MARK_DEBUG output reg mem_read, 
+                    `MARK_DEBUG output reg mem_write,
+                    input [11:0] map_offset_low,
+                    input [11:0] map_offset_high,
+                    input [3:0] map_enables_low,
+                    input [3:0] map_enables_high,                    
                     output reg set_pc,
                     
                     /* CPU State Recording Control */
@@ -330,10 +336,58 @@ begin
   end
 end
 
-
+/*
+        blocknum := to_integer(memory_access_address(15 downto 13));
+        if memory_access_address(15)='1' then
+          reg_offset := reg_offset_high;
+        else
+          reg_offset := reg_offset_low;
+        end if;
+  
+        -- choose between mapped address or unmapped address
+        if reg_map(blocknum)='1' then
+          memory_access_address(19 downto 8) := reg_offset+to_integer(memory_access_address(15 downto 8));
+          map_en_var := '1';
+        else
+          map_en_var := '0';
+        end if;
+*/
 // MON_MEM_ADDRn, MON_MEM_INC
-reg [31:0] mem_addr_reg;
-assign mem_address = mem_addr_reg[23:0];
+`MARK_DEBUG reg [31:0] mem_addr_reg;
+
+`MARK_DEBUG reg map_enable;
+`MARK_DEBUG reg [11:0] map_offset;
+`MARK_DEBUG reg [2:0] map_index;
+
+// Emulate CPU mapper
+always @(*)
+begin
+  map_index = mem_addr_reg[14:13];
+
+  if(mem_addr_reg[15]==1) begin
+    map_enable = map_enables_high[map_index];
+    map_offset = map_offset_high;
+  end else begin
+    map_enable = map_enables_low[map_index];
+    map_offset = map_offset_low;
+  end
+
+  mem_map_en = 0;
+  
+  if(mem_addr_reg[23:16]==12'h77) begin
+    mem_resolve_address = 1;
+    if(map_enable) begin
+      mem_address[19:8] = map_offset + mem_addr_reg[15:8];
+      mem_address[7:0]  = mem_addr_reg[7:0];
+      mem_map_en = 1;
+    end else begin
+      mem_address = mem_addr_reg[15:0];
+    end
+  end else begin
+    mem_resolve_address = 0;
+    mem_address = mem_addr_reg[19:0];
+  end
+end
 
 always @(posedge clk)
 begin
@@ -378,6 +432,7 @@ wire mem_timer_expired;
 assign mem_timer_expired = mem_timeout == 0;
 assign mem_done = mem_state == `MEM_STATE_IDLE;
 
+// We probably don't need the timer any more since we have our own bus interface that doesn't go through the CPU.
 always @(posedge clk)
 begin
   if(mem_timer_reset)

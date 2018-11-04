@@ -45,7 +45,6 @@ entity address_resolver is
     gated_game : in std_logic;
     map_en : in std_logic;
     resolve_address : in std_logic;
-    io_sel : in std_logic;
     cpuport_ddr : in unsigned(7 downto 0);
     cpuport_value : in unsigned(7 downto 0);
     viciii_iomode : in std_logic_vector(1 downto 0);
@@ -298,7 +297,7 @@ begin
       ext_sel_resolved <= map_ext;
       resolved_address <= std_logic_vector(temp_address);
     else
-      io_sel_resolved <= io_sel;
+      io_sel_resolved <= '0';
       ext_sel_resolved <= '0';
       resolved_address <= std_logic_vector(short_address);
     end if;

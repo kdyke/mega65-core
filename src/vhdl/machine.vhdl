@@ -372,7 +372,9 @@ architecture Behavioral of machine is
       monitor_char_toggle : in std_logic;
       monitor_char_busy : out std_logic;
       
-      monitor_mem_address : out unsigned(23 downto 0);
+      monitor_mem_address : out unsigned(19 downto 0);
+      monitor_mem_resolve_address : out std_logic;
+      monitor_mem_map_en : out std_logic;
       monitor_mem_rdata : in unsigned(7 downto 0);
       monitor_mem_wdata : out unsigned(7 downto 0);
       monitor_mem_attention_request : out std_logic := '0';
@@ -508,7 +510,11 @@ architecture Behavioral of machine is
   signal monitor_waitstates : unsigned(7 downto 0);
   signal monitor_request_reflected : std_logic;
   signal monitor_watch_match : std_logic;
-  signal monitor_mem_address : unsigned(23 downto 0);
+  signal monitor_mem_address : unsigned(19 downto 0);
+  signal monitor_mem_resolve_address : std_logic;
+  signal monitor_mem_map_en : std_logic;
+  signal monitor_io_sel_resolved : std_logic;
+  signal monitor_ext_sel_resolved : std_logic;  
   signal monitor_mem_rdata : unsigned(7 downto 0);
   signal monitor_mem_wdata : unsigned(7 downto 0);
   signal monitor_map_offset_low : unsigned(11 downto 0);
@@ -760,7 +766,9 @@ architecture Behavioral of machine is
   
   signal cpu_io_sel_resolved : std_logic;
   signal cpu_ext_sel_resolved : std_logic;
-    
+  
+  signal monitor_memory_access_address_next : std_logic_vector(19 downto 0);
+  
   --attribute keep of cpu_read_data : signal is "true";
   --attribute dont_touch of cpu_read_data : signal is "true";
   --attribute mark_debug of cpu_read_data : signal is "true";
@@ -780,7 +788,7 @@ begin
   slow_access_write   <= system_write;
   slow_access_address <= unsigned(system_address);
   slow_access_wdata   <= unsigned(system_wdata);
-  
+
   ----------------------------------------------------------------------------
   -- IRQ & NMI: If either the hardware buttons on the FPGA board or an IO
   -- device via the IOmapper pull an interrupt line down, then trigger an
@@ -1036,7 +1044,6 @@ begin
 
       monitor_proceed => monitor_proceed,
 --    monitor_debug_memory_access => monitor_debug_memory_access,
-      monitor_request_reflected => monitor_request_reflected,
       monitor_hypervisor_mode => monitor_hypervisor_mode,
       monitor_pc => monitor_pc,
       monitor_watch => monitor_watch,
@@ -1058,14 +1065,6 @@ begin
       monitor_map_enables_low => monitor_map_enables_low,
       monitor_map_enables_high => monitor_map_enables_high,
 
-      monitor_mem_address => monitor_mem_address,
-      monitor_mem_rdata => monitor_mem_rdata,
-      monitor_mem_wdata => monitor_mem_wdata,
-      monitor_mem_read => monitor_mem_read,
-      monitor_mem_write => monitor_mem_write,
-      monitor_mem_setpc => monitor_mem_setpc,
-      monitor_mem_attention_request => monitor_mem_attention_request,
-      monitor_mem_attention_granted => monitor_mem_attention_granted,
       monitor_irq_inhibit => monitor_irq_inhibit,
       monitor_mem_trace_mode => monitor_mem_trace_mode,
       monitor_mem_stage_trace_mode => monitor_mem_stage_trace_mode,
@@ -1094,14 +1093,13 @@ begin
       
       );
 
-      address_resolver0 : entity work.address_resolver port map(
+      cpu_address_resolver0 : entity work.address_resolver port map(
         short_address => cpu_memory_access_address_next,
         writeP => cpu_memory_access_write_next,
         gated_exrom => gated_exrom,
         gated_game => gated_game,
         map_en => cpu_map_en_next,
         resolve_address => cpu_memory_access_resolve_address_next,
-        io_sel => cpu_memory_access_io_next,
         cpuport_value => cpuport_value,
         cpuport_ddr => cpuport_ddr,
         viciii_iomode => viciii_iomode,
@@ -1118,7 +1116,31 @@ begin
         ext_sel_resolved => cpu_ext_sel_resolved,
         resolved_address => cpu_resolved_memory_access_address_next
       );
-  
+
+      monitor_address_resolver0 : entity work.address_resolver port map(
+        short_address => monitor_mem_address,
+        writeP => monitor_mem_write,
+        gated_exrom => gated_exrom,
+        gated_game => gated_game,
+        map_en => monitor_mem_map_en,
+        resolve_address => monitor_mem_resolve_address,        
+        cpuport_value => cpuport_value,
+        cpuport_ddr => cpuport_ddr,
+        viciii_iomode => viciii_iomode,
+        sector_buffer_mapped => sector_buffer_mapped,
+        colourram_at_dc00 => colourram_at_dc00,
+        hypervisor_mode => cpu_hypervisor_mode,
+        rom_at_e000 => rom_at_e000,
+        rom_at_c000 => rom_at_c000,
+        rom_at_a000 => rom_at_a000,
+        rom_at_8000 => rom_at_8000,
+        dat_bitplane_addresses => dat_bitplane_addresses,
+        dat_offset_drive => dat_offset_drive,
+        io_sel_resolved => monitor_io_sel_resolved,
+        ext_sel_resolved => monitor_ext_sel_resolved,
+        resolved_address => monitor_memory_access_address_next
+      );
+
       dmagic0: dmagic
       port map(
           clk => cpuclock,
@@ -1162,6 +1184,18 @@ begin
           cpu_ack                         => cpu_ack,
           cpu_read_data                   => cpu_read_data,
           cpu_ready                       => cpu_ready,
+
+          -- Signals from Monitor to arbiter
+          monitor_memory_access_address_next  => monitor_memory_access_address_next,
+          monitor_memory_access_read_next     => monitor_mem_read,
+          monitor_memory_access_write_next    => monitor_mem_write,
+          monitor_memory_access_wdata_next    => monitor_mem_wdata,
+          monitor_memory_access_io_next       => monitor_io_sel_resolved,
+          monitor_memory_access_ext_next      => monitor_ext_sel_resolved,
+          monitor_ack                         => '1',
+          monitor_read_data                   => monitor_mem_rdata,
+          monitor_ready                       => monitor_mem_attention_granted,
+          monitor_req                         => monitor_mem_attention_request,
 
           -- Signals from DMAgic to arbiter
           dmagic_memory_access_address_next  => dmagic_memory_access_address_next,
@@ -1899,6 +1933,8 @@ begin
     monitor_map_enables_high => monitor_map_enables_high,
     monitor_memory_access_address => monitor_memory_access_address,
     monitor_mem_address => monitor_mem_address,
+    monitor_mem_resolve_address => monitor_mem_resolve_address,
+    monitor_mem_map_en => monitor_mem_map_en,
     monitor_mem_rdata => monitor_mem_rdata,
     monitor_mem_wdata => monitor_mem_wdata,
     monitor_mem_read => monitor_mem_read,

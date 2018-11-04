@@ -52,6 +52,18 @@ entity bus_arbiter is
     cpu_read_data : out unsigned(7 downto 0);
     cpu_ready : out std_logic;
     
+    -- Monitor bus interface signals
+    monitor_memory_access_address_next : in std_logic_vector(19 downto 0);
+    monitor_memory_access_read_next : in std_logic;
+    monitor_memory_access_write_next : in std_logic;
+    monitor_memory_access_wdata_next : in unsigned(7 downto 0);
+    monitor_memory_access_io_next : in std_logic;
+    monitor_memory_access_ext_next : in std_logic;
+    monitor_ack : in std_logic;
+    monitor_read_data : out unsigned(7 downto 0);
+    monitor_ready : out std_logic;
+    monitor_req : in std_logic;
+    
     -- DMAgic bus interface signals
     dmagic_memory_access_address_next : in std_logic_vector(19 downto 0);
     dmagic_memory_access_read_next : in std_logic;
@@ -83,7 +95,7 @@ entity bus_arbiter is
     attribute dont_touch : string;
     attribute keep : string;
     
-    --
+    
     --attribute mark_debug of bus_memory_access_address_next: signal is "true";
     --attribute mark_debug of bus_memory_access_io_next: signal is "true";
     --attribute mark_debug of bus_ack: signal is "true";
@@ -96,6 +108,15 @@ entity bus_arbiter is
     --attribute mark_debug of cpu_memory_access_address_next: signal is "true";
     --attribute mark_debug of cpu_memory_access_read_next: signal is "true";
     --attribute mark_debug of cpu_memory_access_io_next: signal is "true";
+    --
+    --attribute mark_debug of monitor_ack: signal is "true";
+    --attribute mark_debug of monitor_ready: signal is "true";
+    --attribute mark_debug of monitor_read_data: signal is "true";
+    --attribute mark_debug of monitor_memory_access_address_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_read_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_write_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_wdata_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_io_next: signal is "true";
     --
     --attribute mark_debug of dmagic_ack: signal is "true";
     --attribute mark_debug of dmagic_memory_access_address_next: signal is "true";
@@ -110,7 +131,8 @@ architecture Behavioural of bus_arbiter is
   
   type bus_master_type is (
     CPU,
-    DMAgic
+    DMAgic,
+    Monitor
     );
 
   -- bus_master_next always controls who is driving the signals going into the bus interface    
@@ -147,6 +169,8 @@ begin
     if bus_master=CPU then
       cpu_ready         <= bus_ready;
       cpu_read_data     <= bus_read_data;
+      monitor_ready     <= '0';
+      monitor_read_data <= x"FF";
       dmagic_ready      <= '0';
       dmagic_read_data  <= x"FF";
       -- A note on this.  When dmagic is performing a memory access on behalf of the CPU, 
@@ -156,9 +180,19 @@ begin
       -- no point delaying the ack because the CPU is already waiting.   So, I treat dmagic_cpu_req
       -- as another way to force ACK to true to eliminate the bubble.
       bus_ack           <= cpu_ack or dmagic_cpu_req;
+    elsif bus_master=Monitor then
+      cpu_ready         <= '0';
+      cpu_read_data     <= x"FF";
+      monitor_ready      <= bus_ready;
+      monitor_read_data  <= bus_read_data;
+      dmagic_ready     <= '0';
+      dmagic_read_data <= x"FF";
+      bus_ack           <= monitor_ack;      
     else
       cpu_ready         <= '0';
       cpu_read_data     <= x"FF";
+      monitor_ready     <= '0';
+      monitor_read_data <= x"FF";
       dmagic_ready      <= bus_ready;
       dmagic_read_data  <= bus_read_data;
       bus_ack           <= dmagic_ack;
@@ -174,13 +208,18 @@ begin
           cpu_memory_access_wdata_next,
           cpu_memory_access_io_next,
           cpu_memory_access_ext_next,
+          monitor_memory_access_address_next,
+          monitor_memory_access_read_next,
+          monitor_memory_access_write_next,
+          monitor_memory_access_wdata_next,
+          monitor_memory_access_io_next,
+          monitor_memory_access_ext_next,
           dmagic_memory_access_address_next,
           dmagic_memory_access_read_next,
           dmagic_memory_access_write_next,
           dmagic_memory_access_wdata_next,
           dmagic_memory_access_io_next,
-          dmagic_memory_access_ext_next,
-          dmagic_ack)
+          dmagic_memory_access_ext_next)
   begin
     if bus_master_next=CPU then
       bus_memory_access_address_next <= cpu_memory_access_address_next;
@@ -189,6 +228,13 @@ begin
       bus_memory_access_wdata_next   <= cpu_memory_access_wdata_next;
       bus_memory_access_io_next      <= cpu_memory_access_io_next;
       bus_memory_access_ext_next     <= cpu_memory_access_ext_next;
+    elsif bus_master_next=Monitor then
+      bus_memory_access_address_next <= monitor_memory_access_address_next;
+      bus_memory_access_read_next    <= monitor_memory_access_read_next;
+      bus_memory_access_write_next   <= monitor_memory_access_write_next;
+      bus_memory_access_wdata_next   <= monitor_memory_access_wdata_next;
+      bus_memory_access_io_next      <= monitor_memory_access_io_next;
+      bus_memory_access_ext_next     <= monitor_memory_access_ext_next;
     else
       bus_memory_access_address_next <= dmagic_memory_access_address_next;
       bus_memory_access_read_next    <= dmagic_memory_access_read_next;
@@ -201,22 +247,44 @@ begin
   
   -- This is the actual arbitration logic that controls who is going to get the bus next.  
   process(bus_master, cpu_ack, dmagic_ack, dmagic_dma_req, dmagic_cpu_req)
+  variable re_arbitrate : std_logic;
   begin
     -- Default is to stick with what we have
     bus_master_next <= bus_master;
+    re_arbitrate := '0';
     
-    -- If DMAgic has the bus bus no longer needs it then we just give it back to the CPU.
+    -- Any time we grant the bus to another device, we always give it back to the CPU first
+    -- when that device is done.  The next time the CPU acks a bus cycle we can check for
+    -- other requests.  This simplifies the logic a little and ensures that if DMAgic performs
+    -- a special access cycle on behalf of the CPU that we always go back to the CPU first to
+    -- let it finish it's original request before we re-arbitrate.
     if bus_master=DMAgic then
       if dmagic_ack='1' and dmagic_dma_req='0' and dmagic_cpu_req='0' then
         bus_master_next <= CPU;
       end if;
-    else -- The current bus master is the CPU, but DMAgic wants it.
+    elsif bus_master=Monitor then -- The current bus master is the Monitor
+      if monitor_ack='1' and monitor_req='0' then
+        bus_master_next <= CPU;
+      end if;
+    else -- The current bus master is the CPU
       if dmagic_cpu_req='1' then -- Special DMA cycle performed by DMAgic on behalf of CPU (i.e. flat 20-bit access via PIO)
         bus_master_next <= DMAgic;
-      elsif cpu_ack='1' and dmagic_dma_req='1' then     -- CPU is finished w/bus cycle and DMAgic is asking for the bus
-        bus_master_next <= DMAgic;
+      elsif cpu_ack='1' then     -- CPU is finished w/bus cycle, so see who's next.
+        re_arbitrate := '1';
       end if;
     end if;
+    
+    -- Determine who gets the bus next.  Currently we give DMAgic priority over the monitor.
+    if re_arbitrate = '1' then
+      if dmagic_dma_req='1' then
+        bus_master_next <= DMAgic;
+      elsif monitor_req='1' then
+        bus_master_next <= Monitor;
+      else
+        bus_master_next <= CPU;
+      end if;
+    end if;
+    
   end process;
       
 end Behavioural;

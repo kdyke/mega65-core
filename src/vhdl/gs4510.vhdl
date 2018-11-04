@@ -101,7 +101,6 @@ entity gs4510 is
     monitor_char_busy : in std_logic;
     
     monitor_proceed : out std_logic;
-    monitor_request_reflected : out std_logic;
     monitor_hypervisor_mode : out std_logic;
     monitor_pc : out unsigned(15 downto 0);
     monitor_state : out unsigned(15 downto 0);
@@ -130,14 +129,6 @@ entity gs4510 is
     ---------------------------------------------------------------------------
     -- Memory access interface used by monitor
     ---------------------------------------------------------------------------
-    monitor_mem_address : in unsigned(23 downto 0); -- FIXME
-    monitor_mem_rdata : out unsigned(7 downto 0);
-    monitor_mem_wdata : in unsigned(7 downto 0);
-    monitor_mem_read : in std_logic;
-    monitor_mem_write : in std_logic;
-    monitor_mem_setpc : in std_logic;
-    monitor_mem_attention_request : in std_logic;
-    monitor_mem_attention_granted : out std_logic;
     monitor_irq_inhibit : in std_logic;
     monitor_mem_trace_mode : in std_logic;
     monitor_mem_stage_trace_mode : in std_logic;
@@ -408,8 +399,6 @@ architecture Behavioural of gs4510 is
   signal pop_y : std_logic := '0';
   signal pop_z : std_logic := '0';
   signal mem_reading_p : std_logic := '0';
-  -- serial monitor is reading data 
-  signal monitor_mem_reading : std_logic := '0';
 
   signal read_data_copy : unsigned(7 downto 0);
   
@@ -727,13 +716,6 @@ architecture Behavioural of gs4510 is
   signal z_incremented : unsigned(7 downto 0);
   signal z_decremented : unsigned(7 downto 0);
 
-  signal monitor_mem_attention_request_drive : std_logic;
-  signal monitor_mem_read_drive : std_logic;
-  signal monitor_mem_write_drive : std_logic;
-  signal monitor_mem_setpc_drive : std_logic;
-  signal monitor_mem_address_drive : unsigned(23 downto 0);
-  signal monitor_mem_wdata_drive : unsigned(7 downto 0);
-
   signal debugging_single_stepping : std_logic := '0';
   signal debug_count : integer range 0 to 5 := 0;
 
@@ -937,7 +919,6 @@ architecture Behavioural of gs4510 is
     --attribute mark_debug of phi_step : signal is "true";
     --attribute mark_debug of phi_step_toggle : signal is "true";
     --attribute mark_debug of phi_counter : signal is "true";
-    --attribute mark_debug of monitor_mem_reading : signal is "true";
     --
     --attribute mark_debug of memory_access_address_next: signal is "true";
     --attribute mark_debug of memory_access_resolve_address_next: signal is "true";
@@ -1272,7 +1253,7 @@ begin
             when "000110" => return hyper_sph;
             when "000111" => return hyper_p;
             when "001000" => return hyper_pc(7 downto 0);
-            when "001001" => return hyper_pc(15 downto 8);                           
+            when "001001" => return hyper_pc(15 downto 8);
             when "001010" =>
               return unsigned(std_logic_vector(hyper_map_low)
                               & std_logic_vector(hyper_map_offset_low(11 downto 8)));
@@ -1911,14 +1892,7 @@ begin
       check_for_interrupts;
       
       cpu_leds <= x"0";
-            
-      monitor_mem_attention_request_drive <= monitor_mem_attention_request;
-      monitor_mem_read_drive <= monitor_mem_read;
-      monitor_mem_write_drive <= monitor_mem_write;
-      monitor_mem_setpc_drive <= monitor_mem_setpc;
-      monitor_mem_address_drive <= monitor_mem_address(23 downto 0);
-      monitor_mem_wdata_drive <= monitor_mem_wdata;
-      
+                  
                                         -- Copy read memory location to simplify reading from memory.
                                         -- Penalty is +1 wait state for memory other than shadowram.
       read_data_copy <= read_data_complex;
@@ -1949,8 +1923,7 @@ begin
 
                                         -- Catch the CPU when it goes to the next instruction if single stepping.
       if ((monitor_mem_trace_mode='0' or
-          monitor_mem_trace_toggle_last /= monitor_mem_trace_toggle)
-        and (monitor_mem_attention_request_drive='0')) then
+          monitor_mem_trace_toggle_last /= monitor_mem_trace_toggle)) then
         monitor_mem_trace_toggle_last <= monitor_mem_trace_toggle;
         normal_fetch_state <= InstructionFetch;
 
@@ -2021,9 +1994,8 @@ begin
 
                                         -- Count down reset watchdog, and trigger reset if required.
       watchdog_reset <= '0';
-      if (watchdog_fed='0') and
-        ((monitor_mem_attention_request_drive='0')
-         and (monitor_mem_trace_mode='0')) then
+      if (watchdog_fed='0' and
+        monitor_mem_trace_mode='0') then
         if watchdog_countdown = 0 then
                                         -- Watchdog reset triggered
           watchdog_reset <= '1';
@@ -2060,15 +2032,12 @@ begin
           if mem_reading='1' then
 --            report "resetting mem_reading (read $" & to_hstring(memory_read_value) & ")" severity note;
             mem_reading <= '0';
-            monitor_mem_reading <= '0';
           end if;
 
         end if;
         
         monitor_proceed <= cpu_ready;
         
-        monitor_request_reflected <= monitor_mem_attention_request_drive;
-
         if cpu_ready='1' then
                                         -- Main state machine for CPU
           report "CPU state = " & processor_state'image(state) & ", PC=$" & to_hstring(reg_pc) severity note;
@@ -2191,36 +2160,6 @@ begin
                 end if;
               end if;
               
-              if monitor_mem_attention_request_drive='1' then
-                if monitor_mem_write_drive='1' then
-                  state <= MonitorMemoryAccess;
-                                        -- Don't allow a read to occur while a write is completing.
-                elsif monitor_mem_read='1' then
-                                        -- and optionally set PC
-                  if monitor_mem_setpc='1' then
-                                        -- Abort any instruction currently being executed.
-                                        -- Then set PC from InstructionWait state to make sure that we
-                                        -- don't write it here, only for it to get stomped.
-                    state <= MonitorMemoryAccess;
-                    report "Setting PC (monitor)";
-                    reg_pc <= unsigned(monitor_mem_address_drive(15 downto 0));
-                    mem_reading <= '0';
-                  else
-                                        -- otherwise just read from memory
-                    monitor_mem_reading <= '1';
-                    mem_reading <= '1';
-                    state <= MonitorMemoryAccess;
-                  end if;
-                end if;
-              end if;
-            when MonitorMemoryAccess =>
-              monitor_mem_rdata <= memory_read_value;
-              if monitor_mem_attention_request_drive='1' then 
-                monitor_mem_attention_granted <= '1';
-              else
-                monitor_mem_attention_granted <= '0';
-                state <= ProcessorHold;
-              end if;
             when TrapToHypervisor =>
                                         -- Save all registers
               hyper_iomode(1 downto 0) <= unsigned(viciii_iomode);
@@ -3560,9 +3499,9 @@ begin
   monitor_map_enables_high <= std_logic_vector(reg_map(7 downto 4)); 
               
   -- alternate (new) combinatorial core memory address generation.
-  process (state,reg_pc,vector,reg_t,hypervisor_mode,monitor_mem_attention_request_drive,monitor_mem_address_drive,
-    mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,monitor_mem_write_drive,monitor_mem_wdata_drive,
-    monitor_mem_read,monitor_mem_setpc,viciii_iomode,
+  process (state,reg_pc,vector,reg_t,hypervisor_mode,
+    mem_reading,flag_n,flag_v,flag_e,flag_d,flag_i,flag_z,flag_c,
+    viciii_iomode,
     reg_addressingmode,is_load,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,reg_microcode,reg_t_high,
     is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,
@@ -3591,7 +3530,6 @@ begin
       addr_op_sp,         -- current SP
       addr_op_pop,        -- basically SP+1
       addr_op_addr,       -- normal 16-bit address
-      addr_op_monitor,
       addr_op_temp
     );
     
@@ -3695,34 +3633,9 @@ begin
           null;
   		  when ProcessorHold =>
   		    -- Hold CPU while blocked by monitor
-
-  		    if monitor_mem_attention_request_drive='1' then
-  		      -- Memory access by serial monitor.
-  		      if monitor_mem_address_drive(23 downto 16) = x"77" then
-  		        -- M777xxxx in serial monitor reads memory from CPU's perspective
-  		        memory_access_resolve_address := '1';
-  		      else
-  		        memory_access_resolve_address := '0';
-  		      end if;
-		      
-            -- simplify logic by always setting the address
-            address_op := addr_op_monitor;
-  		      if monitor_mem_write_drive='1' then
-  		        -- Write to specified long address (or short if address is $777xxxx)
-  		        memory_access_write := '1';
-  		        memory_access_wdata := monitor_mem_wdata_drive;
-  		      elsif monitor_mem_read='1' then
-  		        -- and optionally set PC
-  		        if monitor_mem_setpc='0' then
-  		          -- otherwise just read from memory
-  		          memory_access_read := '1';
-  		        end if;
-  		      end if;
-  		    else
   		      -- Don't do anything while the processor is held.
   		      memory_access_write := '0';
   		      memory_access_read := '0';
-  		    end if;
   		  when Cycle2 =>
   		    -- Fetch arg2 if required (only for 3 byte addressing modes)
   		    -- Also begin processing operations that don't need any more data
@@ -3899,7 +3812,6 @@ begin
         when addr_op_dummy =>   memory_access_address := x"00002";
         when addr_op_addr =>    memory_access_address := x"0"&reg_addr;
         when addr_op_temp =>    memory_access_address := x"0"&temp_addr;
-        when addr_op_monitor => memory_access_address := unsigned(monitor_mem_address_drive(19 downto 0));
         when addr_op_vector =>    		    
           if hypervisor_mode='1' then
   		      -- Vectors move in hypervisor mode to be inside the hypervisor
