@@ -177,7 +177,6 @@ entity gs4510 is
     memory_access_write_next : inout std_logic;
     memory_access_resolve_address_next : inout std_logic;
     memory_access_wdata_next : inout unsigned(7 downto 0);
-    memory_access_io_next : inout std_logic;
     memory_read_data : in unsigned(7 downto 0);
     ready : in std_logic;
     cpu_ready : inout std_logic;
@@ -758,7 +757,6 @@ architecture Behavioural of gs4510 is
   signal memory_access_write_hold : std_logic;
   signal memory_access_resolve_address_hold : std_logic;
   signal memory_access_wdata_hold : unsigned(7 downto 0);
-  signal memory_access_io_hold : std_logic;
   signal map_en_hold : std_logic;
     
   signal cycle_counter : unsigned(15 downto 0) := (others => '0');
@@ -1293,8 +1291,7 @@ begin
             when "010101" => return x"00";
             when "010110" => return x"00";
             when "010111" => return x"00";
-            when "011000" =>
-              return x"00"; --to_unsigned(0,4)&hyper_dmagic_list_addr(27 downto 24);
+            when "011000" => return x"00";
             when "011001" =>
               return "0000000"&virtualise_sd;
               
@@ -3460,7 +3457,6 @@ begin
           memory_access_write_hold <= memory_access_write_next;
           memory_access_resolve_address_hold <= memory_access_resolve_address;
           memory_access_wdata_hold <= memory_access_wdata_next;
-          memory_access_io_hold <= memory_access_io_next;
           map_en_hold <= map_en_next;
         
         end if;
@@ -3579,7 +3575,6 @@ begin
     variable memory_access_write : std_logic := '0';
     variable memory_access_resolve_address : std_logic := '0';
     variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
-    variable memory_access_io : std_logic := '0';
     
     variable io_sel_next_var : std_logic := '0';
     variable ext_sel_next_var : std_logic := '0';
@@ -3628,7 +3623,6 @@ begin
     memory_access_resolve_address := memory_access_resolve_address_hold;
     memory_access_address := memory_access_address_hold;
     memory_access_wdata := memory_access_wdata_hold;
-    memory_access_io := memory_access_io_hold;
 
     temp_addr := x"0000";
 
@@ -3675,7 +3669,6 @@ begin
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
       memory_access_write := '0';
-      memory_access_io := '0';
       memory_access_resolve_address := '1';
       address_op := addr_op_pc;
             
@@ -3957,7 +3950,6 @@ begin
     memory_access_write_next <= memory_access_write;
     memory_access_resolve_address_next <= memory_access_resolve_address;
     memory_access_wdata_next <= memory_access_wdata;
-    memory_access_io_next <= memory_access_io;
     
     cpuport_ddr_out <= cpuport_ddr;
     cpuport_value_out <= cpuport_value;

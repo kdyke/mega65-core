@@ -1082,7 +1082,6 @@ begin
       memory_access_write_next           => cpu_memory_access_write_next,  
       memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
       memory_access_wdata_next           => cpu_memory_access_wdata_next,
-      memory_access_io_next              => cpu_memory_access_io_next,
       memory_read_data                   => cpu_read_data,
       cpu_ready                          => cpu_ack,
       map_en_next                        => cpu_map_en_next,
