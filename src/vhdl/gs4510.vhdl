@@ -82,7 +82,6 @@ entity gs4510 is
     dat_bitplane_addresses : in sprite_vector_eight;
     
     cpuis6502 : out std_logic := '0';
-    cpuspeed : out unsigned(7 downto 0);
 
     irq_hypervisor : in std_logic_vector(2 downto 0) := "000";    -- JBM
 
@@ -136,6 +135,9 @@ entity gs4510 is
         
     cpu_leds : out std_logic_vector(3 downto 0);
 
+    force_fast : inout std_logic := '0';
+    cpuspeed : in unsigned(7 downto 0);
+
     ---------------------------------------------------------------------------
     -- Control CPU speed.  Use 
     ---------------------------------------------------------------------------
@@ -146,11 +148,7 @@ entity gs4510 is
     -- 48MHz   1                  : X                : 1
     -- 48MHz   X                  : 1                : 1
     ---------------------------------------------------------------------------    
-    vicii_2mhz : in std_logic;
-    viciii_fast : in std_logic;
-    viciv_fast : in std_logic;
-    speed_gate : in std_logic;
-    speed_gate_enable : out std_logic := '1';
+    speed_gate_enable : inout std_logic := '1';
     
     io_sel_next : in std_logic := '0';
     ext_sel_next : in std_logic := '0';
@@ -170,11 +168,8 @@ entity gs4510 is
     memory_access_wdata_next : inout unsigned(7 downto 0);
     memory_read_data : in unsigned(7 downto 0);
     ready : in std_logic;
-    cpu_ready : inout std_logic;
     map_en_next : inout std_logic;
     rom_writeprotect : inout std_logic := '0';
-    
-    phi_special : in std_logic; -- External switch to test 25Mhz stepping
     
     hypervisor_entry : out std_logic;
     hypervisor_exit : out std_logic;
@@ -187,7 +182,6 @@ entity gs4510 is
     attribute keep : string;
     attribute dont_touch : string;
 
-    --attribute mark_debug of cpu_ready: signal is "true";
     --attribute mark_debug of ready: signal is "true";
     --attribute mark_debug of chipselect_enables : signal is "true";
     --attribute mark_debug of viciii_iomode: signal is "true";
@@ -208,19 +202,12 @@ architecture Behavioural of gs4510 is
   attribute keep_hierarchy : string;
   --attribute keep_hierarchy of Behavioural : architecture is "yes";
   
-  signal cpuspeed_internal : unsigned(7 downto 0) := (others => '0');
-  signal cpuspeed_external : unsigned(7 downto 0) := (others => '0');
-
   signal reset_drive : std_logic := '0';
   signal cartridge_enable : std_logic := '0';
   signal gated_exrom : std_logic := '1'; 
   signal gated_game : std_logic := '1';
   signal force_exrom : std_logic := '1'; 
   signal force_game : std_logic := '1';
-
-  signal force_fast : std_logic := '0';
-  signal speed_gate_enable_internal : std_logic := '1';
-  signal speed_gate_drive : std_logic := '1';
 
   signal iomode_set_toggle_internal : std_logic := '0';
 
@@ -256,30 +243,11 @@ architecture Behavioural of gs4510 is
   -- monitor to have a serial port tick (which is when it checks on that side)
   signal immediate_monitor_char_busy : std_logic := '0';
 
-  -- For instruction-accurate CPU timing at 1MHz and 3.5MHz
-  -- XXX Doesn't differentiate between PAL and NTSC
-  constant pal1mhz_times_65536 : integer := 64569;
-  constant pal2mhz_times_65536 : integer := 64569 * 2;
-  constant pal3point5mhz_times_65536 : integer := 225992;
-  constant phi_fraction_01pal : unsigned(16 downto 0) :=
-    to_unsigned(pal1mhz_times_65536 / cpufrequency,17);
-  constant phi_fraction_02pal : unsigned(16 downto 0) :=
-    to_unsigned(pal2mhz_times_65536 / cpufrequency,17);
-  constant phi_fraction_04pal : unsigned(16 downto 0) :=
-    to_unsigned(pal3point5mhz_times_65536 / cpufrequency,17);
-  signal phi_export_counter : unsigned(16 downto 0) := (others => '0');
-  signal phi_counter : unsigned(16 downto 0) := (others => '0');
-  signal phi_en : std_logic := '1';
-  signal phi_step : std_logic := '0';
-  signal phi_step_toggle : std_logic := '0';
   signal phi_backlog : integer range 0 to 127 := 0;
   signal phi_backlog_next : integer range 0 to 127 := 0;
   signal phi_add_backlog : std_logic := '0';
   signal charge_for_branches_taken : std_logic := '1';
   signal phi_new_backlog : integer range 0 to 15 := 0;
-  signal last_phi16 : std_logic := '0';
-  signal phi0_export : std_logic := '0';
-
   
   signal word_flag : std_logic := '0';
 
@@ -943,7 +911,7 @@ begin
 
   monitor_cpuport <= std_logic_vector(cpuport_value(2 downto 0));
   
-  process(clock,reset,reg_a,reg_x,reg_y,reg_z,flag_c,phi0_export,all_pause)
+  process(clock,reset,reg_a,reg_x,reg_y,reg_z,flag_c,all_pause)
     procedure disassemble_last_instruction is
       variable justification : side := RIGHT;
       variable size : width := 0;
@@ -1093,7 +1061,7 @@ begin
         if vicii_2mhz='1' then s(111) := '1'; end if;
         if viciii_fast='1' then s(112) := '1'; end if;
         if viciv_fast='1' then s(113) := '1'; end if;
-        s(115 to 116) := to_hstring(cpuspeed_internal);
+        s(115 to 116) := to_hstring(cpuspeed);
         s(117 to 119) := "MHz";
         
         -- Display disassembly
@@ -1292,7 +1260,7 @@ begin
               return "11"
                 & force_4502
                 & force_fast
-                & speed_gate_enable_internal
+                & speed_gate_enable
                 & rom_writeprotect
                 & '0'
                 & cartridge_enable;                        
@@ -1591,8 +1559,6 @@ begin
     variable vreg33 : unsigned(32 downto 0) := to_unsigned(0,33);
     
   begin    
-                                        -- Export phi0 for the rest of the machine (scales with CPU speed)
-    phi0 <= phi0_export;
     
                                         -- Begin calculating results for operations immediately to help timing.
                                         -- The trade-off is consuming a bit of extra silicon.
@@ -1624,27 +1590,11 @@ begin
 
                                         -- BEGINNING OF MAIN PROCESS FOR CPU
     if rising_edge(clock) and all_pause='0' then
-      
-      phi_step_toggle <= not phi_step_toggle;
-      
-      -- If phi_step is '1' on a clock edge then phi_en is asserted until the CPU can finish the next bus cycle (ready is asserted).
-      -- This lets us hide internal FPGA wait states while maintaining 1Mhz/3.5Mhz clock pacing.
-      if phi_special='1' then -- 25Mhz
-        if phi_step_toggle='1'then
-          phi_en <= '1';
-        end if;
-      else
-        if phi_step='1' then
-          phi_en <= '1';
-        end if;
-      end if;
-      
+            
       dat_bitplane_addresses_drive <= dat_bitplane_addresses;
       dat_offset_drive <= dat_offset;
       
       cycle_counter <= cycle_counter + 1;
-      
-      speed_gate_drive <= speed_gate;
       
       if cartridge_enable='1' then
         gated_exrom <= exrom and force_exrom;
@@ -1660,32 +1610,12 @@ begin
                                         -- do double it.
                                         -- Actually, CIAs must run at 1MHz still in 2MHz mode, because SynthMark
                                         -- depends  on it.
-      case cpuspeed_external is
---        when x"02" =>          
---          phi_export_counter <= phi_export_counter + phi_fraction_02pal;
-        when others =>          
-          phi_export_counter <= phi_export_counter + phi_fraction_01pal;
-      end case;
-      phi0_export <= phi_export_counter(16);
-      
-      
                                         -- Count slow clock ticks for applying instruction-level 6502/4510 timing
                                         -- accuracy at 1MHz and 3.5MHz
                                         -- XXX Add NTSC speed emulation option as well
       phi_add_backlog <= '0';
       phi_new_backlog <= 0;
-      last_phi16 <= phi_counter(16);
-      case cpuspeed_internal is
-        when x"01" =>          
-          phi_counter <= phi_counter + phi_fraction_01pal + cpu_speed_bias*16 - (128*16);
-        when x"02" =>          
-          phi_counter <= phi_counter + phi_fraction_02pal + cpu_speed_bias*16 - (128*16);
-        when x"04" =>
-          phi_counter <= phi_counter + phi_fraction_04pal + cpu_speed_bias*16 - (128*16);
-        when others =>
-                                        -- Full speed = 1 clock tick per cycle
-          phi_counter(16) <= phi_counter(16) xor '1';
-      end case;
+
       phi_backlog <= phi_backlog_next;
             
                                         --Check for system-generated traps (matrix mode, and double tap restore)
@@ -1735,8 +1665,8 @@ begin
                                         -- Instruction cycle times are 6502 whenever we are at 1 or 2
                                         -- MHz, for C64 compatibility, and 4502 at 3.5MHz and when
                                         -- full speed. This is even if the CPU is forced to 4502 mode.
-      if cpuspeed_internal = x"01"
-        or cpuspeed_internal = x"02" then
+      if cpuspeed = x"01"
+        or cpuspeed = x"02" then
         timing6502 <= '1';
       else
         timing6502 <= '0';
@@ -1867,7 +1797,6 @@ begin
           cartridge_enable <= last_value(0);
           rom_writeprotect <= last_value(2);
           speed_gate_enable <= last_value(3);
-          speed_gate_enable_internal <= last_value(3);
           force_fast <= last_value(4);
           force_4502 <= last_value(5);
           irq_defer_request <= last_value(6);
@@ -1931,52 +1860,7 @@ begin
                                         -- Test goes here so that it doesn't break the monitor interface.
                                         -- But the hypervisor always runs at full speed.
         fast_fetch_state <= InstructionDecode;
-        cpu_speed := vicii_2mhz&viciii_fast&viciv_fast;
-        case cpu_speed is
-          when "100" => -- 1mhz
-            cpuspeed_external <= x"01";
-          when "101" =>
-            cpuspeed_external <= x"01";
-          when "000" =>
-            cpuspeed_external <= x"02";
-          when "001" =>
-            cpuspeed_external <= x"02";
-          when others =>
-            cpuspeed_external <= x"04";
-        end case;
-        if hypervisor_mode='0' and ((speed_gate_drive='1') and (force_fast='0')) then
-          case cpu_speed is
-            when "100" => -- 1mhz
-              cpuspeed <= x"01";
-              cpuspeed_internal <= x"01";
-            when "101" => -- 1mhz
-              cpuspeed <= x"01";
-              cpuspeed_internal <= x"01";
-            when "110" => -- 3.5mhz
-              cpuspeed <= x"04";
-              cpuspeed_internal <= x"04";
-            when "111" => -- full speed
-              cpuspeed <= x"50";
-              cpuspeed_internal <= x"50";
-            when "000" => -- 2mhz
-              cpuspeed <= x"02";
-              cpuspeed_internal <= x"02";
-            when "001" => -- full speed
-              cpuspeed <= x"50";
-              cpuspeed_internal <= x"50";
-            when "010" => -- 3.5mhz
-              cpuspeed <= x"04";
-              cpuspeed_internal <= x"04";
-            when "011" => -- full speed
-              cpuspeed <= x"50";
-              cpuspeed_internal <= x"50";
-            when others =>
-              null;
-          end case;
-        else
-          cpuspeed <= x"50";
-          cpuspeed_internal <= x"50";
-        end if;
+        
       else
         normal_fetch_state <= ProcessorHold;
         fast_fetch_state <= ProcessorHold;
@@ -2016,7 +1900,7 @@ begin
         report "resetting cpu: reset_drive = " & std_logic'image(reset_drive)
           & ", watchdog_reset=" & std_logic'image(watchdog_reset);
         reset_cpu_state;
-      elsif cpu_ready = '0' then
+      elsif ready = '0' then
                                         -- Wait for time to catch up with CPU instructions when running at low
                                         -- speed (CPU actually runs at full speed, and just gets held here if it
                                         -- gets too far ahead.  This gives us quite accurate timing at an instruction
@@ -2026,27 +1910,17 @@ begin
       else
 
         reset_out <= '1';
-        
-        if cpu_ready = '1' then
-                                        -- End of wait states, so clear memory writing and reading
+                                                -- End of wait states, so clear memory writing and reading
           if mem_reading='1' then
 --            report "resetting mem_reading (read $" & to_hstring(memory_read_value) & ")" severity note;
             mem_reading <= '0';
           end if;
 
-        end if;
+          monitor_proceed <= ready;
         
-        monitor_proceed <= cpu_ready;
-        
-        if cpu_ready='1' then
+        if ready='1' then
                                         -- Main state machine for CPU
           report "CPU state = " & processor_state'image(state) & ", PC=$" & to_hstring(reg_pc) severity note;
-
-          if phi_special='1' then       -- Special 25Mhz mode
-            phi_en <= phi_step_toggle;
-          else
-            phi_en <= phi_step;
-          end if;
           
           pop_a <= '0'; pop_x <= '0'; pop_y <= '0'; pop_z <= '0';
           pop_p <= '0';
@@ -3567,8 +3441,6 @@ begin
     map_en_next <= map_en_hold;
     map_en_var := '0';
 
-    cpu_ready <= ready and phi_en;
-
     -- Don't output next address unless we are unblocked.    Unfortunately some of the different
     -- signals can be out of phase and so we have to test multiple of them.  In particular, phi_en
     -- can be false before ready gets set to 0, and if we drive the next address we can cause
@@ -3602,7 +3474,7 @@ begin
     hypervisor_entry <= '0';
     hypervisor_exit <= '0';
     
-    if cpu_ready='1' then
+    if ready='1' then
     
       -- By default read next byte in instruction stream.
       memory_access_read := '1';
@@ -3877,56 +3749,6 @@ begin
       read_data <= read_data_copy;
     end if;  
   end process;
-  
-  process(phi_backlog, phi_add_backlog, phi_new_backlog, cpuspeed_internal, last_phi16, phi_counter)
-  variable phi_decrement : integer range 0 to 1;
-  variable phi_increment : integer range 0 to 127;
-  begin
     
-    --if phi_backlog /= 0 then
-    --  phi_en <= '0';
-    --else
-    --  phi_en <= '1';
-    --end if;
-    --
-    --if phi_backlog /= 0 and last_phi16 /= phi_counter(16) then
-    --  phi_decrement := 1;
-    --else
-    --  phi_decrement := 0;
-    --end if;
-    --
-    --if phi_add_backlog='1' then
-    --  phi_increment := phi_new_backlog;
-    --else
-    --  phi_increment := 0;
-    --end if;
-    --
-    --if cpuspeed_internal /= x"50" then      
-    --  phi_backlog_next <= phi_backlog + phi_increment - phi_decrement;
-    --else
-    --  phi_backlog_next <= 0;
-    --end if;
-    
-    -- Simplified version that ignores timing tables, as an experiement to see how far off it is.
-    -- With the new 65CE02 core, we'd be cycle accurate except when running at 1Mhz where we'd need
-    -- either different microcode or external pauses (like the C65 did) or even crazier, a different
-    -- CPU core entirely.  This now has logic to let the CPU always finish the current bus cycle to
-    -- hide any FPGA design wait states so they don't count toward the 1Mhz or 3.5Mhz execution speeds.
-    
-    -- Note: There's a bug somewhere that if phi_en toggles every other clock, something goes wrong on bootup.
-    -- It's not clear where the actual bug is yet but for now so long as we're not trying to fake 25Mhz or
-    -- so things seem ok at slower speeds.
-    if cpuspeed_internal /= x"50" then
-      if last_phi16 /= phi_counter(16) then
-        phi_step <= '1';
-      else
-        phi_step <= '0';
-      end if;
-    else
-      phi_step <= '1';
-    end if;
-    
-  end process;
-  
 end Behavioural;
 

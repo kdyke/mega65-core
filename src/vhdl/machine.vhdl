@@ -310,7 +310,24 @@ architecture Behavioral of machine is
 
       );
   end component;
-      
+
+  component m65_speed_ctrl is
+      port (
+        clk : in std_logic;
+        force_fast : in std_logic;
+        speed_gate : in std_logic;
+        speed_gate_enable : in std_logic;
+        vicii_2mhz : in std_logic;
+        viciii_fast : in std_logic;
+        viciv_fast : in std_logic;
+        hypervisor_mode : in std_logic;
+        phi_special : in std_logic;
+        cpuspeed : out unsigned(7 downto 0);
+        bus_ready : in std_logic;
+        cpu_ready : out std_logic;
+        phi0 : out std_logic );
+  end component;
+
   component uart_monitor is
     port (
       reset : in std_logic;
@@ -423,6 +440,7 @@ architecture Behavioral of machine is
   signal viciv_fast : std_logic;
   signal speed_gate : std_logic;
   signal speed_gate_enable : std_logic;
+  signal force_fast : std_logic;
   
   signal drive_led : std_logic;
   signal motor : std_logic;
@@ -1009,7 +1027,6 @@ begin
       hyper_trap => hyper_trap_combined,
       hyper_trap_f011_read => hyper_trap_f011_read,
       hyper_trap_f011_write => hyper_trap_f011_write,    
-      speed_gate => speed_gate,
       speed_gate_enable => speed_gate_enable,
       cpuis6502 => cpuis6502,
       cpuspeed => cpuspeed,
@@ -1029,15 +1046,11 @@ begin
       
       no_kickstart => no_kickstart,
       
-      phi_special => phi_special,
-      
       reg_isr_out => reg_isr_out,
       imask_ta_out => imask_ta_out,
       
-      vicii_2mhz => vicii_2mhz,
-      viciii_fast => viciii_fast,
-      viciv_fast => viciv_fast,
-
+      force_fast => force_fast,
+      
       monitor_char => monitor_char,
       monitor_char_toggle => monitor_char_toggle,
       monitor_char_busy => monitor_char_busy,
@@ -1082,9 +1095,8 @@ begin
       memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
       memory_access_wdata_next           => cpu_memory_access_wdata_next,
       memory_read_data                   => cpu_read_data,
-      cpu_ready                          => cpu_ack,
       map_en_next                        => cpu_map_en_next,
-      ready                              => cpu_ready,
+      ready                              => cpu_ack,
       rom_writeprotect                   => rom_writeprotect,
       cpuport_ddr_out => cpuport_ddr,
       cpuport_value_out => cpuport_value,
@@ -1141,6 +1153,22 @@ begin
         resolved_address => monitor_memory_access_address_next
       );
 
+      speed_ctrl : m65_speed_ctrl
+      port map(
+        clk => cpuclock,
+        force_fast => force_fast,
+        speed_gate => speed_gate,
+        speed_gate_enable => speed_gate_enable,
+        vicii_2mhz => vicii_2mhz,
+        viciii_fast => viciii_fast,
+        viciv_fast => viciv_fast,
+        hypervisor_mode => cpu_hypervisor_mode,
+        phi_special => phi_special,
+        cpuspeed => cpuspeed,
+        bus_ready => cpu_ready,
+        cpu_ready => cpu_ack,
+        phi0 => phi0 );
+      
       dmagic0: dmagic
       port map(
           clk => cpuclock,
