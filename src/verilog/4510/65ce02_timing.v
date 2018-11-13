@@ -124,8 +124,9 @@ end
 
 endmodule
 
-`SCHEM_KEEP_HIER module `interrupt_control(clk, reset, irq, nmi, mc_sync, reg_p, load_i, intg, nmig, resp, hyp, hyperg, hyper_mode, hyper_rti, pc_hold, vector_hi, vector_lo);
+`SCHEM_KEEP_HIER module `interrupt_control(clk, ready, reset, irq, nmi, mc_sync, reg_p, load_i, intg, nmig, resp, hyp, hyperg, hyper_mode, hyper_rti, pc_hold, vector_hi, vector_lo);
 input clk;
+input ready;
 input reset;
 input irq;
 input nmi;
@@ -191,36 +192,38 @@ begin
     nmig <= 1;
   nmil <= nmi;    // remember current state
   
-  if(reset | mc_sync)
-  begin
-    // Hypervisor interrupts take precedence over NMI and IRQ.
-    if(hyp) begin
-      hyperg <= 1;
-      hyper_mode_int <= 1;
-    end else if((((intp & ~reg_p[`kPF_I]) | nmig ) & ~hyper_mode_int) | reset) begin
-      intg <= 1;
-      hyperg <= 0;
-      if(reset)
-        hyper_mode_int <= `RESET_HYPER;
-    end else if(hyper_rti) begin
-      hyper_mode_int <= 0;
-    end
-  end
-  // internal pending interrupt is always cleared at the same time we set interrupt mask.
-  else if(load_i)
-  begin
-      if(hyperg) begin
-        hyperg <= 0;      // Only clear hyperg.  Leave intg and nmig alone.
-      end else begin        
-        intg <= 0;
-        if(intg)
-          nmig <= 0;
+  if(ready) begin
+    if(reset | mc_sync)
+    begin
+      // Hypervisor interrupts take precedence over NMI and IRQ.
+      if(hyp) begin
+        hyperg <= 1;
+        hyper_mode_int <= 1;
+      end else if((((intp & ~reg_p[`kPF_I]) | nmig ) & ~hyper_mode_int) | reset) begin
+        intg <= 1;
+        hyperg <= 0;
+        if(reset)
+          hyper_mode_int <= `RESET_HYPER;
+      end else if(hyper_rti) begin
+        hyper_mode_int <= 0;
       end
+    end
+    // internal pending interrupt is always cleared at the same time we set interrupt mask.
+    else if(load_i)
+    begin
+        if(hyperg) begin
+          hyperg <= 0;      // Only clear hyperg.  Leave intg and nmig alone.
+        end else begin        
+          intg <= 0;
+          if(intg)
+            nmig <= 0;
+        end
+    end
   end
 end
 
 // Disable PC increment when processing a BRK with recognized IRQ/NMI or upon hypervisor entry
-assign pc_hold = intg|hyperg;
+assign pc_hold = (intg|hyperg);
 
 always @(*)
 begin
