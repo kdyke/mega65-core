@@ -288,6 +288,109 @@ trap_entry_points:
 	.advance $8200
 
 ;;; ----------------------------------------------------------------------------
+;;; Hypervisor Entry
+;;; ----------------------------------------------------------------------------
+	sta hypervisor_a
+	stx hypervisor_x
+	sty hypervisor_y
+	stz hypervisor_z
+	tba
+	cle	; Switch to user stack pointer
+	tsx
+	tsy
+	see	; Switch back to hypervisor stack
+	sta hypervisor_b
+	stx hypervisor_spl
+	sty hypervisor_sph
+	
+	; Hypervisor Stack frame now looks like this:
+	; 3	user pch
+	; 2	user pcl
+	; 1	user p
+	
+	; pop stack frame and store where kickstart expects it to be
+	pla
+	plx
+	ply
+	sta hypervisor_flags
+	stx hypervisor_pcl
+	sty hypervisor_pch
+	
+	; Force zero page to physical zero page
+	lda #$00
+	tab
+	lda hypervisor_iomode_ctl
+	ldx $00
+	ldy $01
+	sta hypervisor_iomode
+	stx hypervisor_cpuport00
+	sty hypervisor_cpuport01
+	
+	; Set up hypervisor machine state, stack and zero page
+	cld			; Disable decimal mode
+	lda #$3f		; Set ROM mappings the way we want
+	sta $00
+	lda #$35
+	sta $01
+
+	lda #$03
+	sta hypervisor_iomode_ctl	; set iomode to VIC-IV
+
+	lda #$bf		; Set up hypervisor zero page
+	tab
+
+	; restore user registers for call arguments
+	lda hypervisor_a
+	ldx hypervisor_x
+	ldy hypervisor_y
+	ldz hypervisor_z
+			
+	jmp (hypervisor_trap)		; Branch to trap entry point
+	
+;;; ----------------------------------------------------------------------------
+;;; Hypervisor exit
+;;; ----------------------------------------------------------------------------
+hypervisor_exit:
+
+	lda #$00	; reset zero page
+	tab
+
+	; Restore iomode and CPU port settings
+	lda hypervisor_iomode
+	ldx hypervisor_cpuport00
+	ldy hypervisor_cpuport01
+	sta hypervisor_iomode_ctl
+	stx $00
+	sty $01
+	
+	; set up hypervisor return stack frame
+	lda hypervisor_flags
+	ldx hypervisor_pcl
+	ldy hypervisor_pch
+	
+	phy
+	phx
+	pha
+	
+	; Restore base page register and user stack
+	ldx hypervisor_spl
+	ldy hypervisor_sph
+	lda hypervisor_b
+	cle	; switch to user stack registers
+	txs
+	tys
+	see	; switch back to hypervisor stack
+	tab
+	
+	; Restore user registers
+	ldz hypervisor_z
+	ldy hypervisor_y
+	ldx hypervisor_x
+	lda hypervisor_a
+	
+	rti			; Return from hypervisor
+	
+;;; ----------------------------------------------------------------------------
 ;;; Hypervisor traps
 ;;; ----------------------------------------------------------------------------
 	
@@ -318,7 +421,7 @@ nosuchtrap:
 
 	; return from hypervisor
 	;
-	sta hypervisor_enterexit_trigger
+	jmp hypervisor_exit
 
 ;	========================
 
@@ -338,7 +441,7 @@ return_from_trap_with_success:
 	.byte 0,"return_from_trap_with_success",0
 
 	; return from hypervisor
-	sta hypervisor_enterexit_trigger
+	jmp hypervisor_exit
 
 ;	========================
 
@@ -357,7 +460,7 @@ return_from_trap_with_failure:
 	.byte 0,"return_from_trap_with_failure",0
 
 	; return from hypervisor
-	sta hypervisor_enterexit_trigger	
+	jmp hypervisor_exit
 
 ;	========================
 
@@ -529,7 +632,9 @@ reset_machine_state:
 ;
 reset_entry:
 		sei
-
+		lda #$bf	; set hypervisor zero page
+		tab
+		
 		jsr audiomix_setup
 
 .macro	buffereduarttest
@@ -2099,7 +2204,8 @@ go64:
 		;
 l41:		lda buckykey_status
 		and #$14
-		beq l42      ; no, so continue		
+		bne l42      ; no, so continue		
+		;beq l42      ; no, so continue		
 
 		; yes, display message
 		;
@@ -2116,7 +2222,8 @@ l41a:
 		; and otherwise wait until CTRL is released
 		lda buckykey_status
 		and #$04
-		bne l41a
+		beq l41a
+		;bne l41a
 l42:
 
 		; unmap sector buffer so C64 can see CIAs
@@ -2161,7 +2268,7 @@ g61:		sta $0800,x
 		jsr setup_for_ultimax_cartridge
 
 		; exit from hypervisor to start machine
-		sta hypervisor_enterexit_trigger
+		jmp hypervisor_exit
 
 		.include "kickstart_ultimax.a65"		
 
@@ -2645,7 +2752,7 @@ ueol1:
 	sta dmagic_pio_data		; Do write
 
 	; Next instruction exits hypervisor to user mode
-	sta hypervisor_enterexit_trigger
+	jmp hypervisor_exit
 
 utility_dmalist:	
 		; copy $FF8xxxx-$FF8yyyy to $00007FF-$000xxxx

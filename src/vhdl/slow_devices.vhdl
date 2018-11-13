@@ -159,9 +159,9 @@ begin
     
   end generate;
   
-  process (pixelclock) is
+  process (cpuclock) is
   begin
-    if rising_edge(pixelclock) then
+    if rising_edge(cpuclock) then
 
       case state is
         when Idle =>    

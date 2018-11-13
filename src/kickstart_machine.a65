@@ -70,7 +70,18 @@
 	.alias hypervisor_secure_mode_flags $d672
 	
 	; d673
-	; d674
+	.alias hypervisor_iomode_ctl	$d673
+	
+	; d674 / d675 - Hypervisor entry vector - defaults to $8200
+	.alias hypervisor_vector    	$d674
+	.alias hypervisor_vector_lo 	$d674
+	.alias hypervisor_vector_hi 	$d675
+	
+	; d676 / d674 - Vector to chosen hypervisor trap
+	.alias hypervisor_trap		$d676
+	.alias hypervisor_trap_lo	$d676
+	.alias hypervisor_trap_hi	$d675
+	
 	; d675
 	; d676
 	; d677

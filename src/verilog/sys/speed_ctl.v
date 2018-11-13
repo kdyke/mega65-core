@@ -2,12 +2,19 @@
 //
 // The basic idea here is to emulate slower clock speeds by modulating the CPU ready signal.
 
+`define EN_MARK_DEBUG
+`ifdef EN_MARK_DEBUG
+`define MARK_DEBUG (* mark_debug = "true", dont_touch = "true" *)
+`else
+`define MARK_DEBUG
+`endif
+
 module m65_speed_ctrl(input clk, input force_fast, input speed_gate, input speed_gate_enable,
                       input vicii_2mhz, input viciii_fast, input viciv_fast,
-                      input hypervisor_mode, input phi_special, output reg [7:0] cpuspeed,
+                      input hypervisor_mode, `MARK_DEBUG input phi_special, output reg [7:0] cpuspeed,
                       input bus_ready, output reg cpu_ready, output wire phi0);
 
-parameter cpufrequency = 50;
+parameter cpufrequency = 28;
 parameter pal1mhz_times_65536 = 64569;
 parameter pal2mhz_times_65536 = 64569 * 2;
 parameter pal3point5mhz_times_65536 = 225992;
@@ -19,9 +26,9 @@ reg [16:0] phi_export_counter;
 reg [16:0] phi_counter;
 reg [16:0] phi_delta;
 
-reg phi_en;
-reg phi_step;
-reg phi_step_toggle;
+`MARK_DEBUG reg phi_en;
+`MARK_DEBUG reg phi_step;
+`MARK_DEBUG reg phi_step_toggle;
 reg last_phi16;
 
 assign phi0 = phi_export_counter[16];

@@ -194,7 +194,7 @@ uart_rx rx_ctrl(.clk(clk),.bit_rate_divisor(bit_rate_divisor_reg),.UART_RX(rx),
 always @(posedge clk)
 begin
   if(reset)
-    bit_rate_divisor_reg <= 50000000/2000000;
+    bit_rate_divisor_reg <= (28000000/2000000)-1;
   else if(write)
   begin
     if(address == `MON_UART_BITRATE_LO)

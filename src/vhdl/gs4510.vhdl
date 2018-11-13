@@ -44,8 +44,6 @@ entity gs4510 is
   port (
     mathclock : in std_logic;
     Clock : in std_logic;
-    phi0 : out std_logic;
-    ioclock : in std_logic;
     reset : in std_logic;
     reset_out : out std_logic;
     irq : in std_logic;
@@ -78,9 +76,6 @@ entity gs4510 is
     iomode_set : out std_logic_vector(1 downto 0) := "11";
     iomode_set_toggle : out std_logic := '0';
 
-    dat_offset : in unsigned(15 downto 0);
-    dat_bitplane_addresses : in sprite_vector_eight;
-    
     cpuis6502 : out std_logic := '0';
 
     irq_hypervisor : in std_logic_vector(2 downto 0) := "000";    -- JBM
@@ -96,7 +91,7 @@ entity gs4510 is
     imask_ta_out : in std_logic;
 
     monitor_char : out unsigned(7 downto 0);
-    monitor_char_toggle : out std_logic;
+    monitor_char_toggle : inout std_logic;
     monitor_char_busy : in std_logic;
     
     monitor_proceed : out std_logic;
@@ -167,12 +162,10 @@ entity gs4510 is
     memory_access_resolve_address_next : inout std_logic;
     memory_access_wdata_next : inout unsigned(7 downto 0);
     memory_read_data : in unsigned(7 downto 0);
+    
     ready : in std_logic;
     map_en_next : inout std_logic;
     rom_writeprotect : inout std_logic := '0';
-    
-    hypervisor_entry : out std_logic;
-    hypervisor_exit : out std_logic;
     
     cpuport_ddr_out : out  unsigned(7 downto 0);
     cpuport_value_out : out unsigned(7 downto 0) := x"3F"  
@@ -213,9 +206,6 @@ architecture Behavioural of gs4510 is
 
   signal virtualise_sd : std_logic := '0';
 
-  signal dat_bitplane_addresses_drive : sprite_vector_eight;
-  signal dat_offset_drive : unsigned(15 downto 0) := to_unsigned(0,16);
-
   -- Instruction log
   signal last_instruction_pc : unsigned(15 downto 0) := x"FFFF";
   signal last_opcode : unsigned(7 downto 0)  := (others => '0');
@@ -237,11 +227,6 @@ architecture Behavioural of gs4510 is
   -- Registers to hold delayed write to hypervisor and related CPU registers
   -- to improve CPU timing closure.
   signal last_write_pending : std_logic := '0';
-
-  -- Flag used to ensure monitor serial character out busy flag gets asserted
-  -- immediately on writing a character, without having to wait for the uart
-  -- monitor to have a serial port tick (which is when it checks on that side)
-  signal immediate_monitor_char_busy : std_logic := '0';
 
   signal phi_backlog : integer range 0 to 127 := 0;
   signal phi_backlog_next : integer range 0 to 127 := 0;
@@ -698,8 +683,6 @@ architecture Behavioural of gs4510 is
   signal timing6502 : std_logic := '0';
   signal force_4502 : std_logic := '1';
 
-  signal monitor_char_toggle_internal : std_logic := '1';
-    
   -- These signals are the clocked versions of the memory interface signals, primarily used
   -- to hold the current values in cases where we are paused for any reason (wait states, etc.)
   signal memory_access_address_hold : unsigned(19 downto 0);
@@ -710,9 +693,6 @@ architecture Behavioural of gs4510 is
   signal map_en_hold : std_logic;
     
   signal cycle_counter : unsigned(15 downto 0) := (others => '0');
-
-  signal cpu_speed_bias : integer := 128;
-
   
   type microcode_lut_t is array (instruction)
     of microcodeops;
@@ -1252,7 +1232,7 @@ begin
               -- @IO:GS $D67C.7 - (read) Hypervisor serial output from UART monitor busy flag (can write when 0)
               -- so we have an immediate busy flag that we manage separately.
               return "000000"
-                & immediate_monitor_char_busy
+                & monitor_char_busy
                 & monitor_char_busy;
 
             when "111101" =>
@@ -1590,10 +1570,7 @@ begin
 
                                         -- BEGINNING OF MAIN PROCESS FOR CPU
     if rising_edge(clock) and all_pause='0' then
-            
-      dat_bitplane_addresses_drive <= dat_bitplane_addresses;
-      dat_offset_drive <= dat_offset;
-      
+                  
       cycle_counter <= cycle_counter + 1;
       
       if cartridge_enable='1' then
@@ -1604,15 +1581,6 @@ begin
         gated_game <= force_game;
       end if;
 
-                                        -- Count slow clock ticks for CIAs and other peripherals (never goes >3.5MHz)
-                                        -- Actually, the C65 always counts timers etc at 1MHz, which simplifies
-                                        -- things a little. We only deviate for C128 2MHz mode emulation, where we
-                                        -- do double it.
-                                        -- Actually, CIAs must run at 1MHz still in 2MHz mode, because SynthMark
-                                        -- depends  on it.
-                                        -- Count slow clock ticks for applying instruction-level 6502/4510 timing
-                                        -- accuracy at 1MHz and 3.5MHz
-                                        -- XXX Add NTSC speed emulation option as well
       phi_add_backlog <= '0';
       phi_new_backlog <= 0;
 
@@ -1672,13 +1640,6 @@ begin
         timing6502 <= '0';
       end if;
       
-                                        -- If the serial monitor interface has received the character, we can clear
-                                        -- our temporary busy flag, then rely upon the serial monitor to deassert
-                                        -- the "monitor_char_busy" signal when it has finished sending the char,
-      if monitor_char_busy = '1' then
-        immediate_monitor_char_busy <= '0';
-      end if;
-
                                         -- Write to hypervisor registers if requested
                                         -- (This is separated out from the previous cycle to reduce the logic depth,
                                         -- and thus help achieve timing closure.)
@@ -1775,12 +1736,7 @@ begin
                                         -- @IO:GS $D67C.0-7 - (write) Hypervisor write serial output to UART monitor
         if last_write_address = x"0D67C" and hypervisor_mode='1' then
           monitor_char <= last_value;
-          monitor_char_toggle <= monitor_char_toggle_internal;
-          monitor_char_toggle_internal <= not monitor_char_toggle_internal;
-                                        -- It can take hundreds of cycles before the serial monitor interface asserts
-                                        -- its busy flag, so we have an internal flag we assert until the monitor
-                                        -- interface asserts its.
-          immediate_monitor_char_busy <= '1';
+          monitor_char_toggle <= not monitor_char_toggle;
         end if;
 
                                         -- @IO:GS $D67D.0 - Hypervisor enable /EXROM and /GAME from cartridge
@@ -3471,9 +3427,6 @@ begin
     -- the CPU 'ack' signal that says the CPU is ready to move on to the next bus cycle.   They use the 'ack'
     -- to gate the side effect stuff as it will only get pulsed once per bus cycle.
     
-    hypervisor_entry <= '0';
-    hypervisor_exit <= '0';
-    
     if ready='1' then
     
       -- By default read next byte in instruction stream.
@@ -3661,10 +3614,6 @@ begin
           address_op := addr_op_addr;        
   		    memory_access_write := '1';
   		    memory_access_wdata := reg_t_high;
-        when TrapToHypervisor =>
-          hypervisor_entry <= '1';
-        when ReturnFromHypervisor =>
-          hypervisor_exit <= '1';        
   		  when others =>
   		    null;
   		end case;            

@@ -1,5 +1,5 @@
 // For when I want to synthesize and keep the full internal hierarchy
-//`define EN_SCHEM_KEEP 1
+`define EN_SCHEM_KEEP 1
 `ifdef EN_SCHEM_KEEP
 `define SCHEM_KEEP_HIER (* keep_hierarchy = "yes" *)
 `else
@@ -13,7 +13,7 @@
 `define SCHEM_KEEP_HIER_TOP
 `endif
 
-//`define MARK_DEBUG 1
+//`define EN_MARK_DEBUG 1
 `ifdef EN_MARK_DEBUG
 `define DBG (* mark_debug = "yes" *)
 `else
@@ -41,36 +41,6 @@ Written by
 *  02111-1307  USA.
 */
 
-parameter Addr_List   = 2'h00,
-          Addr_Src    = 2'h01,
-          Addr_Dst    = 2'h02,
-          Addr_PIO    = 2'h03;
-
-parameter DMAgic_Idle                   = 4'h00, 
-          DMAgic_CPUAccessRead          = 4'h01, 
-          DMAgic_CPUAccessReadWait      = 4'h02,
-          DMAgic_CPUAccessWrite         = 4'h03,
-          DMAgic_CPUAccessAck           = 4'h04,
-          DMAgic_ReadOptions            = 4'h05,
-          DMAgic_ReadOptionArgument     = 4'h06,
-          DMAgic_ReadList               = 4'h07,
-          DMAgic_Start                  = 4'h08,
-          DMAgic_Dispatch               = 4'h09,
-          DMAgic_Fill                   = 4'h0A,
-          DMAgic_CopyRead               = 4'h0B,
-          DMAgic_CopyWrite              = 4'h0C,
-          DMAgic_End                    = 4'h0D;
-
-parameter Data_Idle                     = 4'h0,
-          Data_List0                    = 4'h8,
-          Data_List1                    = 4'h9,
-          Data_List2                    = 4'hA,
-          Data_Status                   = 4'hB,
-          Data_Addr0                    = 4'hC,
-          Data_Addr1                    = 4'hD,
-          Data_Addr2                    = 4'hE,
-          Data_Index                    = 4'hF;
-
 `SCHEM_KEEP_HIER_TOP module dmagic(input clk, input reset, 
                                `DBG output wire [19:0] dmagic_memory_access_address_next, 
                                `DBG output reg dmagic_memory_access_read_next, `DBG output wire dmagic_memory_access_write_next,
@@ -82,7 +52,7 @@ parameter Data_Idle                     = 4'h0,
                                `DBG input [7:0] dmagic_io_address_next, `DBG input dmagic_io_cs, `DBG input dmagic_io_ack,
                                `DBG input dmagic_io_read_next, `DBG input dmagic_io_write_next, `DBG input [7:0] dmagic_io_wdata_next,
                                `DBG output wire [7:0] dmagic_io_data, `DBG output wire dmagic_io_ready);
-  
+    
 `DBG wire [1:0] dmagic_addr_sel_next;
 `DBG wire [7:0] dmagic_wdata_next;          
 
@@ -102,10 +72,12 @@ parameter Data_Idle                     = 4'h0,
 `DBG wire load_mod0, load_mod1;
  
 `DBG wire load_src_addr0, load_src_addr1, load_src_addr2, update_src_addr, load_src_opts;  
-`DBG wire [19:0] dmagic_src_addr, dmagic_src_io;
+`DBG wire [19:0] dmagic_src_addr;
+`DBG wire dmagic_src_io;
 
 `DBG wire load_dst_addr0, load_dst_addr1, load_dst_addr2, update_dst_addr, load_dst_opts;
-`DBG wire [19:0] dmagic_dst_addr, dmagic_dst_io;
+`DBG wire [19:0] dmagic_dst_addr;
+`DBG wire dmagic_dst_io;
 
 `DBG reg support_f01b;
 
@@ -161,7 +133,7 @@ parameter Data_Idle                     = 4'h0,
                            .dmagic_memory_access_io_next(dmagic_memory_access_io_next));
    
   dmagic_wdata_reg wdata_reg(.clk(clk), .load_pio(load_pio), .dmagic_io_wdata_next(dmagic_io_wdata_next),
-                                         .load_wdata_fill(load_wdata_fill), .dmagic_src_addr(dmagic_src_addr),
+                                         .load_wdata_fill(load_wdata_fill), .dmagic_src_addr(dmagic_src_addr[7:0]),
                                          .load_wdata_bus(load_wdata_bus), .dmagic_read_data(dmagic_read_data),
                                          .dmagic_wdata_next(dmagic_wdata_next));
                                           
@@ -230,6 +202,26 @@ endmodule
                                    output reg load_dir_cmd, output reg load_srcdst_opts, output reg load_src_opts,
                                    output reg load_dst_opts, output reg load_mod0, output reg load_mod1,
                                    output reg data_op_read);
+
+parameter DMAgic_Idle                   = 4'h00, 
+          DMAgic_CPUAccessRead          = 4'h01, 
+          DMAgic_CPUAccessReadWait      = 4'h02,
+          DMAgic_CPUAccessWrite         = 4'h03,
+          DMAgic_CPUAccessAck           = 4'h04,
+          DMAgic_ReadOptions            = 4'h05,
+          DMAgic_ReadOptionArgument     = 4'h06,
+          DMAgic_ReadList               = 4'h07,
+          DMAgic_Start                  = 4'h08,
+          DMAgic_Dispatch               = 4'h09,
+          DMAgic_Fill                   = 4'h0A,
+          DMAgic_CopyRead               = 4'h0B,
+          DMAgic_CopyWrite              = 4'h0C,
+          DMAgic_End                    = 4'h0D;
+
+parameter Addr_List   = 2'h00,
+          Addr_Src    = 2'h01,
+          Addr_Dst    = 2'h02,
+          Addr_PIO    = 2'h03;
                                    
 `DBG reg [3:0] dmagic_state, dmagic_state_next;
 
@@ -355,7 +347,7 @@ begin
 
         // If CPU has grabbed address bus again and is now sourcing from us again (or will on the next cycle), 
         // proceed directly to Ack state. Otherwise we need to go to DMAgic_CPUReadWait and wait for it to catch up.
-        if (dmagic_io_cs && dmagic_io_ack)
+        if (dmagic_io_cs)
           dmagic_state_next = DMAgic_CPUAccessAck;
         else
           dmagic_state_next = DMAgic_CPUAccessReadWait;
@@ -365,8 +357,7 @@ begin
     
     DMAgic_CPUAccessReadWait: begin
       dmagic_addr_sel_next = Addr_PIO;
-      dmagic_io_ready = 0;
-      if (dmagic_io_cs && dmagic_io_ack)              // Wait for bus arbiter to direct control back to us
+      if (dmagic_io_cs)              // Wait for bus arbiter to direct control back to us
         dmagic_state_next = DMAgic_CPUAccessAck;
     end
     
@@ -574,6 +565,16 @@ endmodule
                                          output reg increment_index, output reg load_pio, output reg clear_job_uses_options, output reg set_job_uses_options,
                                          output reg start_job, output reg start_cpu_write, output reg start_cpu_read, output reg [3:0] dmagic_data_op_next);
 
+parameter Data_Idle                     = 4'h0,
+          Data_List0                    = 4'h8,
+          Data_List1                    = 4'h9,
+          Data_List2                    = 4'hA,
+          Data_Status                   = 4'hB,
+          Data_Addr0                    = 4'hC,
+          Data_Addr1                    = 4'hD,
+          Data_Addr2                    = 4'hE,
+          Data_Index                    = 4'hF;
+
 always @(*)
 begin  
   
@@ -648,6 +649,16 @@ endmodule
                                           input [19:0] dmagic_list_addr, input support_f01b, input [19:0] dmagic_pio_base_addr,
                                           input [7:0] dmagic_pio_index, input [7:0] dmagic_read_data, output reg [7:0] dmagic_io_data);
 
+parameter Data_Idle                     = 4'h0,
+          Data_List0                    = 4'h8,
+          Data_List1                    = 4'h9,
+          Data_List2                    = 4'hA,
+          Data_Status                   = 4'hB,
+          Data_Addr0                    = 4'hC,
+          Data_Addr1                    = 4'hD,
+          Data_Addr2                    = 4'hE,
+          Data_Index                    = 4'hF;
+
 always @(posedge clk)
 begin
   if(data_op_read)
@@ -675,6 +686,11 @@ endmodule
                                         input [19:0] dmagic_dst_addr, input dmagic_dst_io,
                                         input [19:0] dmagic_list_addr_next, input [19:0] dmagic_pio_addr,
                                         output reg [19:0] dmagic_memory_access_address_next, output reg dmagic_memory_access_io_next);
+
+parameter Addr_List   = 2'h00,
+          Addr_Src    = 2'h01,
+          Addr_Dst    = 2'h02,
+          Addr_PIO    = 2'h03;
 
 always @(*)
 begin

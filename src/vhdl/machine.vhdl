@@ -279,6 +279,81 @@ architecture Behavioral of machine is
   attribute mark_debug : string;
   attribute dont_touch : string;
 
+  component cpu4510 is
+    port (
+    clk : in std_logic;
+    reset : in std_logic;
+    nmi : in std_logic;
+    irq : in std_logic;
+    hyp : in std_logic;
+    ready : in std_logic;
+    write_out : out std_logic;
+    write_next : out std_logic;
+    sync : out std_logic;
+    address : out unsigned(19 downto 0);
+    address_next : out unsigned(19 downto 0);
+    map_next : out std_logic;
+    map_out : out std_logic;
+    data_i : in unsigned(7 downto 0);
+    data_o : out unsigned(7 downto 0);
+    data_o_next : out unsigned(7 downto 0);
+    hyper_mode : out std_logic;
+    map_reg_data : out std_logic_vector(7 downto 0);
+    hypervisor_load_user_reg : in std_logic;
+    cpu_state : out std_logic_vector(7 downto 0);
+    t : out std_logic_vector(2 downto 0);
+    cpu_int : out std_logic;
+    a_out : out std_logic_vector(7 downto 0);
+    x_out : out std_logic_vector(7 downto 0);
+    y_out : out std_logic_vector(7 downto 0);
+    z_out : out std_logic_vector(7 downto 0);
+    sp_out : out std_logic_vector(15 downto 0)
+    );
+  end component;
+  
+  component cpu_port is
+    port (
+    clk : in std_logic;
+    reset : in std_logic;
+    ready : in std_logic;
+    cs : in std_logic;
+    addr : in std_logic_vector(0 downto 0);
+    bus_write : in std_logic;
+    data_i : in unsigned(7 downto 0);
+    data_o : out unsigned(7 downto 0);
+    cpuport_ddr : out unsigned(7 downto 0);
+    cpuport_value : out unsigned(7 downto 0)    
+    );
+  end component;
+  
+  component hyper_ctrl is
+    port (
+      clk : in std_logic;
+      reset : in std_logic;
+      hyper_cs : in std_logic;
+      hyper_addr : in std_logic_vector(7 downto 0);
+      hyper_io_data_i : in unsigned(7 downto 0);
+      hyper_data_o : out std_logic_vector(7 downto 0);
+      cpu_write : in std_logic;
+      ready : in std_logic;
+      hyper_mode : in std_logic;
+      hyp : out std_logic;
+      load_user_reg : out std_logic;
+      user_mapper_reg : in std_logic_vector(7 downto 0);
+      virtualised_hardware : out unsigned(7 downto 0);
+      protected_hardware : out unsigned(7 downto 0);
+      rom_writeprotect : out std_logic;
+      speed_gate_enable : out std_logic;
+      force_fast : out std_logic;
+      monitor_char : out unsigned(7 downto 0);
+      monitor_char_toggle : out std_logic;
+      monitor_char_busy : in std_logic;
+      iomode : in std_logic_vector(1 downto 0);
+      iomode_set : out std_logic_vector(1 downto 0) := "11";
+      iomode_set_toggle : out std_logic := '0'      
+    );
+  end component;
+  
   component dmagic is
     port (
       clk : in std_logic;
@@ -469,6 +544,11 @@ architecture Behavioral of machine is
   signal hyper_trap_f011_read : std_logic := '0';
   signal hyper_trap_f011_write : std_logic := '0';
 
+  signal cpu_reset : std_logic;
+  signal cpu_nmi : std_logic;
+  signal cpu_irq : std_logic;
+  signal hyp : std_logic;
+  
   signal io_rdata : std_logic_vector(7 downto 0);
 
   signal io_sel_next : std_logic;
@@ -497,6 +577,9 @@ architecture Behavioral of machine is
   --signal kickstart_address_next : std_logic_vector(13 downto 0);
   signal kickstart_cs_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
+  
+  signal hypervisor_cs_next : std_logic := '0';
+  signal hypervisor_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
   signal vic_rdata : std_logic_vector(7 downto 0);
   signal vic_ready : std_logic;
@@ -596,7 +679,7 @@ architecture Behavioral of machine is
   signal uart_rx_buffer : std_logic;
   signal protected_hardware_sig : unsigned(7 downto 0);
   signal virtualised_hardware_sig : unsigned(7 downto 0);
-  signal chipselect_enables : std_logic_vector(7 downto 0);
+  signal chipselect_enables : std_logic_vector(7 downto 0) := x"EF";
 
   -- Matrix Mode signals
   signal scancode_out : std_logic_vector(12 downto 0); 
@@ -733,12 +816,11 @@ architecture Behavioral of machine is
   signal cpu_memory_access_address_next : unsigned(19 downto 0);
   signal cpu_memory_access_read_next : std_logic;
   signal cpu_memory_access_write_next : std_logic;
-  signal cpu_memory_access_resolve_address_next : std_logic;
+  signal cpu_memory_access_resolve_address_next : std_logic := '1';
   signal cpu_memory_access_wdata_next : unsigned(7 downto 0);
-  signal cpu_memory_access_io_next : std_logic;
-  signal cpu_ack : std_logic;
+  signal spd_cpu_ack : std_logic;
   signal cpu_read_data : unsigned(7 downto 0);
-  signal cpu_ready : std_logic;
+  signal arb_cpu_ready : std_logic;
   signal cpu_map_en_next : std_logic;
 
   -- Signals between DMAgic and bus arbiter
@@ -770,6 +852,8 @@ architecture Behavioral of machine is
   signal rom_writeprotect : std_logic; -- TEMP
   signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
   signal cpuport_value : unsigned(7 downto 0);
+  signal cpuport_rdata : unsigned(7 downto 0);
+  signal cpuport_cs_next : std_logic;
   
   signal cpu_resolved_memory_access_address_next : std_logic_vector(19 downto 0);
   
@@ -787,6 +871,12 @@ architecture Behavioral of machine is
   
   signal monitor_memory_access_address_next : std_logic_vector(19 downto 0);
   
+  signal map_reg_data : std_logic_vector(7 downto 0);
+  signal hypervisor_load_user_reg : std_logic;
+
+  --attribute mark_debug of spd_cpu_ack : signal is "true";
+  --attribute mark_debug of arb_cpu_ready : signal is "true";
+    
   --attribute keep of cpu_read_data : signal is "true";
   --attribute dont_touch of cpu_read_data : signal is "true";
   --attribute mark_debug of cpu_read_data : signal is "true";
@@ -1004,106 +1094,165 @@ begin
     data_o  => kickstart_rdata,
     data_i  =>  system_wdata_next
     );
+      
+  cpu0: cpu4510 port map(
+    clk     => cpuclock,
+    reset   => cpu_reset,
+    nmi     => cpu_nmi,
+    irq     => cpu_irq,
+    hyp     => hyp,
+    ready   => spd_cpu_ack,
+    write_next    => cpu_memory_access_write_next,
+    address_next  => cpu_memory_access_address_next,
+    map_next      => cpu_map_en_next,
+    data_i        => cpu_read_data,
+    data_o_next   => cpu_memory_access_wdata_next,
+    hyper_mode    => cpu_hypervisor_mode,
+    map_reg_data  => map_reg_data,
+    hypervisor_load_user_reg => hypervisor_load_user_reg
+  );
+  
+  -- We can just derive this for the new CPU core.
+  cpu_memory_access_read_next <= spd_cpu_ack and not cpu_memory_access_write_next;
+  reset_out <= reset_combined;
+  cpu_reset <= not reset_combined;
+  cpu_nmi   <= not combinednmi;
+  cpu_irq   <= not combinedirq;
+  
+  cpuport : cpu_port port map(
+    clk         => cpuclock,
+    reset       => cpu_reset,
+    ready       => bus_ack,
+    cs          => cpuport_cs_next,
+    addr        => bus_memory_access_address_next(0 downto 0),
+    bus_write   => bus_memory_access_write_next,
+    data_i      => bus_memory_access_wdata_next,
+    data_o      => cpuport_rdata,
+    cpuport_ddr => cpuport_ddr,
+    cpuport_value => cpuport_value
+    );
     
-  cpu0: entity work.gs4510
-    generic map(
-      cpufrequency => cpufrequency)
-    port map(
-      phi0 => phi0,
-      all_pause => all_pause,
-      matrix_trap_in=>matrix_trap,
-      protected_hardware => protected_hardware_sig,
-      virtualised_hardware => virtualised_hardware_sig,
-      chipselect_enables => chipselect_enables,
-      mathclock => cpuclock,
-      clock => cpuclock,
-      ioclock => ioclock,
-      reset =>reset_combined,
-      reset_out => reset_out,
-      irq => combinedirq,
-      nmi => combinednmi,
-      exrom => cpu_exrom,
-      game => cpu_game,
-      hyper_trap => hyper_trap_combined,
-      hyper_trap_f011_read => hyper_trap_f011_read,
-      hyper_trap_f011_write => hyper_trap_f011_write,    
+  hypervisor:  hyper_ctrl port map(
+      clk               => cpuclock,
+      reset             => cpu_reset,
+      hyper_cs          => hypervisor_cs_next,
+      hyper_addr        => bus_memory_access_address_next(7 downto 0),
+      hyper_io_data_i   => bus_memory_access_wdata_next,
+      hyper_data_o      => hypervisor_rdata,
+      cpu_write         => bus_memory_access_write_next,
+      ready             => bus_ack,
+      hyper_mode        => cpu_hypervisor_mode,
+      hyp               => hyp,
+      load_user_reg     => hypervisor_load_user_reg,
+      user_mapper_reg   => map_reg_data,
+      virtualised_hardware    => virtualised_hardware_sig,
+      protected_hardware      => protected_hardware_sig,
+      rom_writeprotect  => rom_writeprotect,
       speed_gate_enable => speed_gate_enable,
-      cpuis6502 => cpuis6502,
-      cpuspeed => cpuspeed,
-      secure_mode_out => secure_mode_flag,
-      matrix_rain_seed => matrix_rain_seed,
-      dat_offset => dat_offset,
-      dat_bitplane_addresses => dat_bitplane_addresses,
-
-      irq_hypervisor => sw(4 downto 2),    -- JBM
-      
-      -- Hypervisor signals: we need to tell kickstart memory whether
-      -- to map or not, and we also need to be able to set the VIC-III
-      -- IO mode.
-      cpu_hypervisor_mode => cpu_hypervisor_mode,
-      iomode_set => iomode_set,
-      iomode_set_toggle => iomode_set_toggle,
-      
-      no_kickstart => no_kickstart,
-      
-      reg_isr_out => reg_isr_out,
-      imask_ta_out => imask_ta_out,
-      
-      force_fast => force_fast,
-      
-      monitor_char => monitor_char,
+      force_fast        => force_fast,
+      monitor_char        => monitor_char,
       monitor_char_toggle => monitor_char_toggle,
-      monitor_char_busy => monitor_char_busy,
-
-      monitor_proceed => monitor_proceed,
---    monitor_debug_memory_access => monitor_debug_memory_access,
-      monitor_hypervisor_mode => monitor_hypervisor_mode,
-      monitor_pc => monitor_pc,
-      monitor_watch => monitor_watch,
-      monitor_watch_match => monitor_watch_match,
-      monitor_opcode => monitor_opcode,
-      monitor_ibytes => monitor_ibytes,
-      monitor_arg1 => monitor_arg1,
-      monitor_arg2 => monitor_arg2,
-      monitor_a => monitor_a,
-      monitor_b => monitor_b,
-      monitor_x => monitor_x,
-      monitor_y => monitor_y,
-      monitor_z => monitor_z,
-      monitor_sp => monitor_sp,
-      monitor_p => monitor_p,
-      monitor_state => monitor_state,
-      monitor_map_offset_low => monitor_map_offset_low,
-      monitor_map_offset_high => monitor_map_offset_high,
-      monitor_map_enables_low => monitor_map_enables_low,
-      monitor_map_enables_high => monitor_map_enables_high,
-
-      monitor_irq_inhibit => monitor_irq_inhibit,
-      monitor_mem_trace_mode => monitor_mem_trace_mode,
-      monitor_mem_stage_trace_mode => monitor_mem_stage_trace_mode,
-      monitor_mem_trace_toggle => monitor_mem_trace_toggle,
-      monitor_cpuport => monitor_cpuport,
-      
-      cpu_leds => cpu_leds,
-      
-      io_sel_next => io_sel_next,
-      ext_sel_next => ext_sel_next,
-      
-      memory_access_address_next         => cpu_memory_access_address_next,
-      memory_access_read_next            => cpu_memory_access_read_next,
-      memory_access_write_next           => cpu_memory_access_write_next,  
-      memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
-      memory_access_wdata_next           => cpu_memory_access_wdata_next,
-      memory_read_data                   => cpu_read_data,
-      map_en_next                        => cpu_map_en_next,
-      ready                              => cpu_ack,
-      rom_writeprotect                   => rom_writeprotect,
-      cpuport_ddr_out => cpuport_ddr,
-      cpuport_value_out => cpuport_value,
-      
-      viciii_iomode => viciii_iomode
-      
-      );
+      monitor_char_busy   => monitor_char_busy,
+      iomode              => viciii_iomode,
+      iomode_set          => iomode_set,
+      iomode_set_toggle   => iomode_set_toggle
+    );
+  
+  --cpu0: entity work.gs4510
+  --  generic map(
+  --    cpufrequency => cpufrequency)
+  --  port map(
+  --    all_pause => all_pause,
+  --    matrix_trap_in=>matrix_trap,
+  --    protected_hardware => protected_hardware_sig,
+  --    virtualised_hardware => virtualised_hardware_sig,
+  --    chipselect_enables => chipselect_enables,
+  --    mathclock => cpuclock,
+  --    clock => cpuclock,
+  --    reset =>reset_combined,
+  --    reset_out => reset_out,
+  --    irq => combinedirq,
+  --    nmi => combinednmi,
+  --    exrom => cpu_exrom,
+  --    game => cpu_game,
+  --    hyper_trap => hyper_trap_combined,
+  --    hyper_trap_f011_read => hyper_trap_f011_read,
+  --    hyper_trap_f011_write => hyper_trap_f011_write,    
+  --    speed_gate_enable => speed_gate_enable,
+  --    cpuis6502 => cpuis6502,
+  --    cpuspeed => cpuspeed,
+  --    secure_mode_out => secure_mode_flag,
+  --    matrix_rain_seed => matrix_rain_seed,
+  --
+  --    irq_hypervisor => sw(4 downto 2),    -- JBM
+  --    
+  --    -- Hypervisor signals: we need to tell kickstart memory whether
+  --    -- to map or not, and we also need to be able to set the VIC-III
+  --    -- IO mode.
+  --    cpu_hypervisor_mode => cpu_hypervisor_mode,
+  --    iomode_set => iomode_set,
+  --    iomode_set_toggle => iomode_set_toggle,
+  --    
+  --    no_kickstart => no_kickstart,
+  --    
+  --    reg_isr_out => reg_isr_out,
+  --    imask_ta_out => imask_ta_out,
+  --    
+  --    force_fast => force_fast,
+  --    
+  --    monitor_char => monitor_char,
+  --    monitor_char_toggle => monitor_char_toggle,
+  --    monitor_char_busy => monitor_char_busy,
+  --
+  --    monitor_proceed => monitor_proceed,
+----    monitor_debug_memory_access => monitor_debug_memory_access,
+  --    monitor_hypervisor_mode => monitor_hypervisor_mode,
+  --    monitor_pc => monitor_pc,
+  --    monitor_watch => monitor_watch,
+  --    monitor_watch_match => monitor_watch_match,
+  --    monitor_opcode => monitor_opcode,
+  --    monitor_ibytes => monitor_ibytes,
+  --    monitor_arg1 => monitor_arg1,
+  --    monitor_arg2 => monitor_arg2,
+  --    monitor_a => monitor_a,
+  --    monitor_b => monitor_b,
+  --    monitor_x => monitor_x,
+  --    monitor_y => monitor_y,
+  --    monitor_z => monitor_z,
+  --    monitor_sp => monitor_sp,
+  --    monitor_p => monitor_p,
+  --    monitor_state => monitor_state,
+  --    monitor_map_offset_low => monitor_map_offset_low,
+  --    monitor_map_offset_high => monitor_map_offset_high,
+  --    monitor_map_enables_low => monitor_map_enables_low,
+  --    monitor_map_enables_high => monitor_map_enables_high,
+  --
+  --    monitor_irq_inhibit => monitor_irq_inhibit,
+  --    monitor_mem_trace_mode => monitor_mem_trace_mode,
+  --    monitor_mem_stage_trace_mode => monitor_mem_stage_trace_mode,
+  --    monitor_mem_trace_toggle => monitor_mem_trace_toggle,
+  --    monitor_cpuport => monitor_cpuport,
+  --    
+  --    cpu_leds => cpu_leds,
+  --    
+  --    io_sel_next => io_sel_next,
+  --    ext_sel_next => ext_sel_next,
+  --    
+  --    memory_access_address_next         => cpu_memory_access_address_next,
+  --    memory_access_read_next            => cpu_memory_access_read_next,
+  --    memory_access_write_next           => cpu_memory_access_write_next,  
+  --    memory_access_resolve_address_next => cpu_memory_access_resolve_address_next,
+  --    memory_access_wdata_next           => cpu_memory_access_wdata_next,
+  --    memory_read_data                   => cpu_read_data,
+  --    map_en_next                        => cpu_map_en_next,
+  --    ready                              => cpu_ack,
+  --    rom_writeprotect                   => rom_writeprotect,
+  --    cpuport_ddr_out => cpuport_ddr,
+  --    cpuport_value_out => cpuport_value,
+  --    
+  --    viciii_iomode => viciii_iomode
+  --    
+  --    );
 
       cpu_address_resolver0 : entity work.address_resolver port map(
         short_address => cpu_memory_access_address_next,
@@ -1165,8 +1314,8 @@ begin
         hypervisor_mode => cpu_hypervisor_mode,
         phi_special => phi_special,
         cpuspeed => cpuspeed,
-        bus_ready => cpu_ready,
-        cpu_ready => cpu_ack,
+        bus_ready => arb_cpu_ready,
+        cpu_ready => spd_cpu_ack,
         phi0 => phi0 );
       
       dmagic0: dmagic
@@ -1188,7 +1337,7 @@ begin
           
           dmagic_io_address_next            => system_address_next(7 downto 0),
           dmagic_io_cs                      => dmagic_cs_next,
-          dmagic_io_ack                     => cpu_ack,               -- Must be CPU directly, otherwise we might source from ourselves for CPU accesses.
+          dmagic_io_ack                     => spd_cpu_ack,               -- Must be CPU directly, otherwise we might source from ourselves for CPU accesses.
           dmagic_io_read_next               => system_read_next,
           dmagic_io_write_next              => system_write_next,
           dmagic_io_wdata_next              => system_wdata_next,
@@ -1209,9 +1358,9 @@ begin
           cpu_memory_access_wdata_next    => cpu_memory_access_wdata_next,
           cpu_memory_access_io_next       => cpu_io_sel_resolved,
           cpu_memory_access_ext_next      => cpu_ext_sel_resolved,
-          cpu_ack                         => cpu_ack,
+          cpu_arb_ack                     => spd_cpu_ack,
           cpu_read_data                   => cpu_read_data,
-          cpu_ready                       => cpu_ready,
+          arb_cpu_ready                   => arb_cpu_ready,
 
           -- Signals from Monitor to arbiter
           monitor_memory_access_address_next  => monitor_memory_access_address_next,
@@ -1302,6 +1451,12 @@ begin
           dmagic_io_ready    => dmagic_io_ready,
           dmagic_cs_next     => dmagic_cs_next,
           dmagic_rdata       => dmagic_rdata,
+          
+          cpuport_rdata      => cpuport_rdata,
+          cpuport_cs_next    => cpuport_cs_next,
+          
+          hypervisor_cs_next => hypervisor_cs_next,
+          hypervisor_rdata   => hypervisor_rdata,
           
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,

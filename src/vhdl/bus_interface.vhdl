@@ -77,7 +77,10 @@ entity bus_interface is
 
     kickstart_cs_next : inout std_logic := '0';
     kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
-        
+    
+    hypervisor_cs_next: inout std_logic := '0';
+    hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+    
     ---------------------------------------------------------------------------
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
@@ -104,6 +107,9 @@ entity bus_interface is
     dmagic_cs : inout std_logic;
     dmagic_rdata : in std_logic_vector(7 downto 0);
     dmagic_io_ready : in std_logic;
+    
+    cpuport_rdata : in unsigned(7 downto 0) := x"AA";  
+    cpuport_cs_next : inout std_logic;
     
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
@@ -132,42 +138,49 @@ entity bus_interface is
     --attribute mark_debug of ext_sel: signal is "true";
     --attribute mark_debug of io_sel: signal is "true";
     --
-    --attribute mark_debug of kickstart_rdata: signal is "true";
-    --attribute mark_debug of kickstart_cs_next: signal is "true";
+    attribute mark_debug of kickstart_rdata: signal is "true";
+    attribute mark_debug of kickstart_cs_next: signal is "true";
     --
-    --attribute mark_debug of system_address_next: signal is "true";
-    --attribute mark_debug of system_read_next: signal is "true";
-    --attribute mark_debug of system_write_next: signal is "true";
-    --attribute mark_debug of system_wdata_next: signal is "true";
+    attribute mark_debug of hypervisor_rdata: signal is "true";
+    attribute mark_debug of hypervisor_cs_next: signal is "true";
     --
-    --attribute mark_debug of system_address: signal is "true";
-    --attribute mark_debug of system_read: signal is "true";
-    --attribute mark_debug of system_write: signal is "true";
-    --attribute mark_debug of system_wdata: signal is "true";
+    attribute mark_debug of cpuport_rdata: signal is "true";
+    attribute mark_debug of cpuport_cs_next: signal is "true";
+    ----
+    attribute mark_debug of system_address_next: signal is "true";
+    attribute mark_debug of system_read_next: signal is "true";
+    attribute mark_debug of system_write_next: signal is "true";
+    attribute mark_debug of system_wdata_next: signal is "true";
     --
-    --attribute mark_debug of shadow_write_next: signal is "true";
-    --attribute mark_debug of shadow_rdata: signal is "true";
+    attribute mark_debug of system_address: signal is "true";
+    attribute mark_debug of system_read: signal is "true";
+    attribute mark_debug of system_write: signal is "true";
+    attribute mark_debug of system_wdata: signal is "true";
     --
-    --attribute mark_debug of reset: signal is "true";
+    attribute mark_debug of shadow_write_next: signal is "true";
+    attribute mark_debug of shadow_rdata: signal is "true";
+    --
+    attribute mark_debug of reset: signal is "true";
     --attribute keep of bus_read_data : signal is "true";
     --attribute dont_touch of bus_read_data : signal is "true";
-    --attribute mark_debug of bus_read_data : signal is "true";
-    --attribute mark_debug of bus_ready : signal is "true";
-    --attribute mark_debug of ack : signal is "true";
-    --attribute mark_debug of dmagic_cs_next : signal is "true";
+    attribute mark_debug of bus_read_data : signal is "true";
+    attribute mark_debug of bus_ready : signal is "true";
+    attribute mark_debug of ack : signal is "true";
+    
+    attribute mark_debug of dmagic_cs_next : signal is "true";
     --attribute mark_debug of colourram_at_dc00 : signal is "true";
     --attribute mark_debug of sector_buffer_mapped : signal is "true";
     --
-    --attribute mark_debug of vic_rdata : signal is "true";
-    --attribute mark_debug of vic_ready : signal is "true";
-    --attribute mark_debug of vic_cs_next : signal is "true";
-    --attribute mark_debug of vic_cs : signal is "true";
-    --attribute mark_debug of viciii_iomode : signal is "true";
+    attribute mark_debug of vic_rdata : signal is "true";
+    attribute mark_debug of vic_ready : signal is "true";
+    attribute mark_debug of vic_cs_next : signal is "true";
+    attribute mark_debug of vic_cs : signal is "true";
+    attribute mark_debug of viciii_iomode : signal is "true";
     --
     --
     --attribute mark_debug of memory_access_wdata_next : signal is "true";
-    --attribute mark_debug of io_sel_next : signal is "true";
-    --attribute mark_debug of io_sel : signal is "true";
+    attribute mark_debug of io_sel_next : signal is "true";
+    attribute mark_debug of io_sel : signal is "true";
     --attribute mark_debug of io_rdata : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
     --attribute mark_debug of colour_ram_cs_next : signal is "true";
@@ -199,8 +212,15 @@ architecture Behavioural of bus_interface is
   signal shadow_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
   signal cpu_internal_ready : std_logic := '1';
+  signal hypervisor_ready : std_logic := '1';
   signal io_ready : std_logic := '0';
+
+  signal cpuport_ready : std_logic := '1';  
   
+  signal rec_cs_next : std_logic := '0';
+  signal rec_rdata : unsigned(7 downto 0) := x"80";
+  signal rec_ready : std_logic := '1';
+    
   -- Number of pending wait states
   signal wait_states : unsigned(7 downto 0) := x"00"; -- This will now be a counter.
   signal wait_states_next : unsigned(7 downto 0); -- This will now be a counter.
@@ -225,12 +245,13 @@ architecture Behavioural of bus_interface is
     VICIV,                  -- 0x06
     Kickstart,              -- 0x07
     SlowRAM,                -- 0x08
+    REC,                    -- 0x09
     Unmapped                -- 0x0A
     );
 
   signal bus_device : bus_device_type;
       
-  --attribute mark_debug of bus_device: signal is "true";
+  attribute mark_debug of bus_device: signal is "true";
   --
   --attribute mark_debug of cpu_resolved_memory_access_address_next: signal is "true";
   --
@@ -238,12 +259,10 @@ architecture Behavioural of bus_interface is
   --attribute mark_debug of bus_proceed: signal is "true";
   --attribute mark_debug of wait_states: signal is "true";
     
-  --attribute mark_debug of colour_ram_cs : signal is "true";
   --attribute mark_debug of colourram_at_dc00 : signal is "true";
   --attribute mark_debug of sector_buffer_mapped : signal is "true";
   --attribute mark_debug of kickstart_cs_next : signal is "true";
   --attribute mark_debug of colour_ram_cs_next : signal is "true";
-  --attribute mark_debug of bus_device : signal is "true";
   --attribute mark_debug of wait_states : signal is "true";
   --attribute mark_debug of wait_states_next : signal is "true";
   --attribute mark_debug of io_ready : signal is "true";
@@ -280,15 +299,15 @@ begin
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if io_sel_next='1' and long_address(11 downto 6)&"00" = x"64" and hypervisor_mode='1' then
+      if hypervisor_cs_next='1' then
         report "Preparing for reading hypervisor register";
         bus_device <= HypervisorRegister;
-      elsif (long_address = x"00000") or (long_address = x"00001") then
+      elsif cpuport_cs_next='1' then
         report "Preparing to read from a CPUPort";
         bus_device <= CPUPort;
-      elsif (io_sel_next='1' and long_address = x"0d0a0") then
+      elsif rec_cs_next='1' then
         report "Preparing to read from CPU memory expansion controller port";
-        bus_device <= CPUPort;
+        bus_device <= REC;
         -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
       elsif kickstart_cs_next='1' then
         bus_device <= Kickstart;
@@ -477,6 +496,12 @@ begin
     system_read_next  <= memory_access_read_next;
     system_wdata_next <= std_logic_vector(memory_access_wdata_next);
     
+    -- Should this be disabled if address is mapped?
+    cpuport_cs_next <= '0';
+    if (system_address_next = x"00000") or (system_address_next = x"00001") then
+      cpuport_cs_next <= '1';
+    end if;
+    
     -- Color ram chip select (next)
     colour_ram_cs_next <= '0';
     if system_address_next(19 downto 16) = x"8" then
@@ -520,6 +545,11 @@ begin
       end if;
     end if;
       
+    hypervisor_cs_next <= '0';
+    if io_sel_next='1' and system_address_next(11 downto 6)&"00" = x"64" and hypervisor_mode='1' then
+      hypervisor_cs_next <= '1';
+    end if;
+    
     vic_cs_next <= '0';
     if io_sel_next='1' then
       if system_address_next(11 downto 10) = "00" then  --   $D{0,1,2,3}XX
@@ -530,6 +560,11 @@ begin
         end if;            
       end if;
     end if;                           -- $DXXX
+    
+    rec_cs_next <= '0';
+    if (io_sel_next='1' and system_address_next = x"0d0a0") then
+      rec_cs_next <= '1';
+    end if;
     
     if bus_ready='1' then
       wait_states_next <= x"00";
@@ -564,14 +599,17 @@ begin
       bus_read_data <= unsigned(io_rdata);
       bus_ready <= io_ready;
     elsif bus_device = CPUPort then
-      bus_read_data <= x"55";           --cpuport_data;
-      bus_ready <= cpu_internal_ready;  --cpuport_ready;
+      bus_read_data <= cpuport_rdata;
+      bus_ready <= cpuport_ready;
     elsif bus_device=HypervisorRegister then
-      bus_read_data <= x"55";
-      bus_ready <= cpu_internal_ready; -- TODO - This is temporary until we update internal CPU logic to do this for itself.
+      bus_read_data <= unsigned(hypervisor_rdata);
+      bus_ready <= hypervisor_ready;
     elsif bus_device = DMAgicNew then
       bus_read_data <= unsigned(dmagic_rdata);
       bus_ready <= dmagic_io_ready;
+    elsif bus_device = REC then
+      bus_read_data <= rec_rdata;
+      bus_ready <= rec_ready;
     elsif bus_device = Unmapped then
       bus_read_data <= x"AA";
       bus_ready <= '1';

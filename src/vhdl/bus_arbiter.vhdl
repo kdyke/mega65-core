@@ -48,9 +48,9 @@ entity bus_arbiter is
     cpu_memory_access_wdata_next : in unsigned(7 downto 0);
     cpu_memory_access_io_next : in std_logic;
     cpu_memory_access_ext_next : in std_logic;
-    cpu_ack : in std_logic;
-    cpu_read_data : out unsigned(7 downto 0);
-    cpu_ready : out std_logic;
+    cpu_arb_ack : in std_logic;
+    cpu_read_data : inout unsigned(7 downto 0);
+    arb_cpu_ready : out std_logic;
     
     -- Monitor bus interface signals
     monitor_memory_access_address_next : in std_logic_vector(19 downto 0);
@@ -96,38 +96,40 @@ entity bus_arbiter is
     attribute keep : string;
     
     
-    --attribute mark_debug of bus_memory_access_address_next: signal is "true";
-    --attribute mark_debug of bus_memory_access_io_next: signal is "true";
-    --attribute mark_debug of bus_ack: signal is "true";
-    --attribute mark_debug of bus_read_data: signal is "true";
-    --attribute mark_debug of bus_ready: signal is "true";
-    --
-    --attribute mark_debug of cpu_ack: signal is "true";
-    --attribute mark_debug of cpu_ready: signal is "true";
-    --attribute mark_debug of cpu_read_data: signal is "true";
-    --attribute mark_debug of cpu_memory_access_address_next: signal is "true";
-    --attribute mark_debug of cpu_memory_access_read_next: signal is "true";
-    --attribute mark_debug of cpu_memory_access_io_next: signal is "true";
-    --
-    --attribute mark_debug of monitor_ack: signal is "true";
-    --attribute mark_debug of monitor_ready: signal is "true";
-    --attribute mark_debug of monitor_read_data: signal is "true";
-    --attribute mark_debug of monitor_memory_access_address_next: signal is "true";
-    --attribute mark_debug of monitor_memory_access_read_next: signal is "true";
-    --attribute mark_debug of monitor_memory_access_write_next: signal is "true";
-    --attribute mark_debug of monitor_memory_access_wdata_next: signal is "true";
-    --attribute mark_debug of monitor_memory_access_io_next: signal is "true";
-    --
-    --attribute mark_debug of dmagic_ack: signal is "true";
-    --attribute mark_debug of dmagic_memory_access_address_next: signal is "true";
-    --attribute mark_debug of dmagic_ready: signal is "true";
-    --attribute mark_debug of dmagic_read_data: signal is "true";
+    attribute mark_debug of bus_memory_access_address_next: signal is "true";
+    attribute mark_debug of bus_memory_access_io_next: signal is "true";
+    attribute mark_debug of bus_ack: signal is "true";
+    attribute mark_debug of bus_read_data: signal is "true";
+    attribute mark_debug of bus_ready: signal is "true";
+    
+    attribute mark_debug of cpu_arb_ack: signal is "true";
+    attribute mark_debug of arb_cpu_ready: signal is "true";
+    attribute mark_debug of cpu_read_data: signal is "true";
+    attribute mark_debug of cpu_memory_access_address_next: signal is "true";
+    attribute mark_debug of cpu_memory_access_read_next: signal is "true";
+    attribute mark_debug of cpu_memory_access_io_next: signal is "true";
+    
+    attribute mark_debug of monitor_ack: signal is "true";
+    attribute mark_debug of monitor_ready: signal is "true";
+    attribute mark_debug of monitor_read_data: signal is "true";
+    attribute mark_debug of monitor_memory_access_address_next: signal is "true";
+    attribute mark_debug of monitor_memory_access_read_next: signal is "true";
+    attribute mark_debug of monitor_memory_access_write_next: signal is "true";
+    attribute mark_debug of monitor_memory_access_wdata_next: signal is "true";
+    attribute mark_debug of monitor_memory_access_io_next: signal is "true";
+    
+    attribute mark_debug of dmagic_ack: signal is "true";
+    attribute mark_debug of dmagic_memory_access_address_next: signal is "true";
+    attribute mark_debug of dmagic_ready: signal is "true";
+    attribute mark_debug of dmagic_read_data: signal is "true";
+    attribute mark_debug of dmagic_dma_req: signal is "true";
+    attribute mark_debug of dmagic_cpu_req: signal is "true";
         
 end entity bus_arbiter;
 
 architecture Behavioural of bus_arbiter is
   
-  --attribute keep_hierarchy of Behavioural : architecture is "yes";
+  attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   type bus_master_type is (
     CPU,
@@ -142,8 +144,9 @@ architecture Behavioural of bus_arbiter is
   signal bus_master : bus_master_type;
   --
   
-  --attribute mark_debug of bus_master_next: signal is "true";
-  --attribute mark_debug of bus_master: signal is "true";
+  attribute mark_debug of bus_master_next: signal is "true";
+  attribute mark_debug of bus_master: signal is "true";
+  --attribute mark_debug of cpu_read_data_last: signal is "true";
   
 begin
   
@@ -159,42 +162,37 @@ begin
     end if;                         -- if rising edge of clock
   end process;
 
+  cpu_read_data     <= bus_read_data;
+  dmagic_read_data  <= bus_read_data;
+  monitor_read_data <= bus_read_data;
+
   -- This is the bus_interface to bus_master "mux".  Note: Because this controls the signals
   -- that provide the data (and ready signal) to the bus master, we also need to have the 
-  -- ack signal routed from that bust master back to the bus interface so it knows who to
+  -- ack signal routed from that bus master back to the bus interface so it knows who to
   -- listen to for who's accepting the data so the bus interface can accept the next bus
   -- master's address.
   process(bus_master, bus_read_data, bus_ready)
   begin
     if bus_master=CPU then
-      cpu_ready         <= bus_ready;
-      cpu_read_data     <= bus_read_data;
+      arb_cpu_ready     <= bus_ready;
       monitor_ready     <= '0';
-      monitor_read_data <= x"FF";
       dmagic_ready      <= '0';
-      dmagic_read_data  <= x"FF";
       -- A note on this.  When dmagic is performing a memory access on behalf of the CPU, 
       -- the bus interface would normally need to wait one more clock before the bus master
       -- signal would switch to dmagic's ack signal.  This would cause a single cycle bubble
       -- even though the address signals were already driving dmagic signals below.  There's
       -- no point delaying the ack because the CPU is already waiting.   So, I treat dmagic_cpu_req
       -- as another way to force ACK to true to eliminate the bubble.
-      bus_ack           <= cpu_ack or dmagic_cpu_req;
+      bus_ack           <= cpu_arb_ack or dmagic_cpu_req;
     elsif bus_master=Monitor then
-      cpu_ready         <= '0';
-      cpu_read_data     <= x"FF";
-      monitor_ready      <= bus_ready;
-      monitor_read_data  <= bus_read_data;
-      dmagic_ready     <= '0';
-      dmagic_read_data <= x"FF";
+      arb_cpu_ready     <= '0';
+      monitor_ready     <= bus_ready;
+      dmagic_ready      <= '0';
       bus_ack           <= monitor_ack;      
     else
-      cpu_ready         <= '0';
-      cpu_read_data     <= x"FF";
+      arb_cpu_ready     <= '0';
       monitor_ready     <= '0';
-      monitor_read_data <= x"FF";
       dmagic_ready      <= bus_ready;
-      dmagic_read_data  <= bus_read_data;
       bus_ack           <= dmagic_ack;
     end if;
   end process;
@@ -246,7 +244,7 @@ begin
   end process;         
   
   -- This is the actual arbitration logic that controls who is going to get the bus next.  
-  process(bus_master, cpu_ack, dmagic_ack, dmagic_dma_req, dmagic_cpu_req)
+  process(bus_master, cpu_arb_ack, dmagic_ack, dmagic_dma_req, dmagic_cpu_req)
   variable re_arbitrate : std_logic;
   begin
     -- Default is to stick with what we have
@@ -269,7 +267,12 @@ begin
     else -- The current bus master is the CPU
       if dmagic_cpu_req='1' then -- Special DMA cycle performed by DMAgic on behalf of CPU (i.e. flat 20-bit access via PIO)
         bus_master_next <= DMAgic;
-      elsif cpu_ack='1' then     -- CPU is finished w/bus cycle, so see who's next.
+        -- The new CPU core will do same-cycle read-modify-writes, which means we can't re-arbitrate during write cycles.
+        -- I should re-visit this if I can fix the CPU core to hold it's data in and data out values when the external
+        -- bus isn't ready.  This might not have been a real problem in light of other issues I've since discovered, such
+        -- as the CPU not holding it's output value steady when it's ready signal is low, which might have caused the bus
+        -- interface to hold the wrong value.
+      elsif cpu_arb_ack='1' and cpu_memory_access_write_next='0' then     -- CPU is finished w/bus cycle, so see who's next.
         re_arbitrate := '1';
       end if;
     end if;

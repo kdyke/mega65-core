@@ -187,6 +187,7 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/pdm_to_pcm.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/kb_matrix_ram.vhdl"]"\
+ "[file normalize "$origin_dir/src/verilog/6502/6502_inc.vh"]"\
  "[file normalize "$origin_dir/src/verilog/6502/6502_alu.v"]"\
  "[file normalize "$origin_dir/src/verilog/6502/6502_mux.v"]"\
  "[file normalize "$origin_dir/src/verilog/6502/6502_reg.v"]"\
@@ -199,6 +200,18 @@ set files [list \
  "[file normalize "$origin_dir/src/verilog/monitor/monitor_bus.v"]"\
  "[file normalize "$origin_dir/src/verilog/monitor/asym_ram_sdp.v"]"\
  "[file normalize "$origin_dir/src/verilog/dmagic/dmagic.v"]"\
+ "[file normalize "$origin_dir/src/verilog/sys/speed_ctl.v"]"\
+ "[file normalize "$origin_dir/src/verilog/sys/cpu_port.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_inc.vh"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_core.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_alu.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_mux.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_reg.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_timing.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/65ce02_ucode.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/4510_top.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/4510_mapper.v"]"\
+ "[file normalize "$origin_dir/src/verilog/4510/4510_hyper.v"]"\
 ]
 set imported_files [add_files -fileset sources_1 $files]
 
@@ -570,6 +583,11 @@ set file "vhdl/kb_matrix_ram.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
+set file "verilog/6502/6502_inc.vh"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog Header" -objects $file_obj
+set_property is_global_include false -objects $file_obj
+
 set file "verilog/6502/6502_alu.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
@@ -615,6 +633,55 @@ set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
 set file "verilog/dmagic/dmagic.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/sys/speed_ctl.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/sys/cpu_port.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_core.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_inc.vh"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog Header" -objects $file_obj
+set_property is_global_include false -objects $file_obj
+
+set file "verilog/4510/65ce02_alu.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_mux.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_reg.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_timing.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/65ce02_ucode.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/4510_top.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/4510_mapper.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/4510/4510_hyper.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 

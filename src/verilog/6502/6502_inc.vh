@@ -26,6 +26,8 @@
 // Enable 65C02 extensions by default.
 `define CMOS 1
 
+`define MY_6502_INC 1
+
 // For when I want to synthesize and keep the full internal hierarchy
 //`define SCHEM_KEEP 1
 `ifdef SCHEM_KEEP
