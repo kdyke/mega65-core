@@ -2204,8 +2204,7 @@ go64:
 		;
 l41:		lda buckykey_status
 		and #$14
-		bne l42      ; no, so continue		
-		;beq l42      ; no, so continue		
+		beq l42      ; no, so continue		
 
 		; yes, display message
 		;
@@ -2222,8 +2221,7 @@ l41a:
 		; and otherwise wait until CTRL is released
 		lda buckykey_status
 		and #$04
-		beq l41a
-		;bne l41a
+		bne l41a
 l42:
 
 		; unmap sector buffer so C64 can see CIAs

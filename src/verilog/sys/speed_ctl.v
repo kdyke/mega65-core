@@ -14,7 +14,7 @@ module m65_speed_ctrl(input clk, input force_fast, input speed_gate, input speed
                       input hypervisor_mode, `MARK_DEBUG input phi_special, output reg [7:0] cpuspeed,
                       input bus_ready, output reg cpu_ready, output wire phi0);
 
-parameter cpufrequency = 28;
+parameter cpufrequency = 30;
 parameter pal1mhz_times_65536 = 64569;
 parameter pal2mhz_times_65536 = 64569 * 2;
 parameter pal3point5mhz_times_65536 = 225992;
@@ -79,9 +79,9 @@ begin
   // If phi_step is '1' on a clock edge then phi_en is asserted until the CPU can finish the next bus cycle (ready is asserted).
   // This lets us hide internal FPGA wait states while maintaining 1Mhz/3.5Mhz clock pacing.
   if (phi_special) begin  // 25Mhz
-    if (phi_step_toggle) begin
+    //if (phi_step_toggle) begin
       phi_en <= 1;
-    end
+    //end
   end else begin
     if (phi_step)
       phi_en <= 1;
@@ -89,7 +89,7 @@ begin
 
   if(cpu_ready) begin
     if (phi_special)
-      phi_en <= phi_step_toggle;
+      phi_en <= 1; //phi_step_toggle;
     else
       phi_en <= phi_step;
   end  

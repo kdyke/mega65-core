@@ -58,7 +58,7 @@
                 output map);
 
 reg [`MICROCODE_BITS] mc_out;
-/* (* rom_style = "block" *) */ reg [`MICROCODE_BITS] mc[0:2047];
+(* rom_style = "block" *) reg [`MICROCODE_BITS] mc[0:2047];
 
 // synthesis translate off
 reg [12:0] i;

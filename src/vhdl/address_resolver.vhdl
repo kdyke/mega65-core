@@ -45,8 +45,8 @@ entity address_resolver is
     gated_game : in std_logic;
     map_en : in std_logic;
     resolve_address : in std_logic;
-    cpuport_ddr : in unsigned(7 downto 0);
-    cpuport_value : in unsigned(7 downto 0);
+    cpuport_ddr : in std_logic_vector(7 downto 0);
+    cpuport_value : in std_logic_vector(7 downto 0);
     viciii_iomode : in std_logic_vector(1 downto 0);
     sector_buffer_mapped : in std_logic;
     colourram_at_dc00 : in std_logic;

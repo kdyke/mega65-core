@@ -9,7 +9,7 @@
 	.alias buckykey_status $d611
 	.alias mouse_detect_ctrl $d61b	
 
-	; Hypervisor regisger block $d640-$d67f
+	; Hypervisor register block $d640-$d67f
 	.alias hypervisor_a $d640
 	.alias hypervisor_x $d641
 	.alias hypervisor_y $d642

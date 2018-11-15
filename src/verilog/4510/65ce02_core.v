@@ -30,43 +30,31 @@
 `endif
 
 //`SCHEM_KEEP_HIER 
-module cpu65CE02(clk, reset, nmi, irq, hyp, ready, write, write_next, sync, address, address_next, data_i, data_o, data_o_next, 
-                  hyper_mode, cpu_state, t, cpu_int, map,
-                  a_out, x_out, y_out, z_out, sp_out);
-
-initial begin
-end
-
-// FIXME - Don't drive external sync when processing an interrupt?  Otherwise an interrupt coincident with
-// a MAP instruction will go horribly wrong.
-input clk, reset, irq, nmi, ready;
-input hyp;
-input [7:0] data_i;
-output wire [7:0] data_o;
-output wire [7:0] data_o_next;
-output [15:0] address;
-output [15:0] address_next;
-output write_next;
-output reg write;
-output sync;
-output [7:0] cpu_state;
-output [2:0] t;
-output cpu_int;
-output wire hyper_mode;
-output wire map;
-
-// debugging
-output wire [7:0] a_out;
-output wire [7:0] x_out;
-output wire [7:0] y_out;
-output wire [7:0] z_out;
-output wire [15:0] sp_out;
+module cpu65CE02(input clk, input reset, input nmi, input irq, input hyp, input ready, 
+                  output reg write, output wire write_next, output wire sync, 
+                  output wire [15:0] address, output wire [15:0] address_next, 
+                  input [7:0] data_i, output wire [7:0] data_o, output wire [7:0] data_o_next, 
+                  output wire hyper_mode, output wire map, `MARK_DEBUG output wire [2:0] t,
+                  // Monitor outputs - Not everything that the gs4510 implementation supported is implemented,
+                  // and some things are implemented elsewhere.
+                  output wire [7:0] monitor_a, 
+                  output wire [7:0] monitor_x, 
+                  output wire [7:0] monitor_y, 
+                  output wire [7:0] monitor_z, 
+                  output wire [7:0] monitor_b, 
+                  output wire [7:0] monitor_p, 
+                  output wire [15:0] monitor_sp,
+                  output wire [15:0] monitor_pc,
+                  output wire [7:0] monitor_opcode,
+                  output wire [15:0] monitor_state,
+                  output wire monitor_hypervisor_mode,
+                  output wire monitor_proceed
+                  );
 
 // FPGA debug
 wire [7:0] cpu_state;
 
-// current timing state
-`MARK_DEBUG wire [2:0] t;
+// timing state
 `MARK_DEBUG wire [2:0] t_next;
 
 wire [7:0] data_i_mux;
@@ -153,12 +141,25 @@ wire resp;
 wire alu_z, dld_z;
 wire [4:0] load_reg_decode;
 wire [16:0] load_flags_decode;
-assign cpu_int = intg;
 
 wire stack_sel;
 
 wire [7:0] vector_hi;
 wire [7:0] vector_lo;
+
+// monitor outputs
+assign monitor_a = reg_a; 
+assign monitor_x = reg_x; 
+assign monitor_y = reg_y; 
+assign monitor_z = reg_z; 
+assign monitor_b = reg_b; 
+assign monitor_p = reg_p; 
+assign monitor_sp = sp; // For now this shows the "current" stack.
+assign monitor_pc = pc;
+assign monitor_opcode = ir;
+assign monitor_state = t;
+assign monitor_hypervisor_mode = hyper_mode;
+assign monitor_proceed = ready;
 
   // Note: microcode outputs are *synchronous* and show up on following clock and thus are always driven directly by t_next and not t.
   `microcode mc_inst(.clk(clk), .ready(ready), .ir(ir_next), .t(t_next), .mc_sync(mc_sync), .alua_sel(alua_sel), .alub_sel(alub_sel),
@@ -183,14 +184,11 @@ wire [7:0] vector_lo;
   
   `ir_next_mux ir_next_mux(sync, intg|hyperg, data_i_mux, ir, ir_next);
 
-  assign write_next = ready ? (write_cycle & ~resp) : write;
-  
+  assign write_next = ready ? (write_cycle & ~resp) : write;  
   always @(posedge clk)
   begin
     write <= write_next;
   end
-  
-  //assign data_i_mux = data_i;
   
   `dbi_mux   dbi_mux(clk, ready, data_i, data_i_mux);
   `dreg_mux  dreg_do_mux(dreg_do, reg_a, reg_x, reg_y, reg_z, dreg_do_bus);
@@ -251,14 +249,7 @@ wire [7:0] vector_lo;
   `clocked_reset_reg8 z_reg(clk, reset, load_reg_decode[`kLR_Z] && ready, alu_out, reg_z);
   `clocked_reset_reg8 b_reg(clk, reset, load_reg_decode[`kLR_B] && ready, alu_out, reg_b);
   `clocked_reg8 do_reg(clk, ready, data_o_next, data_o);
-  
-  assign cpu_state = reg_p; //{ dec_add, dec_sub, decimal_extra_cycle, decimal_cycle};
-  assign a_out = reg_a;
-  assign x_out = reg_x;
-  assign y_out = reg_y;
-  assign z_out = reg_z;
-  assign sp_out = sp;
-  
+    
   // FIXME - This is kinda hacky right now.  Really should have a pair of dedicated microcode bits for this but
   // I'm currently out of spare microcode bits.   This probably only requires a couple of LUTs though.
   wire dec_op;

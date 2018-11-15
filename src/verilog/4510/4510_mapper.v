@@ -35,7 +35,12 @@
                   `MARK_DEBUG input load_map_sel, `MARK_DEBUG input active_map,
                   output reg [7:0] map_reg_data,
                   output reg [19:0] address, output reg [19:0] address_next, input [15:0] core_address_next, 
-                  `MARK_DEBUG output reg map_next, output reg map);
+                  `MARK_DEBUG output reg map_next, output reg map,
+                  output wire [11:0] monitor_map_offset_low,
+                  output wire [11:0] monitor_map_offset_high,
+                  output wire [3:0] monitor_map_enables_low,
+                  output wire [3:0] monitor_map_enables_high
+                  );
 
 `MARK_DEBUG reg [19:8] map_offset[0:3];
 `MARK_DEBUG reg [3:0] map_enable[0:3];
@@ -86,6 +91,12 @@ always @(posedge clk) begin
   else if(disable_i) int_enable <= 0;
   else if(enable_i) int_enable <= 1;
 end
+
+// Monitor map info
+assign monitor_map_offset_low = map_offset[{active_map,1'b0}];
+assign monitor_map_offset_high = map_offset[{active_map,1'b1}];
+assign monitor_map_enables_low = map_enable[{active_map,1'b0}];
+assign monitor_map_enables_high = map_enable[{active_map,1'b1}];
 
 // Mapper combinatorial path
 `MARK_DEBUG reg [1:0] map_enable_index;

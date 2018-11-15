@@ -300,14 +300,23 @@ architecture Behavioral of machine is
     hyper_mode : out std_logic;
     map_reg_data : out std_logic_vector(7 downto 0);
     hypervisor_load_user_reg : in std_logic;
-    cpu_state : out std_logic_vector(7 downto 0);
-    t : out std_logic_vector(2 downto 0);
-    cpu_int : out std_logic;
-    a_out : out std_logic_vector(7 downto 0);
-    x_out : out std_logic_vector(7 downto 0);
-    y_out : out std_logic_vector(7 downto 0);
-    z_out : out std_logic_vector(7 downto 0);
-    sp_out : out std_logic_vector(15 downto 0)
+    
+    monitor_hypervisor_mode : out std_logic;
+    monitor_proceed : out std_logic;
+    monitor_a : out unsigned(7 downto 0);
+    monitor_x : out unsigned(7 downto 0);
+    monitor_y : out unsigned(7 downto 0);
+    monitor_z : out unsigned(7 downto 0);
+    monitor_b : out unsigned(7 downto 0);
+    monitor_p : out unsigned(7 downto 0);
+    monitor_opcode : out unsigned(7 downto 0);
+    monitor_state : out unsigned(15 downto 0);
+    monitor_pc : out unsigned(15 downto 0);
+    monitor_sp : out unsigned(15 downto 0);
+    monitor_map_offset_low : in unsigned(11 downto 0);
+    monitor_map_offset_high : in unsigned(11 downto 0);
+    monitor_map_enables_low : in std_logic_vector(3 downto 0);
+    monitor_map_enables_high : in std_logic_vector(3 downto 0)
     );
   end component;
   
@@ -321,8 +330,8 @@ architecture Behavioral of machine is
     bus_write : in std_logic;
     data_i : in unsigned(7 downto 0);
     data_o : out unsigned(7 downto 0);
-    cpuport_ddr : out unsigned(7 downto 0);
-    cpuport_value : out unsigned(7 downto 0)    
+    cpuport_ddr : out std_logic_vector(7 downto 0);
+    cpuport_value : out std_logic_vector(7 downto 0)    
     );
   end component;
   
@@ -850,8 +859,8 @@ architecture Behavioral of machine is
   signal bus_ready : std_logic;
 
   signal rom_writeprotect : std_logic; -- TEMP
-  signal cpuport_ddr : unsigned(7 downto 0); -- FIXME, we don't really need both of these.
-  signal cpuport_value : unsigned(7 downto 0);
+  signal cpuport_ddr : std_logic_vector(7 downto 0); -- FIXME, we don't really need both of these.
+  signal cpuport_value : std_logic_vector(7 downto 0);
   signal cpuport_rdata : unsigned(7 downto 0);
   signal cpuport_cs_next : std_logic;
   
@@ -1109,8 +1118,27 @@ begin
     data_o_next   => cpu_memory_access_wdata_next,
     hyper_mode    => cpu_hypervisor_mode,
     map_reg_data  => map_reg_data,
-    hypervisor_load_user_reg => hypervisor_load_user_reg
+    hypervisor_load_user_reg => hypervisor_load_user_reg,
+    
+    monitor_proceed => monitor_proceed,
+    monitor_hypervisor_mode => monitor_hypervisor_mode,
+    monitor_pc => monitor_pc,
+    monitor_opcode => monitor_opcode,
+    monitor_a => monitor_a,
+    monitor_b => monitor_b,
+    monitor_x => monitor_x,
+    monitor_y => monitor_y,
+    monitor_z => monitor_z,
+    monitor_sp => monitor_sp,
+    monitor_p => monitor_p,
+    monitor_state => monitor_state ,   
+    monitor_map_offset_low => monitor_map_offset_low,
+    monitor_map_offset_high => monitor_map_offset_high,
+    monitor_map_enables_low => monitor_map_enables_low,
+    monitor_map_enables_high => monitor_map_enables_high
   );
+  
+  monitor_cpuport <= cpuport_value(2 downto 0);
   
   -- We can just derive this for the new CPU core.
   cpu_memory_access_read_next <= spd_cpu_ack and not cpu_memory_access_write_next;
