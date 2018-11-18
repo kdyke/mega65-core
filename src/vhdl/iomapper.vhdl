@@ -210,6 +210,9 @@ entity iomapper is
     eth_rxer : in std_logic;
     eth_interrupt : in std_logic;
 
+    hypervisor_cs : inout std_logic := '0';
+    hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+
     ----------------------------------------------------------------------
     -- Flash RAM for holding config
     ----------------------------------------------------------------------
@@ -372,7 +375,8 @@ architecture behavioral of iomapper is
   signal cpuregs_cs : std_logic := '0';
   signal thumbnail_cs : std_logic := '0';
   signal ethernet_cs : std_logic := '0';
-  
+  signal rec_cs : std_logic := '0';
+    
   type iomapper_output_source is (
     IoNone,
     IoCIA1,
@@ -383,7 +387,9 @@ architecture behavioral of iomapper is
     IoSIDLeft,
     IoSIDRight,
     IoBufferedUART,
-    IoC65UART
+    IoC65UART,
+    IoHypervisor,
+    IoREC
     );
   
   -- Clocked signal that controls the iomapper output mux.
@@ -399,6 +405,7 @@ architecture behavioral of iomapper is
   signal sid_right_o : std_logic_vector(7 downto 0);
   signal buffered_uart_o : std_logic_vector(7 downto 0);
   signal c65uart_o : std_logic_vector(7 downto 0);
+  signal hypervior_o : std_logic_vector(7 downto 0);
   
   signal spare_bits : unsigned(4 downto 0);
 
@@ -1289,6 +1296,15 @@ begin
 
       -- Hypervisor control (only visible from hypervisor mode) $D640 - $D67F
       -- The hypervisor is a CPU provided function.
+      hypervisor_cs <= '0';
+      if io_sel_next='1' and address_next(11 downto 6)&"00" = x"64" then
+        hypervisor_cs <= '1';
+      end if;
+      
+      rec_cs <= '0';
+      if (io_sel_next='1' and address_next(11 downto 0) = x"0a0") then
+        rec_cs <= '1';
+      end if;
       
       -- SD controller and miscellaneous hardware (microphone, accelerometer etc)
       -- uses $D680 - $D6FF
@@ -1342,7 +1358,7 @@ begin
   end process;
 
   process(clk, sectorbuffercs, cia1cs, cia2cs, sdcardio_cs, f011_cs, thumbnail_cs, ethernet_cs, leftsid_cs, rightsid_cs,
-          buffereduart_cs, c65uart_cs)
+          buffereduart_cs, c65uart_cs, rec_cs, hypervisor_cs)
   begin
     
     if rising_edge(clk) then
@@ -1366,6 +1382,10 @@ begin
           iomapper_output_mux_select <= IoBufferedUART;
         elsif c65uart_cs='1' then
           iomapper_output_mux_select <= IoC65UART;
+        elsif hypervisor_cs='1' then
+          iomapper_output_mux_select <= IoHypervisor;
+        elsif rec_cs='1' then
+          iomapper_output_mux_select <= IoREC;
         else
           iomapper_output_mux_select <= IoNone;
         end if;
@@ -1388,6 +1408,8 @@ begin
       when IoSIDRight     => data_o <= sid_right_o;
       when IoBufferedUART => data_o <= buffered_uart_o;
       when IoC65UART      => data_o <= c65uart_o;
+      when IoHypervisor   => data_o <= hypervisor_rdata;
+      when IoREC          => data_o <= x"80";
       when others         => data_o <= x"FF";
     end case;
   end process;

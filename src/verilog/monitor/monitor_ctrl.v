@@ -47,7 +47,7 @@
 `define MON_CHAR_INOUT        5'h1E       // Hypervisor character input/output
 `define MON_CHAR_STATUS       5'h1F
 
-module monitor_ctrl(input clk, input reset, output wire reset_out, 
+module monitor_ctrl(input clk, input pixclk, input reset, output wire reset_out, 
                     `MARK_DEBUG input write, `MARK_DEBUG input read, 
                     `MARK_DEBUG input [4:0] address, 
                     `MARK_DEBUG input [7:0] di, output reg [7:0] do,
@@ -185,16 +185,16 @@ reg rx_data_ack;
 
 // Instantiate the VHDL TX and RX UARTS
 UART_TX_CTRL tx_ctrl(.SEND(tx_send),.BIT_TMR_MAX(bit_rate_divisor_reg),
-                     .DATA(tx_data),.CLK(clk),.READY(tx_ready),.UART_TX(tx));
+                     .DATA(tx_data),.CLK(pixclk),.READY(tx_ready),.UART_TX(tx));
                      
-uart_rx rx_ctrl(.clk(clk),.bit_rate_divisor(bit_rate_divisor_reg),.UART_RX(rx),
+uart_rx rx_ctrl(.clk(pixclk),.bit_rate_divisor(bit_rate_divisor_reg),.UART_RX(rx),
                 .data(rx_data), .data_ready(rx_data_ready), .data_acknowledge(rx_data_ack));
                 
 // MON_UART_BITRATE_LO, MON_UART_BITRATE_HI
 always @(posedge clk)
 begin
   if(reset)
-    bit_rate_divisor_reg <= (30000000/2000000)-1;
+    bit_rate_divisor_reg <= (100000000/2000000)-1;
   else if(write)
   begin
     if(address == `MON_UART_BITRATE_LO)

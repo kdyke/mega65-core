@@ -10,6 +10,7 @@
   `MARK_DEBUG output wire reset_out,
   output wire monitor_hyper_trap,
   input clock,
+  input pixclock,
   output wire tx,
   input rx,
   output wire [15:0] bit_rate_divisor,
@@ -177,7 +178,7 @@
   // Will start out simple and slowly add more control outputs as needed for different features and as
   // the software monitor code is written.
     
-  monitor_ctrl monitorctrl(.clk(clock), .reset(reset_internal), .reset_out(reset_out_internal), .write(ctrl_write), .read(ctrl_read),
+  monitor_ctrl monitorctrl(.clk(clock), .pixclk(pixclock), .reset(reset_internal), .reset_out(reset_out_internal), .write(ctrl_write), .read(ctrl_read),
                            .address(cpu_address_next[4:0]), .di(cpu_do), .do(monitor_do), 
                            .history_write_index(history_write_index), .history_write(history_write),
                            .history_read_index(history_read_index),

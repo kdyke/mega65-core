@@ -192,7 +192,7 @@ begin
     nmig <= 1;
   nmil <= nmi;    // remember current state
   
-  if(ready) begin
+  if(ready | reset) begin
     if(reset | mc_sync)
     begin
       // Hypervisor interrupts take precedence over NMI and IRQ.

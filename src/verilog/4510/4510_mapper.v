@@ -33,7 +33,7 @@
                   input ext_irq, input ext_nmi, output cpu_irq, output cpu_nmi, input enable_i, input disable_i,
                   `MARK_DEBUG input load_a, `MARK_DEBUG input load_x, `MARK_DEBUG input load_y, `MARK_DEBUG input load_z, 
                   `MARK_DEBUG input load_map_sel, `MARK_DEBUG input active_map,
-                  output reg [7:0] map_reg_data,
+                  output reg [7:0] map_reg_data, output reg mapper_busy,
                   output reg [19:0] address, output reg [19:0] address_next, input [15:0] core_address_next, 
                   `MARK_DEBUG output reg map_next, output reg map,
                   output wire [11:0] monitor_map_offset_low,
@@ -49,6 +49,16 @@ reg int_enable;
 // It's not clear whether NMI should be done this way or not. The C65 docs aren't clear on if the MAP instruction masks off NMIs.
 assign cpu_irq = ext_irq & int_enable;
 assign cpu_nmi = ext_nmi & int_enable;
+
+`define FAST_MAPPER
+`ifdef FAST_MAPPER
+reg [19:8] map_offset_fast[0:15]; // Two sets of 8
+reg map_enable_fast[0:15]; // Two sets of 8
+reg map_enable_tmp;
+//reg mapper_busy;
+reg refresh_sel;
+reg [4:0] refresh_cnt;
+`endif
 
 always @(posedge clk) begin
   if(reset) begin
@@ -84,13 +94,48 @@ always @(posedge clk) begin
   if(reset) begin
     map_enable[1][3:0] <= 4'h0;
     map_enable[3][3:0] <= 4'h3;
+`ifdef FAST_MAPPER
+    mapper_busy <= 1;
+    refresh_cnt <= 0;
+`endif
   end 
-    else if(load_z) map_enable[{load_map_sel,1'b1}][3:0] <= data_o[7:4];
+    else if(load_z) begin
+      map_enable[{load_map_sel,1'b1}][3:0] <= data_o[7:4];
+`ifdef FAST_MAPPER
+      mapper_busy <= 1;
+      refresh_sel <= load_map_sel;
+      refresh_cnt <= 0;
+    end else if(mapper_busy) begin
+      refresh_cnt = refresh_cnt + 1;
+      if(refresh_cnt == 31)
+        mapper_busy <= 0;
+`endif
+    end
     
   if(reset) int_enable <= 1;
   else if(disable_i) int_enable <= 0;
   else if(enable_i) int_enable <= 1;
+  
+`ifdef FAST_MAPPER
+  if(mapper_busy) begin
+    map_enable_tmp = map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]];
+    map_enable_fast[refresh_cnt[3:0]] <= map_enable_tmp;
+    map_offset_fast[refresh_cnt[3:0]] <= map_enable_tmp ? map_offset[refresh_cnt[3:2]] : 0;
+    $display("map_enable_fast[%d]: %d r: %d off: %03x  en: %x\n",refresh_cnt,map_enable_tmp,reset, map_enable_tmp ? map_offset[refresh_cnt[3:2]] : 12'b0,
+      map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]]);
+  end
+`else
+  mapper_busy <= 0;
+`endif
+    
 end
+
+`ifdef FAST_MAPPER
+always @(*)
+begin
+  //map_enable_tmp = map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]];
+end
+`endif
 
 // Monitor map info
 assign monitor_map_offset_low = map_offset[{active_map,1'b0}];
@@ -99,16 +144,26 @@ assign monitor_map_enables_low = map_enable[{active_map,1'b0}];
 assign monitor_map_enables_high = map_enable[{active_map,1'b1}];
 
 // Mapper combinatorial path
+`ifdef FAST_MAPPER
+`MARK_DEBUG reg [3:0] map_index;
+`else
 `MARK_DEBUG reg [1:0] map_enable_index;
 `MARK_DEBUG reg map_offset_index;
-`MARK_DEBUG reg [19:8] current_offset;
+`endif
+
 `MARK_DEBUG reg [19:0] mapper_address;
+`MARK_DEBUG reg [19:8] current_offset;
 `MARK_DEBUG reg map_en;
 
 always @(*) begin
+`ifdef FAST_MAPPER
+  map_index = {active_map,core_address_next[15:13]};
+  current_offset = map_offset_fast[map_index];
+  map_en = map_enable_fast[map_index];
+  $display("ac: %d core: %04x map_idx: %b map_en: %d offset: %03x",active_map,core_address_next,map_index,map_en,current_offset);
+`else
   map_offset_index = core_address_next[15];
   map_enable_index = core_address_next[14:13];
-  
   // Mapper can be disabled by external (hypervisor) logic when needed.
   if(map_enable[{active_map,map_offset_index}][map_enable_index]) begin
     current_offset = map_offset[{active_map,map_offset_index}];
@@ -117,7 +172,9 @@ always @(*) begin
     current_offset = 0;
     map_en = 0;
   end
-  
+  $display("ac: %d core: %04x map_idx: %d map_en: %d offset: %03x",active_map,core_address_next,map_offset_index,map_en,current_offset);
+`endif
+
   mapper_address[19:8] = current_offset[19:8] + core_address_next[15:8];
   mapper_address[7:0] = core_address_next[7:0];
   

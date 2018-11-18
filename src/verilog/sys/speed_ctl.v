@@ -12,9 +12,9 @@
 module m65_speed_ctrl(input clk, input force_fast, input speed_gate, input speed_gate_enable,
                       input vicii_2mhz, input viciii_fast, input viciv_fast,
                       input hypervisor_mode, `MARK_DEBUG input phi_special, output reg [7:0] cpuspeed,
-                      input bus_ready, output reg cpu_ready, output wire phi0);
+                      input bus_ready, input mapper_busy, output reg cpu_ready, output wire phi0);
 
-parameter cpufrequency = 30;
+parameter cpufrequency = 33;
 parameter pal1mhz_times_65536 = 64569;
 parameter pal2mhz_times_65536 = 64569 * 2;
 parameter pal3point5mhz_times_65536 = 225992;
@@ -70,7 +70,7 @@ end
 
 always @(*)
 begin
-  cpu_ready = bus_ready & phi_en;
+  cpu_ready = bus_ready & phi_en & ~mapper_busy;
 end
 
 always @(posedge clk)

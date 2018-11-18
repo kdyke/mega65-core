@@ -78,8 +78,8 @@ entity bus_interface is
     kickstart_cs_next : inout std_logic := '0';
     kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
     
-    hypervisor_cs_next: inout std_logic := '0';
-    hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+    --hypervisor_cs_next: inout std_logic := '0';
+    --hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
     
     ---------------------------------------------------------------------------
     -- fast IO port (clocked at core clock). 1MB address space
@@ -141,8 +141,8 @@ entity bus_interface is
     attribute mark_debug of kickstart_rdata: signal is "true";
     attribute mark_debug of kickstart_cs_next: signal is "true";
     --
-    attribute mark_debug of hypervisor_rdata: signal is "true";
-    attribute mark_debug of hypervisor_cs_next: signal is "true";
+    --attribute mark_debug of hypervisor_rdata: signal is "true";
+    --attribute mark_debug of hypervisor_cs_next: signal is "true";
     --
     attribute mark_debug of cpuport_rdata: signal is "true";
     attribute mark_debug of cpuport_cs_next: signal is "true";
@@ -211,15 +211,14 @@ architecture Behavioural of bus_interface is
   -- consistent.
   signal shadow_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
-  signal cpu_internal_ready : std_logic := '1';
-  signal hypervisor_ready : std_logic := '1';
+  --signal hypervisor_ready : std_logic := '1';
   signal io_ready : std_logic := '0';
 
   signal cpuport_ready : std_logic := '1';  
   
-  signal rec_cs_next : std_logic := '0';
-  signal rec_rdata : unsigned(7 downto 0) := x"80";
-  signal rec_ready : std_logic := '1';
+  --signal rec_cs_next : std_logic := '0';
+  --signal rec_rdata : unsigned(7 downto 0) := x"80";
+  --signal rec_ready : std_logic := '1';
     
   -- Number of pending wait states
   signal wait_states : unsigned(7 downto 0) := x"00"; -- This will now be a counter.
@@ -299,16 +298,16 @@ begin
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
       -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if hypervisor_cs_next='1' then
-        report "Preparing for reading hypervisor register";
-        bus_device <= HypervisorRegister;
-      elsif cpuport_cs_next='1' then
+      if cpuport_cs_next='1' then
         report "Preparing to read from a CPUPort";
         bus_device <= CPUPort;
-      elsif rec_cs_next='1' then
-        report "Preparing to read from CPU memory expansion controller port";
-        bus_device <= REC;
-        -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
+      --elsif hypervisor_cs_next='1' then
+      --  report "Preparing for reading hypervisor register";
+      --  bus_device <= HypervisorRegister;
+      --elsif rec_cs_next='1' then
+      --  report "Preparing to read from CPU memory expansion controller port";
+      --  bus_device <= REC;
+      --  -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
       elsif kickstart_cs_next='1' then
         bus_device <= Kickstart;
       elsif colour_ram_cs_next='1' then
@@ -382,10 +381,8 @@ begin
       -- we'll need to wait one cycle (after the next clock edge).  Also, doing it clocked
       -- means we don't have a combinatorial loop.
       if system_address_next /= system_address and system_write_next='0' then
-        cpu_internal_ready <= '0';
         io_ready <= '0';
       else
-        cpu_internal_ready <= '1';
         io_ready <= '1';
       end if;
     
@@ -545,11 +542,6 @@ begin
       end if;
     end if;
       
-    hypervisor_cs_next <= '0';
-    if io_sel_next='1' and system_address_next(11 downto 6)&"00" = x"64" and hypervisor_mode='1' then
-      hypervisor_cs_next <= '1';
-    end if;
-    
     vic_cs_next <= '0';
     if io_sel_next='1' then
       if system_address_next(11 downto 10) = "00" then  --   $D{0,1,2,3}XX
@@ -561,10 +553,15 @@ begin
       end if;
     end if;                           -- $DXXX
     
-    rec_cs_next <= '0';
-    if (io_sel_next='1' and system_address_next = x"0d0a0") then
-      rec_cs_next <= '1';
-    end if;
+    --hypervisor_cs_next <= '0';
+    --if io_sel_next='1' and system_address_next(11 downto 6)&"00" = x"64" then
+    --  hypervisor_cs_next <= '1';
+    --end if;
+    --
+    --rec_cs_next <= '0';
+    --if (io_sel_next='1' and system_address_next = x"0d0a0") then
+    --  rec_cs_next <= '1';
+    --end if;
     
     if bus_ready='1' then
       wait_states_next <= x"00";
@@ -601,15 +598,15 @@ begin
     elsif bus_device = CPUPort then
       bus_read_data <= cpuport_rdata;
       bus_ready <= cpuport_ready;
-    elsif bus_device=HypervisorRegister then
-      bus_read_data <= unsigned(hypervisor_rdata);
-      bus_ready <= hypervisor_ready;
+    --elsif bus_device=HypervisorRegister then
+    --  bus_read_data <= unsigned(hypervisor_rdata);
+    --  bus_ready <= hypervisor_ready;
     elsif bus_device = DMAgicNew then
       bus_read_data <= unsigned(dmagic_rdata);
       bus_ready <= dmagic_io_ready;
-    elsif bus_device = REC then
-      bus_read_data <= rec_rdata;
-      bus_ready <= rec_ready;
+    --elsif bus_device = REC then
+    --  bus_read_data <= rec_rdata;
+    --  bus_ready <= rec_ready;
     elsif bus_device = Unmapped then
       bus_read_data <= x"AA";
       bus_ready <= '1';

@@ -300,7 +300,7 @@ architecture Behavioral of machine is
     hyper_mode : out std_logic;
     map_reg_data : out std_logic_vector(7 downto 0);
     hypervisor_load_user_reg : in std_logic;
-    
+    mapper_busy : out std_logic;
     monitor_hypervisor_mode : out std_logic;
     monitor_proceed : out std_logic;
     monitor_a : out unsigned(7 downto 0);
@@ -408,6 +408,7 @@ architecture Behavioral of machine is
         phi_special : in std_logic;
         cpuspeed : out unsigned(7 downto 0);
         bus_ready : in std_logic;
+        mapper_busy : in std_logic;
         cpu_ready : out std_logic;
         phi0 : out std_logic );
   end component;
@@ -418,6 +419,7 @@ architecture Behavioral of machine is
       reset_out : out std_logic := '1';
       monitor_hyper_trap : out std_logic := '1';
       clock : in std_logic;
+      pixclock : in std_logic;
       tx : out std_logic;
       rx : in  std_logic;
       bit_rate_divisor : out unsigned(15 downto 0);
@@ -587,7 +589,7 @@ architecture Behavioral of machine is
   signal kickstart_cs_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
-  signal hypervisor_cs_next : std_logic := '0';
+  signal hypervisor_cs : std_logic := '0';
   signal hypervisor_rdata : std_logic_vector(7 downto 0) := (others => '0');
   
   signal vic_rdata : std_logic_vector(7 downto 0);
@@ -599,6 +601,8 @@ architecture Behavioral of machine is
   --signal chipram_we : STD_LOGIC;
   signal chipram_address : unsigned(19 DOWNTO 0);
   signal chipram_data : unsigned(7 DOWNTO 0);
+  
+  signal mapper_busy : std_logic;
   
   signal rom_at_e000 : std_logic := '0';
   signal rom_at_c000 : std_logic := '0';
@@ -831,7 +835,7 @@ architecture Behavioral of machine is
   signal cpu_read_data : unsigned(7 downto 0);
   signal arb_cpu_ready : std_logic;
   signal cpu_map_en_next : std_logic;
-
+  
   -- Signals between DMAgic and bus arbiter
   signal dmagic_memory_access_address_next : std_logic_vector(19 downto 0);
   signal dmagic_memory_access_read_next : std_logic;
@@ -1119,6 +1123,7 @@ begin
     hyper_mode    => cpu_hypervisor_mode,
     map_reg_data  => map_reg_data,
     hypervisor_load_user_reg => hypervisor_load_user_reg,
+    mapper_busy => mapper_busy,
     
     monitor_proceed => monitor_proceed,
     monitor_hypervisor_mode => monitor_hypervisor_mode,
@@ -1163,11 +1168,11 @@ begin
   hypervisor:  hyper_ctrl port map(
       clk               => cpuclock,
       reset             => cpu_reset,
-      hyper_cs          => hypervisor_cs_next,
-      hyper_addr        => bus_memory_access_address_next(7 downto 0),
-      hyper_io_data_i   => bus_memory_access_wdata_next,
+      hyper_cs          => hypervisor_cs,
+      hyper_addr        => system_address(7 downto 0),
+      hyper_io_data_i   => unsigned(system_wdata),
       hyper_data_o      => hypervisor_rdata,
-      cpu_write         => bus_memory_access_write_next,
+      cpu_write         => system_write,
       ready             => bus_ack,
       hyper_mode        => cpu_hypervisor_mode,
       hyp               => hyp,
@@ -1342,6 +1347,7 @@ begin
         hypervisor_mode => cpu_hypervisor_mode,
         phi_special => phi_special,
         cpuspeed => cpuspeed,
+        mapper_busy => mapper_busy,
         bus_ready => arb_cpu_ready,
         cpu_ready => spd_cpu_ack,
         phi0 => phi0 );
@@ -1483,8 +1489,8 @@ begin
           cpuport_rdata      => cpuport_rdata,
           cpuport_cs_next    => cpuport_cs_next,
           
-          hypervisor_cs_next => hypervisor_cs_next,
-          hypervisor_rdata   => hypervisor_rdata,
+          --hypervisor_cs_next => hypervisor_cs_next,
+          --hypervisor_rdata   => hypervisor_rdata,
           
           io_rdata => io_rdata,
           sector_buffer_mapped => sector_buffer_mapped,
@@ -1998,6 +2004,9 @@ begin
       eth_rxdv => eth_rxdv,
       eth_rxer => eth_rxer,
       eth_interrupt => eth_interrupt,
+
+      hypervisor_cs => hypervisor_cs,
+      hypervisor_rdata   => hypervisor_rdata,
       
       ps2data => ps2data,
       ps2clock => ps2clock,
@@ -2087,6 +2096,7 @@ begin
 
     monitor_hyper_trap => monitor_hyper_trap,
     clock => uartclock,
+    pixclock => pixelclock,
     tx       => uart_txd_sig,--uart_txd_sig,
     rx       => RsRx,
     bit_rate_divisor => bit_rate_divisor,

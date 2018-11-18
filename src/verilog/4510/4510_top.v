@@ -35,7 +35,7 @@
                                 `MARK_DEBUG output wire map_next, `MARK_DEBUG output wire map_out,
                                 `MARK_DEBUG input [7:0] data_i, `MARK_DEBUG output wire [7:0] data_o, `MARK_DEBUG output wire [7:0] data_o_next,
                                 // Is the CPU in hypervisor mode or not                                
-                                `MARK_DEBUG output wire hyper_mode, 
+                                `MARK_DEBUG output wire hyper_mode, output wire mapper_busy,
                                 // These two signals let the hypervisor read from the user mapping registers, and request
                                 // that the currently active register be loaded from the current CPU data bus output.
                                 `MARK_DEBUG output wire [7:0] map_reg_data, `MARK_DEBUG input hypervisor_load_user_reg,
@@ -83,7 +83,7 @@ mapper4510 mapper(.clk(clk), .reset(reset), .data_i(data_i), .data_o(data_o_next
                   .ext_irq(irq), .ext_nmi(nmi), .cpu_irq(cpu_irq), .cpu_nmi(cpu_nmi), 
                   .enable_i(map_enable_i), .disable_i(map_disable_i),
                   .load_a(load_a), .load_x(load_x), .load_y(load_y), .load_z(load_z), .load_map_sel(load_map_sel), .active_map(hyper_mode),
-                  .map_reg_data(map_reg_data),
+                  .map_reg_data(map_reg_data), .mapper_busy(mapper_busy),
                   .address(address), .address_next(address_next), .core_address_next(core_address_next), 
                   .map_next(map_next), .map(map_out),
                   .monitor_map_offset_low(monitor_map_offset_low),
