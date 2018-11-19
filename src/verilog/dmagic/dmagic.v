@@ -91,6 +91,19 @@ Written by
 `DBG wire increment_index, load_pio_base_addr0, load_pio_base_addr1, load_pio_base_addr2, load_pio_index;
 `DBG wire set_job_uses_options, clear_job_uses_options;
 `DBG wire start_job, start_cpu_write, start_cpu_read;
+`DBG wire dmagic_busy;
+`DBG wire dmagic_io_ready_ctl;
+
+`DBG wire dmagic_io_ready_reg_next;
+`DBG reg dmagic_io_ready_reg;
+
+always @(posedge clk)
+begin
+  dmagic_io_ready_reg <= dmagic_io_ready_reg_next;
+end
+
+// Don't drive ready unless our CS is also active.
+assign dmagic_io_ready = (dmagic_io_ready_ctl|dmagic_io_ready_reg) & dmagic_io_cs;
 
 // DMAgic Debugging support
 `DBG reg [15:0] dmagic_serial;
@@ -100,7 +113,7 @@ Written by
                                    .dmagic_read_data(dmagic_read_data), 
                                    .set_job_uses_options(set_job_uses_options), .clear_job_uses_options(clear_job_uses_options),
                                    .dmagic_dma_req(dmagic_dma_req), .dmagic_cpu_req(dmagic_cpu_req), 
-                                   .dmagic_io_ready(dmagic_io_ready), .dmagic_ack(dmagic_ack),                                   
+                                   .dmagic_io_ready(dmagic_io_ready_ctl), .dmagic_ack(dmagic_ack),                                   
                                    .load_src_addr0(load_src_addr0), .load_src_addr1(load_src_addr1),
                                    .load_src_addr2(load_src_addr2), .update_src_addr(update_src_addr),
                                    .load_dst_addr0(load_dst_addr0), .load_dst_addr1(load_dst_addr1), 
@@ -109,16 +122,17 @@ Written by
                                    .increment_list_addr(increment_list_addr), .dmagic_memory_access_write_next(dmagic_memory_access_write_next),
                                    .dmagic_addr_sel_next(dmagic_addr_sel_next), .data_op_read(data_op_read), .dmagic_wdata_sel_read(dmagic_wdata_sel_read),
                                    .load_dir_cmd(load_dir_cmd), .load_srcdst_opts(load_srcdst_opts), .load_src_opts(load_src_opts),
-                                   .load_dst_opts(load_dst_opts),
+                                   .load_dst_opts(load_dst_opts),  .dmagic_busy(dmagic_busy),
                                    .load_mod0(load_mod0), .load_mod1(load_mod1));
 
   dmagic_output_reg output_reg(.clk(clk), .dmagic_list_addr(dmagic_list_addr), .support_f01b(support_f01b), 
                                .dmagic_pio_base_addr(dmagic_pio_base_addr), .dmagic_pio_index(dmagic_pio_index), 
-                               .dmagic_read_data(dmagic_read_data), .dmagic_io_data(dmagic_io_data), 
+                               .dmagic_read_data(dmagic_read_data), .dmagic_io_data(dmagic_io_data), .dmagic_busy(dmagic_busy),
                                .data_op_read(data_op_read), .dmagic_data_op_next(dmagic_data_op_next));
 
-  dmagic_io_decode io_decode(.dmagic_io_cs(dmagic_io_cs), .dmagic_io_ack(dmagic_io_ack), 
+  dmagic_io_decode io_decode(.dmagic_io_cs(dmagic_io_cs), .dmagic_io_ack(dmagic_io_ack), .dmagic_io_ready_reg_next(dmagic_io_ready_reg_next),
                              .dmagic_io_address_next(dmagic_io_address_next), .dmagic_io_write_next(dmagic_io_write_next), 
+                             .dmagic_busy(dmagic_busy),
                              .load_list_addr0(load_list_addr0), .load_list_addr1(load_list_addr1), .load_list_addr2(load_list_addr2), .load_status(load_status),
                              .load_pio_base_addr0(load_pio_base_addr0), .load_pio_base_addr1(load_pio_base_addr1), .load_pio_base_addr2(load_pio_base_addr2), 
                              .load_pio_index(load_pio_index), .increment_index(increment_index), .load_pio(load_pio), 
@@ -201,7 +215,7 @@ endmodule
                                    output reg dmagic_memory_access_write_next, output reg [1:0] dmagic_addr_sel_next,
                                    output reg load_dir_cmd, output reg load_srcdst_opts, output reg load_src_opts,
                                    output reg load_dst_opts, output reg load_mod0, output reg load_mod1,
-                                   output reg data_op_read);
+                                   output reg data_op_read, output reg dmagic_busy);
 
 parameter DMAgic_Idle                   = 4'h00, 
           DMAgic_CPUAccessRead          = 4'h01, 
@@ -281,7 +295,7 @@ begin
   dmagic_state_next = dmagic_state;
   dmagic_dma_req = 0;
   dmagic_cpu_req = 0;
-  dmagic_io_ready = 1;
+  dmagic_io_ready = 0;
   dmagic_ack = 1;
   
   dmagic_addr_sel_next = Addr_Src;
@@ -324,14 +338,17 @@ begin
 
   data_op_read = 0;
 
+  dmagic_busy = (dmagic_state != DMAgic_Idle);
+  
   case (dmagic_state)
     DMAgic_Idle: begin
       if (start_job)
         dmagic_state_next = DMAgic_Start;
-      else if (start_cpu_write)
+      else if (start_cpu_write) begin
         dmagic_state_next = DMAgic_CPUAccessWrite;
-      else if (start_cpu_read)
+      end else if (start_cpu_read) begin
         dmagic_state_next = DMAgic_CPUAccessRead;
+      end
       
       // During DMAgic_CPUAccessRead we are driving our output signals with the data we want.  We're waiting
       // to be told the data is available.  We also hold dmagic_io_ready low since the bus interface will sill be
@@ -356,6 +373,7 @@ begin
     end
     
     DMAgic_CPUAccessReadWait: begin
+      dmagic_io_ready = 1;
       dmagic_addr_sel_next = Addr_PIO;
       if (dmagic_io_cs)              // Wait for bus arbiter to direct control back to us
         dmagic_state_next = DMAgic_CPUAccessAck;
@@ -373,7 +391,8 @@ begin
     end
     
     DMAgic_CPUAccessAck: begin
-      if (dmagic_io_cs==0)  //- Wait for CPU to stop talking to us before we go idle so we can't accidentally trigger again.
+      dmagic_io_ready = 1;
+      if (dmagic_io_cs==0)  // Wait for CPU to stop talking to us before we go idle so we can't accidentally trigger again.
         dmagic_state_next = DMAgic_Idle;
     end
     
@@ -560,6 +579,7 @@ end
 endmodule
 
 `SCHEM_KEEP_HIER module dmagic_io_decode(input dmagic_io_cs, input dmagic_io_ack, input [7:0] dmagic_io_address_next, input dmagic_io_write_next,
+                                         output reg dmagic_io_ready_reg_next, input dmagic_busy,
                                          output reg load_list_addr0, output reg load_list_addr1, output reg load_list_addr2, output reg load_status,
                                          output reg load_pio_base_addr0, output reg load_pio_base_addr1, output reg load_pio_base_addr2, output reg load_pio_index,
                                          output reg increment_index, output reg load_pio, output reg clear_job_uses_options, output reg set_job_uses_options,
@@ -588,7 +608,7 @@ begin
   load_pio_index = 0;
   increment_index = 0;
   load_pio = 0;
-  
+  dmagic_io_ready_reg_next = 0;
   clear_job_uses_options = 0;
   set_job_uses_options = 0;
   start_job = 0;
@@ -597,11 +617,12 @@ begin
 
   dmagic_data_op_next = Data_Idle;
   
-  if (dmagic_io_cs && dmagic_io_ack) begin
+  if (dmagic_io_cs) begin  
+    dmagic_io_ready_reg_next = 1; 
     if (dmagic_io_address_next==8'h00 || dmagic_io_address_next==8'h05 || dmagic_io_address_next==8'h0E) begin
       load_list_addr0 = dmagic_io_write_next;
       dmagic_data_op_next = Data_List0;
-      if (dmagic_io_write_next) begin
+      if (dmagic_io_write_next && dmagic_io_ack) begin
         if (dmagic_io_address_next==8'h00) begin
           clear_job_uses_options = 1;
           start_job = 1;
@@ -632,12 +653,15 @@ begin
       load_pio_index = dmagic_io_write_next;
       dmagic_data_op_next = Data_Index;
     end else if (dmagic_io_address_next==8'h14 || dmagic_io_address_next==8'h15) begin
-      load_pio = 1;
-      increment_index = dmagic_io_address_next[0];
-      if (dmagic_io_write_next)
-        start_cpu_write = 1;
-      else
-        start_cpu_read = 1;
+      dmagic_io_ready_reg_next = 0; 
+      if(~dmagic_busy) begin  // Only start PIO cycle when idle.
+        load_pio = 1;
+        increment_index = dmagic_io_address_next[0];
+        if (dmagic_io_write_next)
+          start_cpu_write = 1;
+        else
+          start_cpu_read = 1;
+      end
     end
   end
 end
@@ -647,7 +671,8 @@ endmodule
 // Clocked output data register
 `SCHEM_KEEP_HIER module dmagic_output_reg(input clk, input data_op_read, input [3:0] dmagic_data_op_next, 
                                           input [19:0] dmagic_list_addr, input support_f01b, input [19:0] dmagic_pio_base_addr,
-                                          input [7:0] dmagic_pio_index, input [7:0] dmagic_read_data, output reg [7:0] dmagic_io_data);
+                                          input [7:0] dmagic_pio_index, input [7:0] dmagic_read_data, 
+                                          input dmagic_busy, output reg [7:0] dmagic_io_data);
 
 parameter Data_Idle                     = 4'h0,
           Data_List0                    = 4'h8,
@@ -668,7 +693,7 @@ begin
       Data_List0:     dmagic_io_data <= dmagic_list_addr[7:0];
       Data_List1:     dmagic_io_data <= dmagic_list_addr[15:8];
       Data_List2:     dmagic_io_data <= {4'h0, dmagic_list_addr[19:16]};
-      Data_Status:    dmagic_io_data <= {7'h0, support_f01b};
+      Data_Status:    dmagic_io_data <= {dmagic_busy, 6'h0, support_f01b};
       Data_Addr0:     dmagic_io_data <= dmagic_pio_base_addr[7:0];
       Data_Addr1:     dmagic_io_data <= dmagic_pio_base_addr[15:8];
       Data_Addr2:     dmagic_io_data <= {4'h0, dmagic_pio_base_addr[19:16]};

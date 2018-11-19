@@ -96,34 +96,34 @@ entity bus_arbiter is
     attribute keep : string;
     
     
-    attribute mark_debug of bus_memory_access_address_next: signal is "true";
-    attribute mark_debug of bus_memory_access_io_next: signal is "true";
-    attribute mark_debug of bus_ack: signal is "true";
-    attribute mark_debug of bus_read_data: signal is "true";
-    attribute mark_debug of bus_ready: signal is "true";
-    
-    attribute mark_debug of cpu_arb_ack: signal is "true";
-    attribute mark_debug of arb_cpu_ready: signal is "true";
-    attribute mark_debug of cpu_read_data: signal is "true";
-    attribute mark_debug of cpu_memory_access_address_next: signal is "true";
-    attribute mark_debug of cpu_memory_access_read_next: signal is "true";
-    attribute mark_debug of cpu_memory_access_io_next: signal is "true";
-    
-    attribute mark_debug of monitor_ack: signal is "true";
-    attribute mark_debug of monitor_ready: signal is "true";
-    attribute mark_debug of monitor_read_data: signal is "true";
-    attribute mark_debug of monitor_memory_access_address_next: signal is "true";
-    attribute mark_debug of monitor_memory_access_read_next: signal is "true";
-    attribute mark_debug of monitor_memory_access_write_next: signal is "true";
-    attribute mark_debug of monitor_memory_access_wdata_next: signal is "true";
-    attribute mark_debug of monitor_memory_access_io_next: signal is "true";
-    
-    attribute mark_debug of dmagic_ack: signal is "true";
-    attribute mark_debug of dmagic_memory_access_address_next: signal is "true";
-    attribute mark_debug of dmagic_ready: signal is "true";
-    attribute mark_debug of dmagic_read_data: signal is "true";
-    attribute mark_debug of dmagic_dma_req: signal is "true";
-    attribute mark_debug of dmagic_cpu_req: signal is "true";
+    --attribute mark_debug of bus_memory_access_address_next: signal is "true";
+    --attribute mark_debug of bus_memory_access_io_next: signal is "true";
+    --attribute mark_debug of bus_ack: signal is "true";
+    --attribute mark_debug of bus_read_data: signal is "true";
+    --attribute mark_debug of bus_ready: signal is "true";
+    --
+    --attribute mark_debug of cpu_arb_ack: signal is "true";
+    --attribute mark_debug of arb_cpu_ready: signal is "true";
+    --attribute mark_debug of cpu_read_data: signal is "true";
+    --attribute mark_debug of cpu_memory_access_address_next: signal is "true";
+    --attribute mark_debug of cpu_memory_access_read_next: signal is "true";
+    --attribute mark_debug of cpu_memory_access_io_next: signal is "true";
+    --
+    --attribute mark_debug of monitor_ack: signal is "true";
+    --attribute mark_debug of monitor_ready: signal is "true";
+    --attribute mark_debug of monitor_read_data: signal is "true";
+    --attribute mark_debug of monitor_memory_access_address_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_read_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_write_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_wdata_next: signal is "true";
+    --attribute mark_debug of monitor_memory_access_io_next: signal is "true";
+    --
+    --attribute mark_debug of dmagic_ack: signal is "true";
+    --attribute mark_debug of dmagic_memory_access_address_next: signal is "true";
+    --attribute mark_debug of dmagic_ready: signal is "true";
+    --attribute mark_debug of dmagic_read_data: signal is "true";
+    --attribute mark_debug of dmagic_dma_req: signal is "true";
+    --attribute mark_debug of dmagic_cpu_req: signal is "true";
         
 end entity bus_arbiter;
 
@@ -144,8 +144,8 @@ architecture Behavioural of bus_arbiter is
   signal bus_master : bus_master_type;
   --
   
-  attribute mark_debug of bus_master_next: signal is "true";
-  attribute mark_debug of bus_master: signal is "true";
+  --attribute mark_debug of bus_master_next: signal is "true";
+  --attribute mark_debug of bus_master: signal is "true";
   --attribute mark_debug of cpu_read_data_last: signal is "true";
   
 begin

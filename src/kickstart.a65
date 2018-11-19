@@ -1044,6 +1044,10 @@ kickuproutine:
 		lda #<kickupdmalist
 		sta $d705
 
+waitkickdmabusy:
+		bit $d703
+		bmi waitkickdmabusy
+		
 		; copy complete, so mark ourselves upgraded, and jump into hypervisor
 		; as though we were just reset.
 
@@ -1346,6 +1350,10 @@ loadedok:
 		sta $d701
 		lda #<charromdmalist
 		sta $d705
+
+charromdmabusy:
+		bit $d703
+		bmi charromdmabusy
 
 		jmp loadedmegaromok
 
@@ -1919,6 +1927,10 @@ erasescreen:
 		;
 		lda #<erasescreendmalist
 		sta $d705
+
+waiterasescreendmabusy:
+		bit $d703
+		bmi waiterasescreendmabusy
 
 		; bank 2nd KB of colour RAM back out
 		;
@@ -2705,6 +2717,10 @@ ueol1:
 	sta $d701
 	lda #<utility_dmalist
 	sta $d705  ; Trigger enhanced DMA
+
+waitutildmabusy:
+	bit $d703
+	bmi waitutildmabusy
 
 	; clear 16-bit char mode
 	lda #$05	; 0000 0101

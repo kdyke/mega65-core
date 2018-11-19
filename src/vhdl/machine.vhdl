@@ -569,6 +569,7 @@ architecture Behavioral of machine is
   signal io_ready : std_logic;
 
   signal dmagic_cs_next : std_logic;
+  signal dmagic_cs : std_logic;
   signal dmagic_io_ready : std_logic;
   signal dmagic_rdata : std_logic_vector(7 downto 0)  := (others => '0');
   
@@ -1369,12 +1370,12 @@ begin
           dmagic_dma_req                    => dmagic_dma_req,
           dmagic_cpu_req                    => dmagic_cpu_req,
           
-          dmagic_io_address_next            => system_address_next(7 downto 0),
-          dmagic_io_cs                      => dmagic_cs_next,
+          dmagic_io_address_next            => system_address(7 downto 0),
+          dmagic_io_cs                      => dmagic_cs,
           dmagic_io_ack                     => spd_cpu_ack,               -- Must be CPU directly, otherwise we might source from ourselves for CPU accesses.
-          dmagic_io_read_next               => system_read_next,
-          dmagic_io_write_next              => system_write_next,
-          dmagic_io_wdata_next              => system_wdata_next,
+          dmagic_io_read_next               => system_read,
+          dmagic_io_write_next              => system_write,
+          dmagic_io_wdata_next              => system_wdata,
           dmagic_io_data                    => dmagic_rdata,
           dmagic_io_ready                   => dmagic_io_ready
           
@@ -1484,6 +1485,7 @@ begin
       
           dmagic_io_ready    => dmagic_io_ready,
           dmagic_cs_next     => dmagic_cs_next,
+          dmagic_cs          => dmagic_cs,
           dmagic_rdata       => dmagic_rdata,
           
           cpuport_rdata      => cpuport_rdata,

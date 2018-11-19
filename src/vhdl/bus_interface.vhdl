@@ -138,49 +138,50 @@ entity bus_interface is
     --attribute mark_debug of ext_sel: signal is "true";
     --attribute mark_debug of io_sel: signal is "true";
     --
-    attribute mark_debug of kickstart_rdata: signal is "true";
-    attribute mark_debug of kickstart_cs_next: signal is "true";
+    --attribute mark_debug of kickstart_rdata: signal is "true";
+    --attribute mark_debug of kickstart_cs_next: signal is "true";
     --
     --attribute mark_debug of hypervisor_rdata: signal is "true";
     --attribute mark_debug of hypervisor_cs_next: signal is "true";
     --
-    attribute mark_debug of cpuport_rdata: signal is "true";
-    attribute mark_debug of cpuport_cs_next: signal is "true";
-    ----
-    attribute mark_debug of system_address_next: signal is "true";
-    attribute mark_debug of system_read_next: signal is "true";
-    attribute mark_debug of system_write_next: signal is "true";
-    attribute mark_debug of system_wdata_next: signal is "true";
+    --attribute mark_debug of cpuport_rdata: signal is "true";
+    --attribute mark_debug of cpuport_cs_next: signal is "true";
     --
-    attribute mark_debug of system_address: signal is "true";
-    attribute mark_debug of system_read: signal is "true";
-    attribute mark_debug of system_write: signal is "true";
-    attribute mark_debug of system_wdata: signal is "true";
+    --attribute mark_debug of system_address_next: signal is "true";
+    --attribute mark_debug of system_read_next: signal is "true";
+    --attribute mark_debug of system_write_next: signal is "true";
+    --attribute mark_debug of system_wdata_next: signal is "true";
     --
-    attribute mark_debug of shadow_write_next: signal is "true";
-    attribute mark_debug of shadow_rdata: signal is "true";
+    --attribute mark_debug of system_address: signal is "true";
+    --attribute mark_debug of system_read: signal is "true";
+    --attribute mark_debug of system_write: signal is "true";
+    --attribute mark_debug of system_wdata: signal is "true";
     --
-    attribute mark_debug of reset: signal is "true";
+    --attribute mark_debug of shadow_write_next: signal is "true";
+    --attribute mark_debug of shadow_rdata: signal is "true";
+    --
+    --attribute mark_debug of reset: signal is "true";
     --attribute keep of bus_read_data : signal is "true";
     --attribute dont_touch of bus_read_data : signal is "true";
-    attribute mark_debug of bus_read_data : signal is "true";
-    attribute mark_debug of bus_ready : signal is "true";
-    attribute mark_debug of ack : signal is "true";
+    --attribute mark_debug of bus_read_data : signal is "true";
+    --attribute mark_debug of bus_ready : signal is "true";
+    --attribute mark_debug of ack : signal is "true";
     
-    attribute mark_debug of dmagic_cs_next : signal is "true";
+    --attribute mark_debug of dmagic_cs_next : signal is "true";
+    --attribute mark_debug of dmagic_cs : signal is "true";
     --attribute mark_debug of colourram_at_dc00 : signal is "true";
     --attribute mark_debug of sector_buffer_mapped : signal is "true";
     --
-    attribute mark_debug of vic_rdata : signal is "true";
-    attribute mark_debug of vic_ready : signal is "true";
-    attribute mark_debug of vic_cs_next : signal is "true";
-    attribute mark_debug of vic_cs : signal is "true";
-    attribute mark_debug of viciii_iomode : signal is "true";
+    --attribute mark_debug of vic_rdata : signal is "true";
+    --attribute mark_debug of vic_ready : signal is "true";
+    --attribute mark_debug of vic_cs_next : signal is "true";
+    --attribute mark_debug of vic_cs : signal is "true";
+    --attribute mark_debug of viciii_iomode : signal is "true";
     --
     --
     --attribute mark_debug of memory_access_wdata_next : signal is "true";
-    attribute mark_debug of io_sel_next : signal is "true";
-    attribute mark_debug of io_sel : signal is "true";
+    --attribute mark_debug of io_sel_next : signal is "true";
+    --attribute mark_debug of io_sel : signal is "true";
     --attribute mark_debug of io_rdata : signal is "true";
     --attribute mark_debug of vic_cs_next : signal is "true";
     --attribute mark_debug of colour_ram_cs_next : signal is "true";
@@ -250,7 +251,7 @@ architecture Behavioural of bus_interface is
 
   signal bus_device : bus_device_type;
       
-  attribute mark_debug of bus_device: signal is "true";
+  --attribute mark_debug of bus_device: signal is "true";
   --
   --attribute mark_debug of cpu_resolved_memory_access_address_next: signal is "true";
   --
