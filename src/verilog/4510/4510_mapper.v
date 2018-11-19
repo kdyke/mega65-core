@@ -22,7 +22,7 @@
 
 `include "65ce02_inc.vh"
 
-`define EN_MARK_DEBUG
+//`define EN_MARK_DEBUG
 `ifdef EN_MARK_DEBUG
 `define MARK_DEBUG (* mark_debug = "true", dont_touch = "true" *)
 `else
