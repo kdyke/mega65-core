@@ -57,7 +57,7 @@ reg map_enable_fast[0:15]; // Two sets of 8
 reg map_enable_tmp;
 //reg mapper_busy;
 reg refresh_sel;
-reg [4:0] refresh_cnt;
+reg [3:0] refresh_cnt;
 `endif
 
 always @(posedge clk) begin
@@ -106,8 +106,8 @@ always @(posedge clk) begin
       refresh_sel <= load_map_sel;
       refresh_cnt <= 0;
     end else if(mapper_busy) begin
-      refresh_cnt = refresh_cnt + 1;
-      if(refresh_cnt == 31)
+      refresh_cnt <= refresh_cnt + 1;
+      if(refresh_cnt == 15)
         mapper_busy <= 0;
 `endif
     end
