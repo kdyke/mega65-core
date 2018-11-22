@@ -22,6 +22,8 @@ entity iomapper is
         reset_out : out std_logic;
         irq : out std_logic;
         nmi : out std_logic;
+        io_ready : out std_logic;
+        
         capslock_key : in std_logic;
         speed_gate : out std_logic;
         speed_gate_enable : in std_logic;
@@ -54,10 +56,12 @@ entity iomapper is
         fpga_temperature : in std_logic_vector(11 downto 0);
         
         address_next : in std_logic_vector(19 downto 0);
-        r_next : in std_logic;
+        address : in std_logic_vector(19 downto 0);
+        r : in std_logic;
+        w : in std_logic;
         w_next : in std_logic;
-        data_i_next : in std_logic_vector(7 downto 0);
-        io_sel_next : in std_logic;
+        data_i : in std_logic_vector(7 downto 0);
+        io_sel : in std_logic;
         ack : in std_logic;
         
 --        address : in std_logic_vector(19 downto 0);
@@ -300,17 +304,20 @@ entity iomapper is
     
     attribute keep : string;
     attribute mark_debug : string;
+    attribute keep_hierarchy : string;
   
     --attribute mark_debug of data_o : signal is "true";
-    --attribute mark_debug of address_next : signal is "true";
-    --attribute mark_debug of r_next : signal is "true";
-    --attribute mark_debug of w_next : signal is "true";
-    --attribute mark_debug of data_i_next : signal is "true";
-    --attribute mark_debug of io_sel_next : signal is "true";
+    --attribute mark_debug of address : signal is "true";
+    --attribute mark_debug of r : signal is "true";
+    --attribute mark_debug of w : signal is "true";
+    --attribute mark_debug of data_i : signal is "true";
+    --attribute mark_debug of io_sel : signal is "true";
     
 end iomapper;
 
 architecture behavioral of iomapper is
+
+  --attribute keep_hierarchy of behavioral : architecture is "yes";
 
   -- Enables for each of the chip select lines,
   -- used for disabling IO devices for debugging
@@ -397,7 +404,9 @@ architecture behavioral of iomapper is
     
   -- iomapper sub-device output signals.
   signal cia1_o : std_logic_vector(7 downto 0);
+  signal cia1_ready : std_logic;
   signal cia2_o : std_logic_vector(7 downto 0);
+  signal cia2_ready : std_logic;
   signal sdcardio_o : std_logic_vector(7 downto 0);
   signal thumbnail_o : std_logic_vector(7 downto 0);
   signal ethernet_o : std_logic_vector(7 downto 0);
@@ -481,6 +490,7 @@ architecture behavioral of iomapper is
   signal pcm_right : unsigned(15 downto 0) := x"FFFF";
 
   signal cpu_ethernet_stream : std_logic;
+  signal fake_io_ready : std_logic;
   
   --attribute mark_debug of data_i: signal is "true";
   --attribute mark_debug of w: signal is "true";
@@ -497,11 +507,14 @@ architecture behavioral of iomapper is
   --
   --attribute mark_debug of sectorbuffercs: signal is "true";
   --attribute mark_debug of iomapper_output_mux_select : signal is "true";
-
+  --attribute mark_debug of cia1_ready : signal is "true";
+  --attribute mark_debug of cia2_ready : signal is "true";
+  --
   --attribute mark_debug of cia1_o: signal is "true";
   --attribute mark_debug of cia2_o: signal is "true";
   --attribute mark_debug of sdcardio_o: signal is "true";
-  
+  --attribute mark_debug of fake_io_ready: signal is "true";
+  --
   --attribute mark_debug of sector_buffer_mapped_read: signal is "true";
   --attribute mark_debug of chipselect_enables: signal is "true";
 begin
@@ -548,11 +561,11 @@ begin
     buffer_rdata => buffer_rdata,
     debug_vector => debug_vector,
 
-    fastio_addr => unsigned(address_next(19 downto 0)),
-    fastio_write => w_next,
+    fastio_addr => unsigned(address(19 downto 0)),
+    fastio_write => w,
     std_logic_vector(fastio_rdata) => thumbnail_o,
-    fastio_read => r_next,
-    fastio_wdata => unsigned(data_i_next)
+    fastio_read => r,
+    fastio_wdata => unsigned(data_i)
     );
   end block;
 
@@ -569,10 +582,12 @@ begin
     reg_isr_out => reg_isr_out,
     imask_ta_out => imask_ta_out,
     cs => cia1cs,
-    fastio_address => unsigned(address_next(7 downto 0)),
-    fastio_write => w_next,
+    fastio_address => unsigned(address(7 downto 0)),
+    fastio_write => w,
     std_logic_vector(fastio_rdata) => cia1_o,
-    fastio_wdata => unsigned(data_i_next),
+    ready_o => cia1_ready,
+    ack => ack,
+    fastio_wdata => unsigned(data_i),
     portaout => cia1porta_out,
     portbout => cia1portb_out,
     portain => cia1porta_in,
@@ -596,10 +611,13 @@ begin
     reset => reset,
     irq => nmi,
     cs => cia2cs,
-    fastio_address => unsigned(address_next(7 downto 0)),
-    fastio_write => w_next,
+    fastio_address => unsigned(address(7 downto 0)),
+    fastio_write => w,
     std_logic_vector(fastio_rdata) => cia2_o,
-    fastio_wdata => unsigned(data_i_next),
+    ready_o => cia2_ready,
+    ack => ack,
+    
+    fastio_wdata => unsigned(data_i),
 
     -- CIA port a (VIC-II bank select + IEC serial port)
     portain(2 downto 0) => (others => '1'),   
@@ -637,11 +655,11 @@ begin
       phi0 => phi0,
       reset => reset,
 --      irq => nmi,
-      fastio_address => unsigned(address_next(19 downto 0)),
-      fastio_write => w_next,
-      fastio_read => r_next,
+      fastio_address => unsigned(address(19 downto 0)),
+      fastio_write => w,
+      fastio_read => r,
       std_logic_vector(fastio_rdata) => c65uart_o,
-      fastio_wdata => unsigned(data_i_next),
+      fastio_wdata => unsigned(data_i),
       -- Port E is used for extra keys on C65 keyboard:
       -- bit0 = caps lock (input only)
       -- bit1 = column 8 select (output only)
@@ -823,10 +841,10 @@ begin
     clk32 => clk,
     reset => reset_high,
     cs => leftsid_cs,
-    we => w_next,
+    we => w,
     ack => ack,
-    addr => unsigned(address_next(4 downto 0)),
-    di => unsigned(data_i_next),
+    addr => unsigned(address(4 downto 0)),
+    di => unsigned(data_i),
     std_logic_vector(do) => sid_left_o,
     pot_x => potl_x,
     pot_y => potl_y,
@@ -840,10 +858,10 @@ begin
     clk32 => clk,
     reset => reset_high,
     cs => rightsid_cs,
-    we => w_next,
+    we => w,
     ack => ack,
-    addr => unsigned(address_next(4 downto 0)),
-    di => unsigned(data_i_next),
+    addr => unsigned(address(4 downto 0)),
+    di => unsigned(data_i),
     std_logic_vector(do) => sid_right_o,
     pot_x => potr_x,
     pot_y => potr_y,
@@ -882,11 +900,11 @@ begin
     eth_keycode_toggle => eth_keycode_toggle,
     eth_keycode => eth_keycode,
 
-    fastio_addr => unsigned(address_next),
-    fastio_write => w_next,
-    fastio_read => r_next,
+    fastio_addr => unsigned(address),
+    fastio_write => w,
+    fastio_read => r,
     std_logic_vector(ether_rdata) => ethernet_o,
-    fastio_wdata => unsigned(data_i_next)
+    fastio_wdata => unsigned(data_i)
     );
   
   buffered_uart0 : entity work.buffereduart port map (
@@ -906,11 +924,11 @@ begin
     uart2_rx => buffereduart2_rx,
     uart2_tx => buffereduart2_tx,
 
-    fastio_addr => unsigned(address_next),
-    fastio_write => w_next,
-    fastio_read => r_next,
+    fastio_addr => unsigned(address),
+    fastio_write => w,
+    fastio_read => r,
     std_logic_vector(fastio_rdata) => buffered_uart_o,
-    fastio_wdata => unsigned(data_i_next)
+    fastio_wdata => unsigned(data_i)
     );
 
   audio0: entity work.audio_complex port map (
@@ -973,10 +991,10 @@ begin
     fpga_temperature => fpga_temperature,
 
     -- SD card I/O is now always synchronous
-    fastio_addr => unsigned(address_next),
-    fastio_write => w_next,
-    fastio_read => r_next,
-    fastio_wdata => unsigned(data_i_next),
+    fastio_addr => unsigned(address),
+    fastio_write => w,
+    fastio_read => r,
+    fastio_wdata => unsigned(data_i),
     fastio_rdata_sel => sdcardio_o,
     fastio_ack => ack,
     colourram_at_dc00 => colourram_at_dc00,
@@ -1215,7 +1233,7 @@ begin
     end if;
   end process;
   
-  process (r_next,w_next,address_next,cia1portb_in,cia1porta_out,colourram_at_dc00,
+  process (r,w,address,cia1portb_in,cia1porta_out,colourram_at_dc00,
            sector_buffer_mapped_read)
     variable temp : unsigned(19 downto 0);
     variable c64mode : std_logic;
@@ -1240,10 +1258,10 @@ begin
       -- sdcard sector buffer: only mapped if no colour ram @ $DC00, and if
       -- the sectorbuffer mapping flag is set
       sectorbuffercs <= '0';
-      report "fastio address = $" & to_hstring(address_next) severity note;
+      report "fastio address = $" & to_hstring(address) severity note;
       
-      if address_next(11 downto 9)&'0' = x"E"
-        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' and io_sel_next='1' then
+      if address(11 downto 9)&'0' = x"E"
+        and sector_buffer_mapped_read = '1' and colourram_at_dc00 = '0' and io_sel='1' then
         sectorbuffercs <= sbcs_en;
         report "selecting SD card sector buffer" severity note;
       end if;
@@ -1254,12 +1272,12 @@ begin
       -- @IO:C64 $D480-$D4FF = repeated images of SIDs
       -- Presumably repeated through to $D5FF.  But we will repeat to $D4FF only
       -- so that we can use $D500-$D5FF for other stuff.
-      case address_next(11 downto 8) is
-        when x"4" => leftsid_cs <= address_next(6) and lscs_en and io_sel_next; rightsid_cs <= not address_next(6) and rscs_en and io_sel_next;
+      case address(11 downto 8) is
+        when x"4" => leftsid_cs <= address(6) and lscs_en and io_sel; rightsid_cs <= not address(6) and rscs_en and io_sel;
         -- Some C64 dual-sid programs expect the 2nd sid to be at $D500, so
         -- we will make the SIDs visible at $D500 in c64 io context, and switched
         -- sides.
-        when x"5" => leftsid_cs <= not address_next(6) and lscs_en and io_sel_next and c64mode; rightsid_cs <= address_next(6) and rscs_en and io_sel_next and c64mode;
+        when x"5" => leftsid_cs <= not address(6) and lscs_en and io_sel and c64mode; rightsid_cs <= address(6) and rscs_en and io_sel and c64mode;
         when others => leftsid_cs <= '0'; rightsid_cs <= '0';
       end case;
 
@@ -1269,26 +1287,26 @@ begin
       -- compatibility (C65 UART actually only has 7 registers).
       -- 6551 is not currently implemented, so this is just unmapped for now,
       -- except for any read values required to allow the C65 ROM to function.
-      temp(15 downto 2) := unsigned(address_next(19 downto 6));
+      temp(15 downto 2) := unsigned(address(19 downto 6));
       temp(1 downto 0) := "00";
-      if address_next(11 downto 4)=x"60" or
-         address_next(11 downto 4)=x"61" or
-         address_next(11 downto 4)=x"62" then
+      if address(11 downto 4)=x"60" or
+         address(11 downto 4)=x"61" or
+         address(11 downto 4)=x"62" then
         case temp(7 downto 0) is
-          when x"60" => c65uart_cs <= c65uart_en and io_sel_next and not c64mode;
+          when x"60" => c65uart_cs <= c65uart_en and io_sel and not c64mode;
           when others => c65uart_cs <= '0';
         end case;
         thumbnail_cs <= '0';
       else
         c65uart_cs <= '0';
         -- $D630-$D63F is thumbnail generator
-        if address_next(11 downto 4) = x"63" and io_sel_next='1' and c65gsmode='1' then
+        if address(11 downto 4) = x"63" and io_sel='1' and c65gsmode='1' then
           thumbnail_cs <= c65uart_en;
         else
           thumbnail_cs <= '0';
         end if;
       end if;
-      if address_next(11 downto 4) = x"6E" and io_sel_next='1'  and c65gsmode='1' then
+      if address(11 downto 4) = x"6E" and io_sel='1'  and c65gsmode='1' then
         ethernet_cs <= ethernetcs_en;
       else
         ethernet_cs <= '0';
@@ -1297,36 +1315,36 @@ begin
       -- Hypervisor control (only visible from hypervisor mode) $D640 - $D67F
       -- The hypervisor is a CPU provided function.
       hypervisor_cs <= '0';
-      if io_sel_next='1' and address_next(11 downto 6)&"00" = x"64" then
+      if io_sel='1' and address(11 downto 6)&"00" = x"64" then
         hypervisor_cs <= '1';
       end if;
       
       rec_cs <= '0';
-      if (io_sel_next='1' and address_next(11 downto 0) = x"0a0") then
+      if (io_sel='1' and address(11 downto 0) = x"0a0") then
         rec_cs <= '1';
       end if;
       
       -- SD controller and miscellaneous hardware (microphone, accelerometer etc)
       -- uses $D680 - $D6FF
-      temp(15 downto 3) := unsigned(address_next(19 downto 7));
+      temp(15 downto 3) := unsigned(address(19 downto 7));
       temp(2 downto 0) := "000";
       case temp(7 downto 0) is
-        when x"68" => sdcardio_cs <= sdcardio_en and io_sel_next and not c64mode;
+        when x"68" => sdcardio_cs <= sdcardio_en and io_sel and not c64mode;
         when others => sdcardio_cs <= '0';
       end case;
 
       -- F011 emulation registers
-      temp(15 downto 1) := unsigned(address_next(19 downto 5));
+      temp(15 downto 1) := unsigned(address(19 downto 5));
       temp(0) := '0';
       case temp(7 downto 0) is
-        when x"08" => f011_cs <= sdcardio_en and io_sel_next and not c64mode;
+        when x"08" => f011_cs <= sdcardio_en and io_sel and not c64mode;
         when others => f011_cs <= '0';
       end case;
 
       -- Buffered UART registers at $D0Ex
-      temp(15 downto 0) := unsigned(address_next(19 downto 4));
+      temp(15 downto 0) := unsigned(address(19 downto 4));
       case temp(7 downto 0) is
-        when x"0E" => buffereduart_cs <= sdcardio_en and io_sel_next and not c64mode;
+        when x"0E" => buffereduart_cs <= sdcardio_en and io_sel and not c64mode;
         when others => buffereduart_cs <= '0';
       end case;
             
@@ -1345,8 +1363,8 @@ begin
       -- being mapped in $DC00-$DFFF using the C65 2K colour ram register
       cia1cs <='0';
       cia2cs <='0';
-      if colourram_at_dc00='0' and io_sel_next='1'then
-        case address_next(11 downto 8) is
+      if colourram_at_dc00='0' and io_sel='1'then
+        case address(11 downto 8) is
           when x"C" => cia1cs <=cia1cs_en;
           when x"D" => cia2cs <=cia2cs_en;
           when others => null;
@@ -1362,8 +1380,28 @@ begin
   begin
     
     if rising_edge(clk) then
-    
-      if r_next='1' then
+
+      -- "Fake" IO ready signal generation.  Basially there's just a one clock delay any time
+      -- the CPU address changes on reads, and no delay on writes.  This is used for the devices
+      -- that don't really ever need to delay things other than what's needed for the extra clock
+      -- of latency.
+      -- Note: This is done as a clocked thing so it takes effect on the following cycle,
+      -- which is what we want.  It also looks backwards because it's easier for me to
+      -- consider the case where the next address is different from the already clocked one, 
+      -- which happens when the CPU is ready to move.  So when they are different, it means
+      -- we'll need to wait one cycle (after the next clock edge).  Also, doing it clocked
+      -- means we don't have a combinatorial loop.
+      
+      -- Also, could this just use io_sel going high and then just make sure that all devices
+      -- that have side effects use ack?
+      if address_next /= address --and w_next='0' 
+        then
+        fake_io_ready <= '0';
+      else
+        fake_io_ready <= '1';
+      end if;
+        
+      --if r='1' then
         if sectorbuffercs='1' or sdcardio_cs='1' or f011_cs='1' then
           iomapper_output_mux_select <= IoSDCardIO;
         elsif cia1cs='1' then
@@ -1389,7 +1427,7 @@ begin
         else
           iomapper_output_mux_select <= IoNone;
         end if;
-      end if;
+        --end if;
     end if;
     
   end process;
@@ -1399,19 +1437,20 @@ begin
   begin
     
     case iomapper_output_mux_select is
-      when IoCIA1         => data_o <= cia1_o;
-      when IoCIA2         => data_o <= cia2_o;
-      when IoSDCardIO     => data_o <= sdcardio_o;
-      when IoThumbnail    => data_o <= thumbnail_o;
-      when IoEthernet     => data_o <= ethernet_o;
-      when IoSIDLeft      => data_o <= sid_left_o;
-      when IoSIDRight     => data_o <= sid_right_o;
-      when IoBufferedUART => data_o <= buffered_uart_o;
-      when IoC65UART      => data_o <= c65uart_o;
-      when IoHypervisor   => data_o <= hypervisor_rdata;
-      when IoREC          => data_o <= x"80";
-      when others         => data_o <= x"FF";
+      when IoCIA1         => data_o <= cia1_o; io_ready <= cia1_ready;
+      when IoCIA2         => data_o <= cia2_o; io_ready <= cia2_ready;
+      when IoSDCardIO     => data_o <= sdcardio_o; io_ready <= fake_io_ready;
+      when IoThumbnail    => data_o <= thumbnail_o; io_ready <= fake_io_ready;
+      when IoEthernet     => data_o <= ethernet_o; io_ready <= fake_io_ready;
+      when IoSIDLeft      => data_o <= sid_left_o; io_ready <= fake_io_ready;
+      when IoSIDRight     => data_o <= sid_right_o; io_ready <= fake_io_ready;
+      when IoBufferedUART => data_o <= buffered_uart_o; io_ready <= fake_io_ready;
+      when IoC65UART      => data_o <= c65uart_o; io_ready <= fake_io_ready;
+      when IoHypervisor   => data_o <= hypervisor_rdata; io_ready <= fake_io_ready;
+      when IoREC          => data_o <= x"80"; io_ready <= fake_io_ready;
+      when others         => data_o <= x"FF"; io_ready <= fake_io_ready;
     end case;
+    
   end process;
   
 end behavioral;

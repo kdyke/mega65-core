@@ -561,12 +561,12 @@ architecture Behavioral of machine is
   signal hyp : std_logic;
   
   signal io_rdata : std_logic_vector(7 downto 0);
-
+  signal io_ready : std_logic;
+  
   signal io_sel_next : std_logic;
   signal ext_sel_next : std_logic;
   signal io_sel : std_logic;
   signal vic_cs : std_logic;
-  signal io_ready : std_logic;
 
   signal dmagic_cs_next : std_logic;
   signal dmagic_cs : std_logic;
@@ -1495,6 +1495,8 @@ begin
           --hypervisor_rdata   => hypervisor_rdata,
           
           io_rdata => io_rdata,
+          io_ready => io_ready,
+          
           sector_buffer_mapped => sector_buffer_mapped,
           vic_rdata => vic_rdata,
           vic_ready => vic_ready,
@@ -1753,7 +1755,8 @@ begin
       cpu_hypervisor_mode => cpu_hypervisor_mode,
       speed_gate => speed_gate,
       speed_gate_enable => speed_gate_enable,
-
+      io_ready => io_ready,
+      
       buffereduart_rx => buffereduart_rx,
       buffereduart_tx => buffereduart_tx,
       buffereduart_ringindicate => buffereduart_ringindicate,
@@ -1815,11 +1818,13 @@ begin
       -- Or probably to really simplify things if I can do the ready signal stuff...
       -- Just run all FastIO devices at 25Mhz instead of 50Mhz.  There's no reason
       -- we need a 50Mhz I/O clock, really.
-      address_next => system_address,
-      io_sel_next => io_sel,      
-      r_next => system_read, 
-      w_next => system_write,
-      data_i_next => system_wdata, 
+      address_next => system_address_next,
+      address => system_address,
+      io_sel => io_sel,      
+      r => system_read, 
+      w => system_write,
+      w_next => system_write_next,
+      data_i => system_wdata, 
       ack => bus_ack,
       
       data_o => io_rdata,

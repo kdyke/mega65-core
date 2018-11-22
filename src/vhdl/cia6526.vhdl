@@ -16,7 +16,10 @@ entity cia6526 is
     todclock : in std_logic;
     reset : in std_logic;
     irq : out std_logic := 'H';
-
+    
+    ack : in std_logic;
+    ready_o : out std_logic;
+    
     seg_led : out unsigned(31 downto 0);
 
     reg_isr_out : out unsigned(7 downto 0);
@@ -48,6 +51,13 @@ entity cia6526 is
 
     countout : out std_logic;
     countin : in std_logic);
+    
+    attribute mark_debug : string;
+    
+    --attribute mark_debug of ready_o : signal is "true";
+    --attribute mark_debug of cs : signal is "true";
+    --attribute mark_debug of fastio_write : signal is "true";
+    
 end cia6526;
 
 architecture behavioural of cia6526 is
@@ -137,8 +147,9 @@ architecture behavioural of cia6526 is
   signal clear_isr_bits : unsigned(7 downto 0) := x"00";
   
   signal todcounter : integer := 0;
+  signal write_counter : unsigned(4 downto 0) := "00000";  
 
-  
+  --attribute mark_debug of write_counter : signal is "true";
 
 begin  -- behavioural
   
@@ -160,9 +171,20 @@ begin  -- behavioural
     variable register_number : unsigned(7 downto 0);
   begin
     if rising_edge(cpuclock) then
+
+      -- This always counts up until it reaches the max and is 
+      -- reset to 0 after any write.
+      if reset='0' then
+        write_counter <= "11111";
+      elsif(write_counter /= "11111") then
+        write_counter <= write_counter + 1;
+      end if;
+      
       if cs='0' then
         -- Tri-state read lines if not selected
         fastio_rdata <= (others => '1');
+        --write_counter <= x"0";
+        ready_o <= '0';        
       else
         -- XXX For debugging have 32 registers, and map
         -- reg_porta_read and portain (and same for port b)
@@ -170,6 +192,16 @@ begin  -- behavioural
         register_number(7 downto 5) := (others => '0');
         register_number(4 downto 0) := fastio_address(4 downto 0);
 
+        -- Delay writes by 32 cycles but not reads.
+        if(fastio_write='1' and ack='1') then
+          write_counter <= "00000";
+          ready_o <= '1';
+        else 
+          if(write_counter = "11111") then
+            ready_o <= '1';
+          end if;
+        end if;
+          
         -- Reading of registers
         if true then
           case register_number is
@@ -533,7 +565,7 @@ begin  -- behavioural
       end if;
 
       -- Check for register read side effects
-      if fastio_write='0' and cs='1' then
+      if fastio_write='0' and cs='1' and ack='1' then
         --report "Performing side-effects of reading from CIA register $" & to_hstring(register_number) severity note;
         register_number := fastio_address(3 downto 0);
         case register_number is
@@ -561,7 +593,7 @@ begin  -- behavioural
       portaout <= reg_porta_out or (not reg_porta_ddr);
       
       -- Check for register writing
-      if fastio_write='1' and cs='1' then
+      if fastio_write='1' and cs='1' and ack='1' then
         --report "writing $" & to_hstring(fastio_wdata)
         --  & " to CIA register $" & to_hstring(register_number) severity note;
         register_number := fastio_address(3 downto 0);

@@ -85,6 +85,8 @@ entity bus_interface is
     -- fast IO port (clocked at core clock). 1MB address space
     ---------------------------------------------------------------------------
     io_rdata : in std_logic_vector(7 downto 0);
+    io_ready : in std_logic;
+    
     io_sel_next : inout std_logic := '0';
     io_sel : inout std_logic := '0';
     ext_sel_next : inout std_logic := '0';
@@ -132,6 +134,7 @@ entity bus_interface is
     attribute keep : string;
     
     --attribute mark_debug of io_rdata: signal is "true";
+    --attribute mark_debug of io_ready: signal is "true";
     --
     --attribute mark_debug of ext_sel_next: signal is "true";
     --attribute mark_debug of io_sel_next: signal is "true";
@@ -166,7 +169,7 @@ entity bus_interface is
     --attribute mark_debug of bus_read_data : signal is "true";
     --attribute mark_debug of bus_ready : signal is "true";
     --attribute mark_debug of ack : signal is "true";
-    
+    --
     --attribute mark_debug of dmagic_cs_next : signal is "true";
     --attribute mark_debug of dmagic_cs : signal is "true";
     --attribute mark_debug of colourram_at_dc00 : signal is "true";
@@ -213,7 +216,7 @@ architecture Behavioural of bus_interface is
   signal shadow_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
   --signal hypervisor_ready : std_logic := '1';
-  signal io_ready : std_logic := '0';
+  --signal io_ready : std_logic := '0';
 
   signal cpuport_ready : std_logic := '1';  
   
@@ -371,22 +374,7 @@ begin
       end if;
       
       monitor_waitstates <= wait_states;
-    
-      -- CPU ready signal generation.  Basially there's just a one clock delay any time
-      -- the CPU address changes.
-      -- Currently the same for I/O accesses, so don't duplicate the logic.
-      -- Note: This is done as a clocked thing so it takes effect on the following cycle,
-      -- which is what we want.  It also looks backwards because it's easier for me to
-      -- consider the case where the next address is different from the already clocked one, 
-      -- which happens when the CPU is ready to move.  So when they are different, it means
-      -- we'll need to wait one cycle (after the next clock edge).  Also, doing it clocked
-      -- means we don't have a combinatorial loop.
-      if system_address_next /= system_address and system_write_next='0' then
-        io_ready <= '0';
-      else
-        io_ready <= '1';
-      end if;
-    
+        
                                         -- report "reset = " & std_logic'image(reset) severity note;
       reset_drive <= reset;
       if reset_drive='0' then
