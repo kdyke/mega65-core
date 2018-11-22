@@ -270,19 +270,19 @@ endmodule
 always @(*)
 begin
   case (load_flags)
-    `kFLAGS_DB   : load_flags_decode = (`LM_C_DB0 | `LM_Z_DB1 | `LM_I_DB2 | `LM_D_DB3 | `LM_V_DB6 | `LM_N_DB7);
-    `kFLAGS_SBZN : load_flags_decode = (`LM_Z_SBZ | `LM_N_SBN);
-    `kFLAGS_D    : load_flags_decode = (`LM_D_IR5);
-    `kFLAGS_I    : load_flags_decode = (`LM_I_IR5);
-    `kFLAGS_C    : load_flags_decode = (`LM_C_IR5);
-    `kFLAGS_V    : load_flags_decode = (`LM_V_0);
-    `kFLAGS_Z    : load_flags_decode = (`LM_Z_SBZ);
-    `kFLAGS_CNZ  : load_flags_decode = (`LM_C_ACR | `LM_Z_SBZ | `LM_N_SBN);
-    `kFLAGS_ALU  : load_flags_decode = (`LM_C_ACR | `LM_V_AVR | `LM_Z_SBZ | `LM_N_SBN);
-    `kFLAGS_BIT  : load_flags_decode = (`LM_V_DB6 | `LM_N_DB7);
-    `kFLAGS_SETI : load_flags_decode = (`LM_I_1|`LM_D_IR5);     // Clear D flag too
-    `kFLAGS_E    : load_flags_decode = (`LM_E_IR0);
-    `kFLAGS_RTI  : load_flags_decode = (`LM_C_DB0 | `LM_Z_DB1 | `LM_I_DB2 | `LM_D_DB3 | `LM_V_DB6 | `LM_N_DB7 | `LM_E_RTI);
+    `kFLAGS_DB   : load_flags_decode = (`kLM_C_DB0 | `kLM_Z_DB1 | `kLM_I_DB2 | `kLM_D_DB3 | `kLM_V_DB6 | `kLM_N_DB7);
+    `kFLAGS_SBZN : load_flags_decode = (`kLM_Z_SBZ | `kLM_N_SBN);
+    `kFLAGS_D    : load_flags_decode = (`kLM_D_IR5);
+    `kFLAGS_I    : load_flags_decode = (`kLM_I_IR5);
+    `kFLAGS_C    : load_flags_decode = (`kLM_C_IR5);
+    `kFLAGS_V    : load_flags_decode = (`kLM_V_0);
+    `kFLAGS_Z    : load_flags_decode = (`kLM_Z_SBZ);
+    `kFLAGS_CNZ  : load_flags_decode = (`kLM_C_ACR | `kLM_Z_SBZ | `kLM_N_SBN);
+    `kFLAGS_ALU  : load_flags_decode = (`kLM_C_ACR | `kLM_V_AVR | `kLM_Z_SBZ | `kLM_N_SBN);
+    `kFLAGS_BIT  : load_flags_decode = (`kLM_V_DB6 | `kLM_N_DB7);
+    `kFLAGS_SETI : load_flags_decode = (`kLM_I_1|`kLM_D_IR5);     // Clear D flag too
+    `kFLAGS_E    : load_flags_decode = (`kLM_E_IR0);
+    `kFLAGS_RTI  : load_flags_decode = (`kLM_C_DB0 | `kLM_Z_DB1 | `kLM_I_DB2 | `kLM_D_DB3 | `kLM_V_DB6 | `kLM_N_DB7 | `kLM_E_RTI);
     default      : load_flags_decode = 0;
   endcase
 end
@@ -294,11 +294,11 @@ endmodule
 always @(*)
 begin
 case (load_reg)
-  `kLOAD_A    : load_reg_decode = `LR_A;
-  `kLOAD_X    : load_reg_decode = `LR_X;
-  `kLOAD_Y    : load_reg_decode = `LR_Y;
-  `kLOAD_Z    : load_reg_decode = `LR_Z;
-  `kLOAD_B    : load_reg_decode = `LR_B;
+  `kLOAD_A    : load_reg_decode = `kLM_A;
+  `kLOAD_X    : load_reg_decode = `kLM_X;
+  `kLOAD_Y    : load_reg_decode = `kLM_Y;
+  `kLOAD_Z    : load_reg_decode = `kLM_Z;
+  `kLOAD_B    : load_reg_decode = `kLM_B;
   default     : load_reg_decode = 0;
 endcase
 //$display("load_reg: %02x decode: %016b",load_reg,load_reg_decode);

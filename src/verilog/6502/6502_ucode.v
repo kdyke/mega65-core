@@ -47,6 +47,326 @@ begin
 end
 // synthesis translate on
 
+`define MICROCODE(_ins, _t, _tnext, _adh_sel, _adl_sel, _load_abh, _load_abl,  _pc_sel, _pc_inc, _db_sel, _sb_sel, _alu_sel, _alu_a, _alu_b, _alu_c, _load_reg,_load_flags, _write) \
+mc[(_ins << 3) | _t] = ( \
+  (_tnext << `FIELD_SHIFT(`TNEXT_BITS)) | \
+  (_adh_sel << `FIELD_SHIFT(`ADH_BITS)) | \
+  (_adl_sel << `FIELD_SHIFT(`ADL_BITS)) | \
+  (_load_abh << `FIELD_SHIFT(`LOAD_ABH_BITS)) | \
+  (_load_abl << `FIELD_SHIFT(`LOAD_ABL_BITS)) | \
+  (_pc_sel << `FIELD_SHIFT(`PC_BITS)) | \
+  (_pc_inc << `FIELD_SHIFT(`PC_INC_BITS)) | \
+  (_db_sel << `FIELD_SHIFT(`DB_BITS)) | \
+  (_sb_sel << `FIELD_SHIFT(`SB_BITS)) | \
+  (_alu_sel << `FIELD_SHIFT(`ALU_BITS)) | \
+  (_alu_a << `FIELD_SHIFT(`ALU_A_BITS)) | \
+  (_alu_b << `FIELD_SHIFT(`ALU_B_BITS)) | \
+  (_alu_c << `FIELD_SHIFT(`ALU_C_BITS)) | \
+  (_load_reg << `FIELD_SHIFT(`LOAD_REG_BITS)) | \
+  (_load_flags << `FIELD_SHIFT(`LOAD_FLAGS_BITS)) | \
+  (_write << `FIELD_SHIFT(`WRITE_BITS)) \
+  );
+
+// ADH/ADL combinations used:
+//
+// PCHS/PCLS              -- Data Fetch
+// 1/S                    -- Stack
+// 1/ALU                  -- Stack Op
+// FF/VECLO               -- Vector Fectch
+// FF/VECHI               -- Vector Fetch
+// DI/ALU                 -- High Addres Fetch
+// 0/DI                   -- Zero Page
+// 0/ALU                  -- Zero Page Index
+// ALU/PCLS               -- High Address Carry
+// PCHS/ALU               -- Low ALU
+//
+// Could trivially go from 6 to 4 bits, which would give me 5 bits for timing state control to play with.
+//                                                                                                                                      Register Loads
+//                 INS   T  Tn    Adh       Adl        AH  AL  PC      INC   Db,       Sb,   Alu_op    Alu_a      Alu_b       Alu_c     Load     Flags      WC
+
+`define BRK(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  1, `DB_PCH,`SB_FF,  `none,    `ALU_A_SB, `ALU_B_ADL, `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_PCL,`SB_FF,  `ALU_SUM, `ALU_A_SB, `ALU_B_ADL, `ALU_C_0, `none,   `none,       1) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_P,  `SB_FF,  `ALU_SUM, `ALU_A_SB, `ALU_B_ADL, `ALU_C_0, `none,   `none,       1) \
+`MICROCODE( _insbyte,  5, `Tn , `ADH_FF,   `ADL_VECLO, 1,  1, `PCHPCL,  0, `DB_DI, `SB_ALU, `ALU_SUM, `none,     `none,      `ALU_C_0, `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  6, `T0 , `ADH_FF,   `ADL_VECHI, 1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `FLAGS_SETI, 0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_DI,   `ADL_ALU,   1,  1, `ADHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define ADDR_zp_(_insbyte, tn, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2,  tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1,  _db,    _sb,    `none,    `none,     `none,      `none,    `none,   `none,       _w)
+
+`define ADDR_zp_x_ind_(_insbyte, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1, `DB_DI, `SB_X,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_ADL, `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_1, `none,   `none,       0) \
+`MICROCODE( _insbyte,  5, `T0 , `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       _w)
+
+`define ADDR_abs_(_insbyte, tn, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  3,  tn , `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  1,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       _w)
+
+`define ADDR_abs_x_(_insbyte, t1, t2, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_X,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3,  t1 , `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  1,  _db,    _sb,    `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       _w) \
+`MICROCODE( _insbyte,  4,  t2 , `ADH_ALU,  `ADL_PCLS,  1,  0, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       _w)
+
+`define ADDR_abs_y_(_insbyte, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_Y,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `TNC, `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  1,  _db,    _sb,    `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       _w) \
+`MICROCODE( _insbyte,  4, `T0 , `ADH_ALU,  `ADL_PCLS,  1,  0, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       _w)
+
+`define ADDR_zp_ind_y_(_insbyte, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `none,    `ALU_A_0,  `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_Y,   `ALU_SUM, `ALU_A_SB, `ALU_B_DB,  `ALU_C_1, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `TNC, `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       _w) \
+`MICROCODE( _insbyte,  5, `T0 , `ADH_ALU,  `ADL_PCLS,  1,  0, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       _w)
+
+`define ADDR_zp_ind_(_insbyte, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `none,    `ALU_A_0,  `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_Y,   `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_1, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `T0 , `ADH_DI,   `ADL_ALU,   1,  1, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       _w)
+
+`define ADDR_zp_x_(_insbyte, tn, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_X,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3,  tn , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       _w)
+
+`define ADDR_zp_y_(_insbyte, _db, _sb, _w) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_Y,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `T0 , `ADH_0,    `ADL_ALU,   1,  1, `PCHPCL,  0,  _db,    _sb,    `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       _w)
+
+`define ADDR_jmp_abs(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_DI,   `ADL_ALU,   1,  1, `ADHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       0)
+
+`define ADDR_jmp_abs_x(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_X,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_DI,   `ADL_ALU,   1,  1, `PCHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_ALU,  `ADL_PCLS,  1,  1, `ADHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       0)
+
+`define ADDR_zp(_insbyte, tn)                     `ADDR_zp_(_insbyte, tn, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_w(_insbyte, tn, _db, _sb)         `ADDR_zp_(_insbyte, tn, _db, _sb, 1)
+`define ADDR_zp_x_ind(_insbyte)                   `ADDR_zp_x_ind_(_insbyte, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_x_ind_w(_insbyte, _db, _sb)       `ADDR_zp_x_ind_(_insbyte, _db, _sb, 1)
+`define ADDR_abs(_insbyte, tn)                    `ADDR_abs_(_insbyte, tn, `DB_DI, `SB_FF, 0)
+`define ADDR_abs_w(_insbyte, tn, _db, _sb)        `ADDR_abs_(_insbyte, tn, _db, _sb, 1)
+`define ADDR_abs_x(_insbyte, t1, t2)              `ADDR_abs_x_(_insbyte, t1, t2, `DB_DI, `SB_FF, 0)
+`define ADDR_abs_x_w(_insbyte, t1, t2, _db, _sb)  `ADDR_abs_x_(_insbyte, t1, t2, _db, _sb, 1)
+`define ADDR_abs_y(_insbyte)                      `ADDR_abs_y_(_insbyte, `DB_DI, `SB_FF, 0)
+`define ADDR_abs_y_w(_insbyte, _db, _sb)          `ADDR_abs_y_(_insbyte, _db, _sb, 1)
+`define ADDR_zp_ind_y(_insbyte)                   `ADDR_zp_ind_y_(_insbyte, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_ind_y_w(_insbyte, _db, _sb)       `ADDR_zp_ind_y_(_insbyte, _db, _sb, 1)
+`define ADDR_zp_ind(_insbyte)                     `ADDR_zp_ind_(_insbyte, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_ind_w(_insbyte, _db, _sb)         `ADDR_zp_ind_(_insbyte, _db, _sb, 1)
+`define ADDR_zp_x(_insbyte, tn)                   `ADDR_zp_x_(_insbyte, tn, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_x_w(_insbyte, tn, _db, _sb)       `ADDR_zp_x_(_insbyte, tn, _db, _sb, 1)
+`define ADDR_zp_y(_insbyte)                       `ADDR_zp_y_(_insbyte, `DB_DI, `SB_FF, 0)
+`define ADDR_zp_y_w(_insbyte, _db, _sb)           `ADDR_zp_y_(_insbyte, _db, _sb, 1)
+
+`define ALUA(_insbyte, _aluop, _alub, _sb, _carry, _load, _flags, _i) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL, _i, `DB_DI, _sb,     `none,    `ALU_A_SB, _alub,      `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_SB, `SB_ALU, _aluop,   `none,     `none,      _carry,   _load,   _flags,      0) \
+`MICROCODE( _insbyte,  7, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_A,  `SB_A,   `none,    `none,     `none,      `none,    `none,   `FLAGS_SBZN, 0)
+
+`define BIT(_insbyte, _flags, _i) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL, _i, `DB_DI, `SB_A,   `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   _flags,      0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_SB, `SB_ALU, `ALU_AND, `none,     `none,      `ALU_C_0, `none,   `FLAGS_Z,    0)
+
+`define STx(_insbyte) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_A,   `none,    `none,     `none,      `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_A,   `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define LDx(_insbyte, _load, _i) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL, _i, `DB_DI, `SB_DB,  `none,    `none,     `none,      `none,    _load,   `FLAGS_SBZN, 0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define BRA(_insbyte, t2) \
+`MICROCODE( _insbyte,  2,   t2, `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `none,    `ALU_A_SB, `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `TBE, `ADH_PCHS, `ADL_ALU,   1,  1, `PCHADL,  0, `DB_BO, `SB_ADH, `ALU_SUM, `ALU_A_SB, `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_ALU,  `ADL_PCLS,  1,  1, `ADHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+// BBx
+`define BBR(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_DB,  `none,    `ALU_A_IR, `ALU_B_NDB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `TBT, `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `ALU_AND, `ALU_A_SB, `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  5, `TBE, `ADH_PCHS, `ADL_ALU,   1,  1, `PCHADL,  0, `DB_BO, `SB_ADH, `ALU_SUM, `ALU_A_SB, `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_ALU,  `ADL_PCLS,  1,  1, `ADHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define BBS(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_0,    `ADL_DI,    1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_DB,  `none,    `ALU_A_IR, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `TBT, `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `ALU_AND, `ALU_A_SB, `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  5, `TBE, `ADH_PCHS, `ADL_ALU,   1,  1, `PCHADL,  0, `DB_BO, `SB_ADH, `ALU_SUM, `ALU_A_SB, `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_ALU,  `ADL_PCLS,  1,  1, `ADHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_A, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define SHIFT_MEM(_insbyte, c1, c2, _aluop, _carry) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_DB,  `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, _aluop,   `ALU_A_SB, `ALU_B_ADL, _carry,   `none,   `FLAGS_CNZ,  1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_ALU, `none,    `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define SHIFT_A(_insbyte, _aluop, _carry) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_A,  `SB_A,    `none,   `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_SB, `SB_ALU, _aluop,   `none,     `none,      _carry,   `LOAD_A, `FLAGS_CNZ,  0)
+
+`define FLAG_OP(_insbyte, _flag) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   _flag,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define Txx(_insbyte, _sb, _load, _flags) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_SB,   _sb,   `none,    `none,     `none,      `none,    _load,   _flags,      0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define DEC_REG(_insbyte, _reg, _load) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_0,     _reg, `none,    `ALU_A_SB, `ALU_B_NDB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_SB, `SB_ALU, `ALU_SUM, `none,     `none,      `ALU_C_0, _load,   `FLAGS_SBZN, 0)
+
+`define INC_REG(_insbyte, _reg, _load) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_0,     _reg, `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_SB, `SB_ALU, `ALU_SUM, `none,     `none,      `ALU_C_1, _load,   `FLAGS_SBZN, 0)
+
+`define DEC_MEM(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `ALU_A_SB, `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_SUM, `ALU_A_SB, `ALU_B_ADL, `ALU_C_0, `none,   `FLAGS_SBZN, 1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define INC_MEM(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_DB,  `none,    `ALU_A_0,  `ALU_B_DB,  `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_SUM, `ALU_A_SB, `ALU_B_ADL, `ALU_C_1, `none,   `FLAGS_SBZN, 1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define PUSH(_insbyte, _db, _sb) \
+`MICROCODE( _insbyte,  2, `T0 , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  0,  _db,    _sb,    `none,    `none,     `none,      `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_0,  `SB_S,   `none,    `ALU_A_SB, `ALU_B_NDB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_ALU, `ALU_SUM, `none,     `none,      `ALU_C_0, `LOAD_S, `none,       0)
+
+`define PULL(_insbyte, _load, _flags) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  0, `DB_0,  `SB_FF,  `none,    `ALU_A_0,  `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `T0 , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_0,  `SB_ALU, `ALU_SUM, `none,     `none,      `ALU_C_1, `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_DB,  `none,    `none,     `none,      `none,    _load,   _flags,      0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define JSR(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  1, `DB_PCH,`SB_DB,  `none,    `ALU_A_0,  `ALU_B_ADL, `none,    `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_PCH,`SB_FF,  `ALU_SUM, `ALU_A_SB, `none,      `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_PCL,`SB_FF,  `ALU_SUM, `ALU_A_SB, `ALU_B_ADL, `ALU_C_0, `none,   `none,       1) \
+`MICROCODE( _insbyte,  5, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_ALU, `ALU_SUM, `ALU_A_SB, `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_DI,   `ADL_S,     1,  1, `ADHADL,  0, `DB_DI, `SB_ALU, `ALU_PSA, `none,     `none,      `ALU_C_0, `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define RTI(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `none,    `ALU_A_0,  `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_ADL, `ALU_C_1, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_ADL, `ALU_C_1, `none,   `FLAGS_DB,   0) \
+`MICROCODE( _insbyte,  5, `T0 , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_ALU, `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_1, `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_DI,   `ADL_ALU,   1,  1, `ADHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define JMP(_insbyte, t0) \
+`MICROCODE( _insbyte, t0, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `ALU_A_0,  `ALU_B_DB,  `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_DI,   `ADL_ALU,   1,  1, `ADHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define RTS(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_1,    `ADL_S,     1,  1, `PCHPCL,  1, `DB_DI, `SB_DB,  `none,    `ALU_A_0,  `ALU_B_ADL, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `ALU_A_0,  `ALU_B_ADL, `ALU_C_1, `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_1,    `ADL_ALU,   1,  1, `PCHPCL,  0, `DB_DI, `SB_ALU, `ALU_SUM, `ALU_A_0,  `ALU_B_DB,  `ALU_C_1, `LOAD_S, `none,       0) \
+`MICROCODE( _insbyte,  5, `T0 , `ADH_DI,   `ADL_ALU,   1,  1, `ADHADL,  0, `DB_DI, `SB_FF,  `ALU_SUM, `none,     `none,      `ALU_C_0, `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,     `none,      `none,    `none,   `none,       0)
+
+`define TRB(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_A,   `none,    `ALU_A_NSB, `ALU_B_DB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_AND, `none,      `none,     `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_A,   `none,    `ALU_A_SB,  `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_ALU, `ALU_AND, `none,      `none,     `none,    `none,   `FLAGS_Z,    0)
+
+`define TSB(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_A,   `none,    `ALU_A_SB,  `ALU_B_DB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_ORA, `none,      `none,     `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_A,   `none,    `ALU_A_SB,  `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_ALU, `ALU_AND, `none,      `none,     `none,    `none,   `FLAGS_Z,    0)
+
+`define RMB(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `ALU_A_NIR, `ALU_B_DB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_AND, `none,      `none,     `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define SMB(_insbyte, c1, c2) \
+`MICROCODE( _insbyte, c1, `Tn , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `ALU_A_IR,  `ALU_B_DB, `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte, c2, `T0 , `ADH_PCHS, `ADL_PCLS,  0,  0, `PCHPCL,  0, `DB_SB, `SB_ALU, `ALU_ORA, `none,      `none,     `none,    `none,   `none,       1) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP1_1(_insbyte) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP1_2(_insbyte) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP2_2(_insbyte) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP2_3(_insbyte) \
+`MICROCODE( _insbyte,  2, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP2_4(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP3_4(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define NOP3_8(_insbyte) \
+`MICROCODE( _insbyte,  2, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  3, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  4, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  5, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  6, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  7, `T0 , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  0, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  0, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0) \
+`MICROCODE( _insbyte,  1, `Tn , `ADH_PCHS, `ADL_PCLS,  1,  1, `PCHPCL,  1, `DB_DI, `SB_FF,  `none,    `none,      `none,     `none,    `none,   `none,       0)
+
+`define ORA(_insbyte,_inc) `ALUA(_insbyte, `ALU_ORA, `ALU_B_DB,  `SB_A, `ALU_C_0, `LOAD_A, `FLAGS_SBZN, _inc)
+`define AND(_insbyte,_inc) `ALUA(_insbyte, `ALU_AND, `ALU_B_DB,  `SB_A, `ALU_C_0, `LOAD_A, `FLAGS_SBZN, _inc)
+`define EOR(_insbyte,_inc) `ALUA(_insbyte, `ALU_EOR, `ALU_B_DB,  `SB_A, `ALU_C_0, `LOAD_A, `FLAGS_SBZN, _inc)
+`define ADC(_insbyte,_inc) `ALUA(_insbyte, `ALU_ADC, `ALU_B_DB,  `SB_A, `ALU_C_P, `LOAD_A, `FLAGS_ALU,  _inc)
+`define SBC(_insbyte,_inc) `ALUA(_insbyte, `ALU_SBC, `ALU_B_NDB, `SB_A, `ALU_C_P, `LOAD_A, `FLAGS_ALU,  _inc)
+`define CMP(_insbyte,_inc) `ALUA(_insbyte, `ALU_SUM, `ALU_B_NDB, `SB_A, `ALU_C_1, `none,   `FLAGS_CNZ,  _inc)
+`define CPX(_insbyte,_inc) `ALUA(_insbyte, `ALU_SUM, `ALU_B_NDB, `SB_X, `ALU_C_1, `none,   `FLAGS_CNZ,  _inc)
+`define CPY(_insbyte,_inc) `ALUA(_insbyte, `ALU_SUM, `ALU_B_NDB, `SB_Y, `ALU_C_1, `none,   `FLAGS_CNZ,  _inc)
+
+
+`define LDA(_insbyte, _inc) `LDx(_insbyte, `LOAD_A, _inc)
+`define LDX(_insbyte, _inc) `LDx(_insbyte, `LOAD_X, _inc)
+`define LDY(_insbyte, _inc) `LDx(_insbyte, `LOAD_Y, _inc)
+
+`define ASL_MEM(_insbyte, c1, c2) `SHIFT_MEM(_insbyte, c1, c2, `ALU_SUM, `ALU_C_0)
+`define ROL_MEM(_insbyte, c1, c2) `SHIFT_MEM(_insbyte, c1, c2, `ALU_SUM, `ALU_C_P)
+`define LSR_MEM(_insbyte, c1, c2) `SHIFT_MEM(_insbyte, c1, c2, `ALU_ROR, `ALU_C_0)
+`define ROR_MEM(_insbyte, c1, c2) `SHIFT_MEM(_insbyte, c1, c2, `ALU_ROR, `ALU_C_P)
+
+`define ASL_A(_insbyte) `SHIFT_A(_insbyte, `ALU_SUM, `ALU_C_0)
+`define ROL_A(_insbyte) `SHIFT_A(_insbyte, `ALU_SUM, `ALU_C_P)
+`define LSR_A(_insbyte) `SHIFT_A(_insbyte, `ALU_ROR, `ALU_C_0)
+`define ROR_A(_insbyte) `SHIFT_A(_insbyte, `ALU_ROR, `ALU_C_P)
+
                             `BRK(8'h00)       // BRK
                             
 `ADDR_zp_x_ind(8'h01)       `ORA(8'h01,0)     // ORA (zp,x)
@@ -382,3 +702,106 @@ begin
 end
 
 endmodule
+
+// This really shouldn't be needed but Vivado gets bent out of shape when it sees the same macros defined in two different places
+// even if they are in completely disjoint scopes.
+
+`undef MICROCODE
+
+`undef BRK
+`undef ADDR_zp_
+`undef ADDR_zp_x_ind_
+`undef ADDR_abs_
+`undef ADDR_abs_x_
+`undef ADDR_abs_y_
+`undef ADDR_zp_ind_y_
+`undef ADDR_zp_ind_
+`undef ADDR_zp_x_
+`undef ADDR_zp_y_
+`undef ADDR_jmp_abs
+`undef ADDR_jmp_abs_x
+
+`undef ADDR_zp
+`undef ADDR_zp_w
+`undef ADDR_zp_x_ind
+`undef ADDR_zp_x_ind_w
+`undef ADDR_abs
+`undef ADDR_abs_w
+`undef ADDR_abs_x
+`undef ADDR_abs_x_w
+`undef ADDR_abs_y
+`undef ADDR_abs_y_w
+`undef ADDR_zp_ind_y
+`undef ADDR_zp_ind_y_w
+`undef ADDR_zp_ind
+`undef ADDR_zp_ind_w
+`undef ADDR_zp_x
+`undef ADDR_zp_x_w
+`undef ADDR_zp_y
+`undef ADDR_zp_y_w
+
+`undef ALUA
+`undef BIT
+`undef STx
+`undef LDx
+`undef BRA
+
+// BBx
+`undef BBR
+`undef BBS
+
+`undef SHIFT_MEM
+
+`undef SHIFT_A
+`undef FLAG_OP
+
+`undef Txx
+
+`undef DEC_REG
+`undef INC_REG
+`undef DEC_MEM
+`undef INC_MEM
+
+`undef PUSH
+`undef PULL
+
+`undef JSR
+`undef RTI
+`undef JMP
+`undef RTS
+`undef TRB
+`undef TSB
+`undef RMB
+`undef SMB
+
+`undef NOP1_1
+`undef NOP1_2
+`undef NOP2_2
+`undef NOP2_3
+`undef NOP2_4
+`undef NOP3_4
+`undef NOP3_8
+
+`undef ORA
+`undef AND
+`undef EOR
+`undef ADC
+`undef SBC
+`undef CMP
+`undef CPX
+`undef CPY
+
+
+`undef LDA
+`undef LDX
+`undef LDY
+
+`undef ASL_MEM
+`undef ROL_MEM
+`undef LSR_MEM
+`undef ROR_MEM
+
+`undef ASL_A
+`undef ROL_A
+`undef LSR_A
+`undef ROR_A
