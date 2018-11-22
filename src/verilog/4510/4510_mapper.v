@@ -121,21 +121,12 @@ always @(posedge clk) begin
     map_enable_tmp = map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]];
     map_enable_fast[refresh_cnt[3:0]] <= map_enable_tmp;
     map_offset_fast[refresh_cnt[3:0]] <= map_enable_tmp ? map_offset[refresh_cnt[3:2]] : 0;
-    $display("map_enable_fast[%d]: %d r: %d off: %03x  en: %x\n",refresh_cnt,map_enable_tmp,reset, map_enable_tmp ? map_offset[refresh_cnt[3:2]] : 12'b0,
-      map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]]);
   end
 `else
   mapper_busy <= 0;
 `endif
     
 end
-
-`ifdef FAST_MAPPER
-always @(*)
-begin
-  //map_enable_tmp = map_enable[refresh_cnt[3:2]][refresh_cnt[1:0]];
-end
-`endif
 
 // Monitor map info
 assign monitor_map_offset_low = map_offset[{active_map,1'b0}];
@@ -160,7 +151,6 @@ always @(*) begin
   map_index = {active_map,core_address_next[15:13]};
   current_offset = map_offset_fast[map_index];
   map_en = map_enable_fast[map_index];
-  $display("ac: %d core: %04x map_idx: %b map_en: %d offset: %03x",active_map,core_address_next,map_index,map_en,current_offset);
 `else
   map_offset_index = core_address_next[15];
   map_enable_index = core_address_next[14:13];
@@ -172,7 +162,6 @@ always @(*) begin
     current_offset = 0;
     map_en = 0;
   end
-  $display("ac: %d core: %04x map_idx: %d map_en: %d offset: %03x",active_map,core_address_next,map_offset_index,map_en,current_offset);
 `endif
 
   mapper_address[19:8] = current_offset[19:8] + core_address_next[15:8];
