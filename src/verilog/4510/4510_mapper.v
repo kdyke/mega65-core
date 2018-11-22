@@ -30,9 +30,9 @@
 `endif
 
 `SCHEM_KEEP_HIER module mapper4510(input clk, input reset, input [7:0] data_i, `MARK_DEBUG input [7:0] data_o, input ready, input sync,
-                  input ext_irq, input ext_nmi, output cpu_irq, output cpu_nmi, input enable_i, input disable_i,
-                  `MARK_DEBUG input load_a, `MARK_DEBUG input load_x, `MARK_DEBUG input load_y, `MARK_DEBUG input load_z, 
-                  `MARK_DEBUG input load_map_sel, `MARK_DEBUG input active_map,
+                  input [1:0] map_reg_write_sel, input hypervisor_load_user_reg,
+                  input ext_irq, input ext_nmi, output cpu_irq, output cpu_nmi,
+                  `MARK_DEBUG input hyper_mode, input map_insn, input [1:0] t,
                   output reg [7:0] map_reg_data, output reg mapper_busy,
                   output reg [19:0] address, output reg [19:0] address_next, input [15:0] core_address_next, 
                   `MARK_DEBUG output reg map_next, output reg map,
@@ -45,6 +45,10 @@
 `MARK_DEBUG reg [19:8] map_offset[0:3];
 `MARK_DEBUG reg [3:0] map_enable[0:3];
 reg int_enable;
+reg enable_i, disable_i;
+
+`MARK_DEBUG reg load_a, load_x, load_y, load_z;
+`MARK_DEBUG reg load_map_sel;
 
 // It's not clear whether NMI should be done this way or not. The C65 docs aren't clear on if the MAP instruction masks off NMIs.
 assign cpu_irq = ext_irq & int_enable;
@@ -129,10 +133,10 @@ always @(posedge clk) begin
 end
 
 // Monitor map info
-assign monitor_map_offset_low = map_offset[{active_map,1'b0}];
-assign monitor_map_offset_high = map_offset[{active_map,1'b1}];
-assign monitor_map_enables_low = map_enable[{active_map,1'b0}];
-assign monitor_map_enables_high = map_enable[{active_map,1'b1}];
+assign monitor_map_offset_low = map_offset[{hyper_mode,1'b0}];
+assign monitor_map_offset_high = map_offset[{hyper_mode,1'b1}];
+assign monitor_map_enables_low = map_enable[{hyper_mode,1'b0}];
+assign monitor_map_enables_high = map_enable[{hyper_mode,1'b1}];
 
 // Mapper combinatorial path
 `ifdef FAST_MAPPER
@@ -148,15 +152,15 @@ assign monitor_map_enables_high = map_enable[{active_map,1'b1}];
 
 always @(*) begin
 `ifdef FAST_MAPPER
-  map_index = {active_map,core_address_next[15:13]};
+  map_index = {hyper_mode,core_address_next[15:13]};
   current_offset = map_offset_fast[map_index];
   map_en = map_enable_fast[map_index];
 `else
   map_offset_index = core_address_next[15];
   map_enable_index = core_address_next[14:13];
   // Mapper can be disabled by external (hypervisor) logic when needed.
-  if(map_enable[{active_map,map_offset_index}][map_enable_index]) begin
-    current_offset = map_offset[{active_map,map_offset_index}];
+  if(map_enable[{hyper_mode,map_offset_index}][map_enable_index]) begin
+    current_offset = map_offset[{hyper_mode,map_offset_index}];
     map_en = 1;
   end else begin
     current_offset = 0;
@@ -203,14 +207,6 @@ always @(*) begin
   endcase
 end
 
-endmodule
-
-// This really isn't an FSM any more.
-module mapper4510_fsm(input clk, input reset, input [7:0] data_i, input ready, input sync, input map_sel, input [1:0] map_reg_write_sel, input hypervisor_load_user_reg,
-                  output reg load_a, output reg load_x, output reg load_y, output reg load_z, 
-                  input [1:0] t, input map,
-                  output reg load_map_sel, output reg enable_i, output reg disable_i);
-  
 // Look for either MAP or EOM (NOP) being fetched.
 always @* begin
   load_a = 0;
@@ -219,7 +215,7 @@ always @* begin
   load_z = 0;
   enable_i = 0;
   disable_i = 0;
-  load_map_sel = map_sel;
+  load_map_sel = hyper_mode;
   
   // This doesn't need to be dependent on the state machine.
   if(data_i == 8'hEA && ready && sync)
@@ -228,7 +224,7 @@ always @* begin
   // So long as mapper state is idle (we're not executing a MAP instruction) we can also
   // allow direct user mapper register updates via the hypervisor controller I/O registers.
   // See comment up above on why these are in a seemingly strange order.
-  if(map == 0) begin
+  if(map_insn == 0) begin
     if(hypervisor_load_user_reg) begin
       case(map_reg_write_sel)
         3: begin
@@ -264,4 +260,3 @@ always @* begin
 end
 
 endmodule
-                  

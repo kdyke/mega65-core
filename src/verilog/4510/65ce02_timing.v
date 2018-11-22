@@ -134,7 +134,6 @@ input hyp;
 input mc_sync;
 input hyper_rti;
 input [7:0] reg_p;
-
 output reg hyper_mode;
 
 input load_i;
@@ -223,7 +222,7 @@ begin
 end
 
 // Disable PC increment when processing a BRK with recognized IRQ/NMI or upon hypervisor entry
-assign pc_hold = (intg|hyperg);
+assign pc_hold = intg|hyperg;
 
 always @(*)
 begin
