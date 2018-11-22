@@ -284,12 +284,12 @@ trap_entry_points:
 	.word reset_entry    ; RESET
 	.word hypervisor_irq ; IRQ
 
-	.checkpc $8200
-	.advance $8200
-
 ;;; ----------------------------------------------------------------------------
 ;;; Hypervisor Entry
 ;;; ----------------------------------------------------------------------------
+	.checkpc $8200
+	.advance $8200
+
 	sta hypervisor_a
 	stx hypervisor_x
 	sty hypervisor_y
@@ -3244,6 +3244,26 @@ checkpoint_pch:	      .byte 0
 		; SD card timeout handling
 		;
 sdcounter:		.byte 0,0,0
+
+hypervisor_a:			.byte 0
+hypervisor_x:			.byte 0
+hypervisor_y:			.byte 0
+hypervisor_z:			.byte 0
+hypervisor_b:			.byte 0
+hypervisor_spl:			.byte 0
+hypervisor_sph:			.byte 0
+hypervisor_flags:		.byte 0
+hypervisor_pcl:			.byte 0
+hypervisor_pch:			.byte 0
+hypervisor_cpuport00:		.byte 0
+hypervisor_cpuport01:		.byte 0
+hypervisor_iomode:		.byte 0
+hypervisor_dmagic_srcmb:	.byte 0
+hypervisor_dmagic_dstmb:	.byte 0
+hypervisor_dmagic_list0:	.byte 0
+hypervisor_dmagic_list1:	.byte 0
+hypervisor_dmagic_list2:	.byte 0
+hypervisor_dmagic_list3:	.byte 0
 
 ;;; ----------------------------------------------------------------------------
 ;;; end of KICKUP-rom

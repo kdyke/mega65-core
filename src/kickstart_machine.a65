@@ -10,31 +10,31 @@
 	.alias mouse_detect_ctrl $d61b	
 
 	; Hypervisor register block $d640-$d67f
-	.alias hypervisor_a $d640
-	.alias hypervisor_x $d641
-	.alias hypervisor_y $d642
-	.alias hypervisor_z $d643
-	.alias hypervisor_b $d644
-	.alias hypervisor_spl $d645
-	.alias hypervisor_sph $d646
-	.alias hypervisor_flags $d647
-	.alias hypervisor_pcl $d648
-	.alias hypervisor_pch $d649
+	; .alias hypervisor_a $d640				; now just RAM
+	; .alias hypervisor_x $d641				; now just RAM
+	; .alias hypervisor_y $d642				; now just RAM
+	; .alias hypervisor_z $d643				; now just RAM
+	; .alias hypervisor_b $d644				; now just RAM
+	; .alias hypervisor_spl $d645				; now just RAM
+	; .alias hypervisor_sph $d646				; now just RAM
+	; .alias hypervisor_flags $d647				; now just RAM
+	; .alias hypervisor_pcl $d648				; now just RAM
+	; .alias hypervisor_pch $d649				; now just RAM
 	.alias hypervisor_maplolo $d64a
 	.alias hypervisor_maplohi $d64b
 	.alias hypervisor_maphilo $d64c
 	.alias hypervisor_maphihi $d64d
 	.alias hypervisor_maplomb $d64e
 	.alias hypervisor_maphimb $d64f
-	.alias hypervisor_cpuport00 $d650
-	.alias hypervisor_cpuport01 $d651
-	.alias hypervisor_iomode $d652
-	.alias hypervisor_dmagic_srcmb $d653
-	.alias hypervisor_dmagic_dstmb $d654
-	.alias hypervisor_dmagic_list0 $d655
-	.alias hypervisor_dmagic_list1 $d656
-	.alias hypervisor_dmagic_list2 $d657
-	.alias hypervisor_dmagic_list3 $d658
+	; .alias hypervisor_cpuport00 $d650			; now just RAM
+	; .alias hypervisor_cpuport01 $d651			; now just RAM
+	; .alias hypervisor_iomode $d652			; now just RAM
+	; .alias hypervisor_dmagic_srcmb $d653			; now just RAM
+	; .alias hypervisor_dmagic_dstmb $d654			; now just RAM
+	; .alias hypervisor_dmagic_list0 $d655			; now just RAM
+	; .alias hypervisor_dmagic_list1 $d656			; now just RAM
+	; .alias hypervisor_dmagic_list2 $d657			; now just RAM
+	; .alias hypervisor_dmagic_list3 $d658			; now just RAM
 	.alias hypervisor_hardware_virtualisation $d659
 
 	; d65a
