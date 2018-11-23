@@ -3,8 +3,8 @@
 
 COPT=	-Wall -g -std=gnu99
 CC=	gcc
-OPHIS=	../Ophis/bin/ophis -4
-OPHIS_MON= ../Ophis/bin/ophis -c
+OPHIS=	./Ophis/bin/ophis -4
+OPHIS_MON= ./Ophis/bin/ophis -c
 
 VIVADO=	./vivado_wrapper
 
@@ -166,6 +166,7 @@ OVERLAYVHDL=		$(VHDLSRCDIR)/rain.vhdl \
 
 SERMONVHDL=		$(VHDLSRCDIR)/ps2_to_uart.vhdl \
 			$(VHDLSRCDIR)/uart_monitor.vhdl \
+			$(VHDLSRCDIR)/6502_top.vhdl \
 			$(VHDLSRCDIR)/uart_rx.vhdl \
 
 M65VHDL=		$(VHDLSRCDIR)/machine.vhdl \
@@ -495,7 +496,7 @@ iverilog/driver/iverilog:
 	cd iverilog ; autoconf ; ./configure ; make
 
 $(VHDLSRCDIR)/6502_top.vhdl:	$(SRCDIR)/verilog/* iverilog/driver/iverilog
-	( cd src/verilog ; iverilog -grelative-include -tvhdl -o ../vhdl/6502_top.vhdl 6502/6502_*.v )
+	( cd src/verilog ; ../../iverilog/driver/iverilog  -tvhdl -o ../vhdl/6502_top.vhdl 6502_*.v )
  
 
 $(SDCARD_DIR)/BANNER.M65:	$(TOOLDIR)/pngprepare/pngprepare assets/mega65_320x64.png

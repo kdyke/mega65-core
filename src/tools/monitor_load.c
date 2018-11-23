@@ -57,6 +57,9 @@ int osk_enable=0;
 
 int not_already_loaded=1;
 
+// 0 = old hard coded monitor, 1= Kenneth's 65C02 based fancy monitor
+int new_monitor=0;
+
 int viciv_mode_report(unsigned char *viciv_regs);
 
 int process_char(unsigned char c,int live);
@@ -111,7 +114,7 @@ int slow_write(int fd,char *d,int l)
 int counter  =0;
 int fd=-1;
 int state=99;
-int name_len,name_lo,name_hi,name_addr=-1;
+unsigned int name_len,name_lo,name_hi,name_addr=-1;
 int do_go64=0;
 int do_run=0;
 int comma_eight_comma_one=0;
@@ -209,7 +212,15 @@ int load_file(char *filename,int load_addr,int patchKickstart)
     if ((load_addr&0xffff)==0x0000) {
       munged_load_addr+=0x10000;
     }
-    sprintf(cmd,"l%x %x\r",munged_load_addr-1,munged_load_addr+b-1);
+    // The old uart monitor could handle being given a 28-bit address for the end address,
+    // but Kenneth's implementation requires it be a 16 bit address.
+    // Also, Kenneth's implementation doesn't need the -1, so we need to know which version we
+    // are talking to.
+    if (new_monitor) 
+    	sprintf(cmd,"l%x %x\r",load_addr,(load_addr+b)&0xffff);
+    else    
+ 	sprintf(cmd,"l%x %x\r",munged_load_addr-1,(munged_load_addr+b-1)&0xffff);
+    // printf("  command ='%s'\n",cmd);
     slow_write(fd,cmd,strlen(cmd));
     usleep(1000);
     int n=b;
@@ -287,6 +298,10 @@ int process_line(char *line,int live)
   int pc,a,x,y,sp,p;
   //printf("[%s]\n",line);
   if (!live) return 0;
+  if (strstr(line,"ws h RECA8LHC")) {
+     if (!new_monitor) printf("Detected new-style UART monitor.\n");
+     new_monitor=1;
+  }
   if (sscanf(line,"%04x %02x %02x %02x %02x %02x",
 	     &pc,&a,&x,&y,&sp,&p)==6) {
     // printf("PC=$%04x\n",pc);
@@ -301,8 +316,8 @@ int process_line(char *line,int live)
 	      (long long)time(0)-start_time,
 	      patchKS?"and patching ":"");
       stop_cpu();
-      if (kickstart) load_file(kickstart,0xfff8000,patchKS); kickstart=NULL;
-      if (romfile) load_file(romfile,0x20000,0); romfile=NULL;
+      if (kickstart) { load_file(kickstart,0xfff8000,patchKS); } kickstart=NULL;
+      if (romfile) { load_file(romfile,0x20000,0); } romfile=NULL;
       if (charromfile) load_file(charromfile,0xFF7E000,0);
       if (colourramfile) load_file(colourramfile,0xFF80000,0);
       if (virtual_f011) {
@@ -489,20 +504,45 @@ int process_line(char *line,int live)
       state=3;
     }
   }
+  if (sscanf(line,"000000B7:%08x%08x",
+	     &name_len,&name_addr)==2) {
+    if (not_already_loaded) {
+      name_len=name_len>>24;
+      printf("Filename is %d bytes long, from 0x%08x\n",
+	     name_len,name_addr);
+      name_addr=(name_addr>>24)+((name_addr>>8)&0xff00);
+      printf("Filename is %d bytes long, and is stored at $%04x\n",
+	     name_len,name_addr);
+      char filename[16];
+      snprintf(filename,16,"m%04x\r",name_addr);
+      usleep(10000);
+      slow_write(fd,filename,strlen(filename));
+      printf("Asking for filename from memory: %s\n",filename);
+      state=3;
+    }
+  }
   {
     int addr;
     int b[16];
+    int gotIt=0;
+    unsigned int v[4];
     if (line[0]=='?') fprintf(stderr,"%s\n",line);
+    if (sscanf(line,"%x:%08x%08x%08x%08x",
+	       &addr,&v[0],&v[1],&v[2],&v[3])==5) {
+      for(int i=0;i<16;i++) b[i]=(v[i/4]>>( (3-(i&3))*8)) &0xff;
+      gotIt=1;
+    }
     if (sscanf(line," :%x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
 	       &addr,
 	       &b[0],&b[1],&b[2],&b[3],
 	       &b[4],&b[5],&b[6],&b[7],
 	       &b[8],&b[9],&b[10],&b[11],
-	       &b[12],&b[13],&b[14],&b[15])==17) {
+	       &b[12],&b[13],&b[14],&b[15])==17) gotIt=1;
+    if (gotIt) {
       char fname[17];
       // printf("Read memory @ $%04x\n",addr);
       if (addr==name_addr) {
-	for(int i=0;i<16;i++) fname[i]=b[i]; fname[16]=0;
+	for(int i=0;i<16;i++) { fname[i]=b[i]; } fname[16]=0;
 	fname[name_len]=0;
 	printf("Request to load '%s'\n",fname);
 	if (fname[0]=='!') {
@@ -569,7 +609,12 @@ int process_line(char *line,int live)
               char cmd[1024];
 
               /* send block to m65 memory */
-              sprintf(cmd,"l%x %x\r",READ_SECTOR_BUFFER_ADDRESS-1,READ_SECTOR_BUFFER_ADDRESS+0x200-1);
+	      if (new_monitor) 
+		sprintf(cmd,"l%x %x\r",READ_SECTOR_BUFFER_ADDRESS,
+			(READ_SECTOR_BUFFER_ADDRESS+0x200)&0xffff);
+	      else
+		sprintf(cmd,"l%x %x\r",READ_SECTOR_BUFFER_ADDRESS-1,
+			READ_SECTOR_BUFFER_ADDRESS+0x200-1);
               slow_write(fd,cmd,strlen(cmd));
               usleep(1000);
               int n=0x200;
@@ -695,8 +740,8 @@ int process_line(char *line,int live)
       }
     }
   }
-  if (!strcmp(line,
-	      " :000086D 14 08 05 20 03 0F 0D 0D 0F 04 0F 12 05 20 03 36"))
+  if ((!strcmp(line," :000086D 14 08 05 20 03 0F 0D 0D 0F 04 0F 12 05 20 03 36"))
+      ||(!strcmp(line,"0000086D:14080520030F0D0D0F040F1205200336")))
     {
 
     if (modeline_cmd[0]) {
@@ -764,8 +809,11 @@ int process_line(char *line,int live)
   }
   if (// C64 BASIC banner
       (!strcmp(line," :000042C 2A 2A 2A 2A 20 03 0F 0D 0D 0F 04 0F 12 05 20 36"))
+      ||(!strcmp(line,"0000042C:2A2A2A2A20030F0D0D0F040F12052036"))
       // MEGA BASIC banner
-      ||(!strcmp(line," :000042C 2A 2A 2A 2A 20 0D 05 07 01 36 35 20 0D 05 07 01"))) {
+      ||(!strcmp(line," :000042C 2A 2A 2A 2A 20 0D 05 07 01 36 35 20 0D 05 07 01"))
+      ||(!strcmp(line,"0000042C:2A2A2A2A200D0507013635200D050701"))
+      ) {
     // C64 mode BASIC -- set LOAD trap, and then issue LOAD command
     char *cmd;
     if (filename&&not_already_loaded) {
@@ -808,7 +856,10 @@ int process_line(char *line,int live)
 	  printf("Read to $%04x (%d bytes)\n",load_addr,b);
 	  fflush(stdout);
 	  // load_addr=0x400;
-	  sprintf(cmd,"l%x %x\r",load_addr-1,load_addr+b-1);
+	  if (new_monitor) 
+	    sprintf(cmd,"l%x %x\r",load_addr,(load_addr+b)&0xffff);
+	  else
+	    sprintf(cmd,"l%x %x\r",load_addr-1,load_addr+b-1);
 	  slow_write(fd,cmd,strlen(cmd));
 	  usleep(1000);
 	  int n=b;

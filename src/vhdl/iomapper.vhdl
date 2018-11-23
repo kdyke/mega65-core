@@ -491,6 +491,9 @@ architecture behavioral of iomapper is
 
   signal cpu_ethernet_stream : std_logic;
   signal fake_io_ready : std_logic;
+
+  signal touch_key1_driver : unsigned(7 downto 0);
+  signal touch_key2_driver : unsigned(7 downto 0);
   
   --attribute mark_debug of data_i: signal is "true";
   --attribute mark_debug of w: signal is "true";
@@ -766,8 +769,8 @@ begin
     key2 => unsigned(virtual_key2),
     key3 => unsigned(virtual_key3),
 
-    touch_key1 => touch_key1,  
-    touch_key2 => touch_key2,  
+    touch_key1 => touch_key1_driver,  
+    touch_key2 => touch_key2_driver,  
 
     keydown1 => osk_key1,
     keydown2 => osk_key2,
@@ -1086,6 +1089,9 @@ begin
           cia1cs_en,cia2cs_en)
   begin
     if rising_edge(clk) then
+
+      touch_key1_driver <= touch_key1;
+      touch_key2_driver <= touch_key2;
 
       cia1cs_en <= chipselect_enables(0);
       cia2cs_en <= chipselect_enables(1);
