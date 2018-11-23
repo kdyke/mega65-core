@@ -28,6 +28,13 @@
 
 	.include "kickstart_machine.a65"
 
+; Convenient macro for checkpoints. Uncomment the body to activate it
+
+.macro checkpoint
+;       jsr checkpoint
+;       .byte 0,_1,0
+.macend
+
 ;
 ; scratch space in ZP space usually used by kernel
 ; we try to use address space not normally used by C64 kernel, so that
@@ -113,7 +120,7 @@ trap_entry_points:
 	;
 	jmp nosuchtrap
 	nop
-	jmp nosuchtrap
+	jmp securemode_trap
 	nop
 	jmp nosuchtrap
 	nop
@@ -437,8 +444,7 @@ return_from_trap_with_success:
 	ora #$01   ; C flag is bit 0
 	sta hypervisor_flags
 
-	jsr checkpoint
-	.byte 0,"return_from_trap_with_success",0
+	.invoke checkpoint "return_from_trap_with_success"
 
 	; return from hypervisor
 	jmp hypervisor_exit
@@ -456,8 +462,7 @@ return_from_trap_with_failure:
 	and #$fe   ; C flag is bit 0 (ie clear bit-0)
 	sta hypervisor_flags
 
-	jsr checkpoint
-	.byte 0,"return_from_trap_with_failure",0
+	.invoke checkpoint "return_from_trap_with_failure"
 
 	; return from hypervisor
 	jmp hypervisor_exit
@@ -495,6 +500,11 @@ invalid_subfunction:
 ;;; Task (process) management
 ;;; ----------------------------------------------------------------------------
 		.include "kickstart_task.a65"
+
+;;; ----------------------------------------------------------------------------
+;;; Secure mode / compartmentalised operation management
+;;; ----------------------------------------------------------------------------
+		.include "kickstart_securemode.a65"
 
 ;;; ----------------------------------------------------------------------------
 ;;; sdcard and fat32 related functions
@@ -617,12 +627,10 @@ reset_machine_state:
 		jsr erasescreen
 		jsr resetpalette
 
-;note that this first message does not get displayed correctly
-		jsr checkpoint
-		.byte 0,"reset_machine_state",0
-;but this second message does
-		jsr checkpoint
-		.byte 0,"reset_machine_state",0
+		;note that this first message does not get displayed correctly
+		.invoke checkpoint "reset_machine_state"
+		;but this second message does
+		.invoke checkpoint "reset_machine_state"
 
 		rts
 
@@ -826,8 +834,7 @@ nokey2:
 
 		; display debug message to uart
 		;
-		jsr checkpoint
-		.byte 0,"re-try reading MBR of sdcard",0
+		.invoke checkpoint "re-try reading MBR of sdcard"
 
 		jmp tryreadmbr
 
@@ -881,8 +888,7 @@ gotmbr:
 		ldz dos_error_code
 		jsr printhex
 
-		jsr checkpoint
-		.byte 0,"FAILED CDROOT",0
+		.invoke checkpoint "FAILED CDROOT"
 		;
 		; BG: should probably JMP to reset or something, and not fall through
 
@@ -907,8 +913,7 @@ mountsystemdiskok:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  try-loading BOOTLOGO",0
+		.invoke checkpoint "  try-loading BOOTLOGO"
 	
 		jsr dos_readfileintomemory
 		bcs logook
@@ -917,8 +922,7 @@ mountsystemdiskok:
 
 		; FAILED: print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  FAILED-loading BOOTLOGO",0
+		.invoke checkpoint "  FAILED-loading BOOTLOGO"
 
 		; print debug message
 		;
@@ -929,8 +933,7 @@ mountsystemdiskok:
 		ldz dos_error_code
 		jsr printhex
 
-		jsr checkpoint
-		.byte 0,"FAILED loading BOOTLOGO",0
+		.invoke checkpoint "FAILED loading BOOTLOGO"
 
 ;	========================
 
@@ -979,8 +982,7 @@ allowkickup:	; BG was label nextdirectoryentry3:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  try-loading KICKUP",0
+		.invoke checkpoint "  try-loading KICKUP"
 
 		jsr dos_readfileintomemory
 		bcc nokickup
@@ -992,8 +994,7 @@ allowkickup:	; BG was label nextdirectoryentry3:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  loaded OK KICKUP",0
+		.invoke checkpoint "  loaded OK KICKUP"
 
 
 		ldx #<msg_kickuploaded
@@ -1094,8 +1095,7 @@ postkickup:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  Here we are POST-KICKUP",0
+		.invoke checkpoint "  Here we are POST-KICKUP"
 
 	jsr dumpcurrentfd	; debugging to Checkpoint
 		
@@ -1126,8 +1126,7 @@ f011Virtualised:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  try-mounting MEGA65.D81",0
+		.invoke checkpoint "  try-mounting MEGA65.D81"
 
 		jsr dos_findfile
 		bcc d81attachfail
@@ -1142,8 +1141,7 @@ f011Virtualised:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  mounted MEGA65.D81",0
+		.invoke checkpoint "  mounted MEGA65.D81"
 
 		; all done, move on to loading the ROM
 		;
@@ -1163,8 +1161,7 @@ d81attachfail:
 		jsr printhex
 
 	; debug
-	jsr checkpoint
-	.byte 0," couldnt mount/attach MEGA65.D81",0
+	.invoke checkpoint  "couldnt mount/attach MEGA65.D81"
 
 findrom:
 		; Check state of current ROM
@@ -1178,8 +1175,7 @@ findrom:
 		ldy #>msg_romok
 		jsr printmessage
 
-		jsr checkpoint
-		.byte 0,"JUMPing into ROM-code",0
+		.invoke checkpoint "JUMPing into ROM-code"
 
 	; check for keyboard input to jump to utility menu
 	jsr scankeyboard
@@ -1206,8 +1202,7 @@ loadrom:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  try-loading CHAR-ROM",0
+		.invoke checkpoint "  try-loading CHAR-ROM"
 
 		; Load CHARROM.M65 into character ROM
 		;
@@ -1238,8 +1233,7 @@ loadrom:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0," couldnt load CHARROM.M65",0
+		.invoke checkpoint " couldnt load CHARROM.M65"
 
 		jmp loadc65rom
 
@@ -1248,8 +1242,7 @@ loadrom:
 loadedcharromok:
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  OK-loading CHARROM",0
+		.invoke checkpoint "  OK-loading CHARROM"
 
 		; prepare debug message
 		;
@@ -1274,8 +1267,7 @@ loadc65rom:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  try-loading MEGA65-ROM",0
+		.invoke checkpoint "  try-loading MEGA65-ROM"
 
 		ldx #<txt_MEGA65ROM
 		ldy #>txt_MEGA65ROM
@@ -1377,8 +1369,7 @@ charromdmalist:
 loadedmegaromok:
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  OK-loading CHARROM",0
+		.invoke checkpoint "  OK-loading CHARROM"
 
 		; prepare debug message
 		;
@@ -1405,13 +1396,11 @@ loadedmegaromok:
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"  OK-loading MEGA65-ROM",0
+		.invoke checkpoint "  OK-loading MEGA65-ROM"
 
 		; print debug message
 		;
-		jsr checkpoint
-		.byte 0,"JUMPing into ROM-code",0
+		.invoke checkpoint "JUMPing into ROM-code"
 
 	jsr dumpcurrentfd	; debugging to Checkpoint
 
@@ -1419,8 +1408,7 @@ loaddiskmenu:
 
                 ; print debug message
                 ;
-                jsr checkpoint
-                .byte 0,"  try-loading $C000 Utility",0
+                .invoke checkpoint "  try-loading $C000 Utility"
 
                 ldx #<txt_C000UTIL
                 ldy #>txt_C000UTIL
@@ -2402,15 +2390,13 @@ hypervisor_setup_copy_region:
 	lda #$00
 	sta hypervisor_userspace_copy_vector +0
 
-	jsr checkpoint
-	.byte 0,"hypervisor_setup_copy_region <success>",0
+	.invoke checkpoint "hypervisor_setup_copy_region <success>"
 
 	sec
 	rts
 
 hscr1:
-	jsr checkpoint
-	.byte 0,"hypervisor_setup_copy_region <failure>",0
+	.invoke checkpoint "hypervisor_setup_copy_region <failure>"
 
 	lda #dos_errorcode_invalid_address
 	jmp dos_return_error		

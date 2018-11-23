@@ -37,7 +37,10 @@ entity frame_generator is
     );
   port (
     clock : in std_logic;
+    hsync_polarity : in std_logic;
+    vsync_polarity : in std_logic;
     hsync : out std_logic := '0';
+    hsync_uninverted : out std_logic := '0';
     vsync : out std_logic := '0';
     inframe : out std_logic := '0';
 
@@ -67,6 +70,7 @@ architecture brutalist of frame_generator is
 
   signal vsync_driver : std_logic := '0';
   signal hsync_driver : std_logic := '0';
+  signal hsync_uninverted_driver : std_logic := '0';
 
   
 begin
@@ -78,6 +82,7 @@ begin
 
       vsync <= vsync_driver;
       hsync <= hsync_driver;
+      hsync_uninverted <= hsync_uninverted_driver;
       x_zero <= x_zero_driver;
       y_zero <= y_zero_driver;
       
@@ -100,10 +105,12 @@ begin
       end if;
 
       if x = hsync_start then
-        hsync_driver <= '1';
+        hsync_driver <= hsync_polarity; 
+        hsync_uninverted_driver <= '1'; 
       end if;
       if x = hsync_end then
-        hsync_driver <= '0';
+        hsync_driver <= not hsync_polarity;
+        hsync_uninverted_driver <= '0';
       end if;
       if y = ( frame_height - lcd_height ) / 2 then
         lcd_inletterbox <= '1';
@@ -125,10 +132,10 @@ begin
         inframe <= '1';
       end if;
       if y = vsync_start then
-        vsync_driver <= '1';
+        vsync_driver <= vsync_polarity;
       end if;
       if y = 0 or y = vsync_end then
-        vsync_driver <= '0';
+        vsync_driver <= not vsync_polarity;
       end if;
 
       -- Colourful pattern inside frame

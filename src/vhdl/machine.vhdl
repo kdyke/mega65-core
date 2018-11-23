@@ -555,6 +555,7 @@ architecture Behavioral of machine is
   signal monitor_hyper_trap : std_logic := '1';
   signal hyper_trap_f011_read : std_logic := '0';
   signal hyper_trap_f011_write : std_logic := '0';
+  signal hyper_trap_count : unsigned(7 downto 0) := x"00";
 
   signal cpu_reset : std_logic;
   signal cpu_nmi : std_logic;
@@ -687,6 +688,7 @@ architecture Behavioral of machine is
   signal native_y_200 : integer;
   signal native_y_400 : integer;
   signal pixel_x_640 : integer;
+  signal pixel_x_800 : integer;
   signal pixel_y_scale_200 : unsigned(3 downto 0);
   signal pixel_y_scale_400 : unsigned(3 downto 0);
 
@@ -706,10 +708,17 @@ architecture Behavioral of machine is
 
   signal lcd_hsync1 : std_logic := '0';
   signal lcd_vsync1 : std_logic := '0';
+  signal lcd_in_letterbox : std_logic := '0';
   signal hsync_drive1 : std_logic := '0';
+  signal hsync_uninverted : std_logic := '0';
+  signal hsync_ntsc60_uninverted : std_logic := '0';
+  signal hsync_pal50_driver_uninverted : std_logic := '0';
   signal vsync_drive1 : std_logic := '0';
   signal lcd_pixel_strobe1 : std_logic := '0';
   signal lcd_display_enable1 : std_logic := '0';
+
+  signal hsync_polarity : std_logic := '0';
+  signal vsync_polarity : std_logic := '0';
 
   signal hsync_pal50 : std_logic;
   signal vsync_pal50 : std_logic;
@@ -830,6 +839,7 @@ architecture Behavioral of machine is
   signal hsync_drive : std_logic := '0';
   signal vsync_drive : std_logic := '0';
   signal hsync_driver : std_logic := '0';
+  signal hsync_drive_uninverted : std_logic := '0';
   signal vsync_driver : std_logic := '0';
   
   signal all_pause : std_logic := '0';
@@ -1076,7 +1086,7 @@ begin
       -- XXX temporary debug
       seg_led_data(23 downto 16) <= protected_hardware_sig;
       seg_led_data(15 downto 8) <= uart_char;
-      seg_led_data(7 downto 0) <= uart_monitor_char;
+      seg_led_data(7 downto 0) <= uart_monitor_char;      
       
       -- segments are:
       -- 7 - decimal point
@@ -1552,7 +1562,10 @@ begin
                   )                  
     port map ( clock => clock30,
                hsync => hsync_pal50_driver,
+               hsync_uninverted => hsync_pal50_driver_uninverted,
                vsync => vsync_pal50_driver,
+               hsync_polarity => hsync_polarity,
+               vsync_polarity => vsync_polarity,
                x_zero => x_zero_pal50,
                y_zero => y_zero_pal50,
                inframe => inframe_pal50,
@@ -1571,6 +1584,9 @@ begin
                   hsync_end => 968
                   )                  
     port map ( clock => clock40,
+               hsync_polarity => hsync_polarity,
+               vsync_polarity => vsync_polarity,
+               hsync_uninverted => hsync_ntsc60_uninverted,
                hsync => hsync_ntsc60,
                vsync => vsync_ntsc60,
                x_zero => x_zero_ntsc60,
@@ -1653,13 +1669,12 @@ begin
 
       dat_offset => dat_offset,
       dat_bitplane_addresses => dat_bitplane_addresses,
-      
---      vsync           => vsync_drive1,
---      hsync           => hsync_drive1,
---      lcd_vsync => lcd_vsync1,
---      lcd_hsync => lcd_hsync1,
---      lcd_display_enable => lcd_display_enable1,
+     
+      vsync_polarity => vsync_polarity,
+      hsync_polarity => hsync_polarity,
+ 
       lcd_pixel_strobe => pixel_strobe,
+      lcd_in_letterbox => lcd_in_letterbox,
       vgared          => vgared_viciv,
       vgagreen        => vgagreen_viciv,
       vgablue         => vgablue_viciv,
@@ -1677,6 +1692,7 @@ begin
       native_y_200 => native_y_200,
       native_y_400 => native_y_400,
       pixel_x_640 => pixel_x_640,
+      pixel_x_800 => pixel_x_800,
       pixel_y_scale_200 => pixel_y_scale_200,
       pixel_y_scale_400 => pixel_y_scale_400,
       
@@ -1776,6 +1792,7 @@ begin
       hyper_trap => hyper_trap,
       hyper_trap_f011_read => hyper_trap_f011_read,
       hyper_trap_f011_write => hyper_trap_f011_write,
+      hyper_trap_count => hyper_trap_count,
       cpuclock => cpuclock,
       pixelclk => pixelclock,
       clock50mhz => clock50mhz,
@@ -1811,10 +1828,6 @@ begin
       -- when using local keyboard
       uart_monitor_char => uart_monitor_char,
       uart_monitor_char_valid => uart_monitor_char_valid,
-      mm_displayMode_out => mm_displayMode,
-      display_shift_out => display_shift,
-      shift_ready_out => shift_ready,
-      shift_ack_in => shift_ack,     
       
       fpga_temperature => fpga_temperature,
 
@@ -2049,10 +2062,6 @@ begin
       );
 
   matrix_compositor0 : entity work.matrix_rain_compositor port map(
-    display_shift_in=>display_shift,
-    shift_ready_in => shift_ready,
-    shift_ack_out => shift_ack,
-    mm_displayMode_in => mm_displayMode,
     monitor_char_in => monitor_char_out,
     monitor_char_valid => monitor_char_out_valid,
     terminal_emulator_ready => terminal_emulator_ready,
@@ -2062,9 +2071,11 @@ begin
     matrix_fetch_address => matrix_fetch_address,
     seed => matrix_rain_seed,
 
-    hsync_in => hsync_drive,
+    external_frame_x_zero => external_frame_x_zero,
+    hsync_in => hsync_drive_uninverted,
     vsync_in => vsync_drive,
-    pixel_x_640 => pixel_x_640,
+    pixel_x_800 => pixel_x_800,
+    lcd_in_letterbox => lcd_in_letterbox,
     pixel_y_scale_200 => pixel_y_scale_200,
     pixel_y_scale_400 => pixel_y_scale_400,
     ycounter_in => ycounter,	
@@ -2314,10 +2325,12 @@ begin
           vgablue_source <= vgablue_viciv;
       end case;
     end if;
+    hsync_drive_uninverted <= hsync_uninverted;
     if pixelclock_select(7)='1' then
       -- PAL 50 Hz frame
       hsync_drive1 <= hsync_pal50;
       vsync_drive1 <= not vsync_pal50;
+      hsync_uninverted <= hsync_pal50_driver_uninverted;
       lcd_hsync1 <= hsync_pal50;
       lcd_vsync1 <= not lcd_vsync_pal50;
       lcd_display_enable1 <= lcd_inframe_pal50;
@@ -2328,6 +2341,7 @@ begin
       -- NTSC 60 Hz frame
       hsync_drive1 <= hsync_ntsc60;
       vsync_drive1 <= vsync_ntsc60;
+      hsync_uninverted <= hsync_ntsc60_uninverted;
       lcd_hsync1 <= hsync_ntsc60;
       lcd_vsync1 <= lcd_vsync_ntsc60;
       lcd_display_enable1 <= lcd_inframe_ntsc60;

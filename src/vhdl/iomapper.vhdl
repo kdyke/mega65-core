@@ -34,7 +34,8 @@ entity iomapper is
         cpu_hypervisor_mode : in std_logic;
         hyper_trap_f011_read : out std_logic;
         hyper_trap_f011_write : out std_logic;
-
+        hyper_trap_count : out unsigned(7 downto 0);
+        
         uart_char : out unsigned(7 downto 0);
         uart_char_valid : out std_logic := '0';
         uart_monitor_char : out unsigned(7 downto 0);
@@ -46,11 +47,6 @@ entity iomapper is
         buffereduart2_rx : in std_logic := 'H';
         buffereduart2_tx : out std_logic := '1';
         
-        display_shift_out : out std_logic_vector(2 downto 0) := "000";
-        shift_ready_out : out std_logic := '0';
-        shift_ack_in : in std_logic;        
-        mm_displayMode_out : out unsigned(1 downto 0) := "00";
-
         cart_access_count : in unsigned(7 downto 0);
         
         fpga_temperature : in std_logic_vector(11 downto 0);
@@ -347,7 +343,6 @@ architecture behavioral of iomapper is
   signal virtual_disable : std_logic;
   signal physkey_disable : std_logic;
 
-  signal hyper_trap_count : unsigned(7 downto 0) := x"00";
   signal restore_up_count : unsigned(7 downto 0) := x"00";
   signal restore_down_count : unsigned(7 downto 0) := x"00";
   
@@ -458,6 +453,7 @@ architecture behavioral of iomapper is
   signal keyboard_scan_rate : unsigned(7 downto 0);
 
   signal ef_latch : std_logic := '0';
+  signal ef_timeout : integer range 0 to 31 := 0;
   
   signal dummy_e : std_logic_vector(7 downto 0);
   signal dummy_g : std_logic_vector(7 downto 0);
@@ -1166,53 +1162,50 @@ begin
         -- This replaces the old ALT+TAB task switch combination
         matrix_mode_trap <= '1';
         ef_latch <= '1';
+        -- But don't allow multiple triggerings of this too quickly
+        -- (This is to work around a very weird bug where C= + TAB on PS/2
+        -- keyboards at least, triggers repeatedly.  But C= + ~ (like <- on a
+        -- C64 keyboard) doesn't have that problem. Maybe the PS/2 keyboard triggers
+        -- the TAB key more frequently?  Anyway, we will just block repeats
+        -- from occurring too quickly
+        ef_timeout <= 20; -- x 1/100th of a second
       end if;
-      if ascii_key /= x"ef" then
-        ef_latch <= '0';
+      if (ascii_key_valid='0' or ascii_key /= x"ef") and ef_latch='1' then
+        if counter50hz = 0 then
+          if ef_timeout /= 0 then
+            ef_timeout <= ef_timeout - 1;
+          else
+            ef_latch <= '0';
+          end if;
+        end if;
       end if;
 
       -- UART char for monitor/matrix mode
       if ascii_key_valid='1' and protected_hardware_in(6)='1' then
         uart_monitor_char <= ascii_key;
         uart_monitor_char_valid <= '1';
-        case ascii_key is
-          -- C= + 1,2,3 to set display size
-          when x"95" => mm_displayMode_out <= "00";
-          when x"96" => mm_displayMode_out <= "01";
-          when x"97" => mm_displayMode_out <= "10";
-          -- Cursor keys to move matrix mode display
-          when x"1d" => display_shift_out <= "010"; --right
-                        shift_ready_out <= '1';
-          when x"9d" => display_shift_out <= "100"; --left
-                        shift_ready_out <= '1';
-          when x"91" => display_shift_out <= "001"; --up
-                        shift_ready_out <= '1';
-          when x"11" => display_shift_out <= "011"; --down
-                        shift_ready_out <= '1';
-          when others =>  null;
-        end case;
-    
       else
         uart_monitor_char_valid <= '0';      
-      end if;
-      if shift_ack_in='1' then
-        shift_ready_out <= '0';
       end if;
       
       -- UART char for user mode
       uart_char_valid <= '0';
-      if ascii_key_valid='1' and protected_hardware_in(6)='0' then
-        uart_char <= ascii_key;
-        uart_char_valid <= '1';
-        if ascii_key_presenting = '1' then
-          if ascii_key_buffer_count < 4 then
-            ascii_key_buffer(ascii_key_buffer_count) <= ascii_key;
-            ascii_key_buffer_count <= ascii_key_buffer_count + 1;
+      if ascii_key_valid='1' then
+        if protected_hardware_in(6)='0' then
+          -- Not in matrix mode, so push character out normal path
+          uart_char <= ascii_key;
+          uart_char_valid <= '1';
+          if ascii_key_presenting = '1' then
+            if ascii_key_buffer_count < 4 then
+              ascii_key_buffer(ascii_key_buffer_count) <= ascii_key;
+              ascii_key_buffer_count <= ascii_key_buffer_count + 1;
+            end if;
+          else
+            ascii_key_buffered <= ascii_key;
           end if;
-        else
-          ascii_key_buffered <= ascii_key;
         end if;
       end if;
+        
       if reset_high = '1' then
         ascii_key_presenting <= '0';
         ascii_key_buffered <= x"00";

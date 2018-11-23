@@ -83,6 +83,9 @@ void usage(void)
   fprintf(stderr,"  -m - Set video mode to Xorg style modeline.\n");
   fprintf(stderr,"  -o - Enable on-screen keyboard\n");
   fprintf(stderr,"  -d - Enable virtual D81 access\n");
+  fprintf(stderr,"  -p - Force PAL video mode\n");
+  fprintf(stderr,"  -n - Force NTSC video mode\n");
+  fprintf(stderr,"  -F - Force reset on start\n");
   fprintf(stderr,"  -t - Type text via keyboard virtualisation.\n");
   fprintf(stderr,"  -T - As above, but also provide carriage return\n");
   fprintf(stderr,"  -B - Set a breakpoint on synchronising, and then immediately exit.\n");
@@ -110,6 +113,10 @@ int slow_write(int fd,char *d,int l)
     }
   return 0;
 }
+
+int pal_mode=0;
+int ntsc_mode=0;
+int reset_first=0;
 
 int counter  =0;
 int fd=-1;
@@ -349,6 +356,9 @@ int process_line(char *line,int live)
 	usleep(50000);
 	slow_write(fd,"t0\r",3); // and set CPU going
 	usleep(20000);
+	if (reset_first) { slow_write(fd,"!\r",2); sleep(1); }
+	if (pal_mode) { slow_write(fd,"sffd306f 0\r",12); usleep(20000); }
+	if (ntsc_mode) { slow_write(fd,"sffd306f 80\r",12); usleep(20000); }
 	if (ethernet_video) {
 	  slow_write(fd,"sffd36e1 29\r",12); // turn on video streaming over ethernet
 	  usleep(20000);
@@ -504,7 +514,7 @@ int process_line(char *line,int live)
       state=3;
     }
   }
-  if (sscanf(line,"000000B7:%08x%08x",
+  if (sscanf(line,":000000B7:%08x%08x",
 	     &name_len,&name_addr)==2) {
     if (not_already_loaded) {
       name_len=name_len>>24;
@@ -527,7 +537,7 @@ int process_line(char *line,int live)
     int gotIt=0;
     unsigned int v[4];
     if (line[0]=='?') fprintf(stderr,"%s\n",line);
-    if (sscanf(line,"%x:%08x%08x%08x%08x",
+    if (sscanf(line,":%x:%08x%08x%08x%08x",
 	       &addr,&v[0],&v[1],&v[2],&v[3])==5) {
       for(int i=0;i<16;i++) b[i]=(v[i/4]>>( (3-(i&3))*8)) &0xff;
       gotIt=1;
@@ -565,7 +575,7 @@ int process_line(char *line,int live)
 	}
       }
       if (addr==0xffd3077) {
-	//	fprintf(stderr,"$D086 = $%02X, virtual_f011_pending=%d\n",b[6+9],virtual_f011_pending);
+	//      fprintf(stderr,"$D086 = $%02X, virtual_f011_pending=%d\n",b[6+9],virtual_f011_pending);
         if((b[6+9] & 0x80) && !virtual_f011_pending) {  /* virtual f011 read request issued */
 	  
           char cmd[1024];
@@ -741,7 +751,7 @@ int process_line(char *line,int live)
     }
   }
   if ((!strcmp(line," :000086D 14 08 05 20 03 0F 0D 0D 0F 04 0F 12 05 20 03 36"))
-      ||(!strcmp(line,"0000086D:14080520030F0D0D0F040F1205200336")))
+      ||(!strcmp(line,":0000086D:14080520030F0D0D0F040F1205200336")))
     {
 
     if (modeline_cmd[0]) {
@@ -809,10 +819,10 @@ int process_line(char *line,int live)
   }
   if (// C64 BASIC banner
       (!strcmp(line," :000042C 2A 2A 2A 2A 20 03 0F 0D 0D 0F 04 0F 12 05 20 36"))
-      ||(!strcmp(line,"0000042C:2A2A2A2A20030F0D0D0F040F12052036"))
+      ||(!strcmp(line,":0000042C:2A2A2A2A20030F0D0D0F040F12052036"))
       // MEGA BASIC banner
       ||(!strcmp(line," :000042C 2A 2A 2A 2A 20 0D 05 07 01 36 35 20 0D 05 07 01"))
-      ||(!strcmp(line,"0000042C:2A2A2A2A200D0507013635200D050701"))
+      ||(!strcmp(line,":0000042C:2A2A2A2A200D0507013635200D050701"))
       ) {
     // C64 mode BASIC -- set LOAD trap, and then issue LOAD command
     char *cmd;
@@ -1203,7 +1213,7 @@ int main(int argc,char **argv)
   start_time=time(0);
   
   int opt;
-  while ((opt = getopt(argc, argv, "14B:b:c:C:dEf:k:l:m:MorR:s::t:T:")) != -1) {
+  while ((opt = getopt(argc, argv, "14B:b:c:C:dEFf:k:l:m:MnoprR:s::t:T:")) != -1) {
     switch (opt) {
     case 'B': sscanf(optarg,"%x",&break_point); break;
     case 'E': ethernet_video=1; break;
@@ -1212,6 +1222,9 @@ int main(int argc,char **argv)
     case 'c': colourramfile=strdup(optarg); break;
     case '4': do_go64=1; break;
     case '1': comma_eight_comma_one=1; break;
+    case 'p': pal_mode=1; break;
+    case 'n': ntsc_mode=1; break;
+    case 'F': reset_first=1; break; 
     case 'r': do_run=1; break;
     case 'f': fpga_serial=strdup(optarg); break;
     case 'l': strcpy(serial_port,optarg); break;

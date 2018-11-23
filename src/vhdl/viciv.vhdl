@@ -103,12 +103,10 @@ entity viciv is
     ----------------------------------------------------------------------
     -- VGA output
     ----------------------------------------------------------------------
-    vsync : out  STD_LOGIC;
-    hsync : out  STD_LOGIC;
-    lcd_vsync : out std_logic;
-    lcd_hsync : out std_logic;
-    lcd_display_enable : out std_logic;
+    vsync_polarity : out  STD_LOGIC := '1';
+    hsync_polarity : out  STD_LOGIC := '1';
     lcd_pixel_strobe : out std_logic;
+    lcd_in_letterbox : out std_logic;
     vgared : out  UNSIGNED (7 downto 0);
     vgagreen : out  UNSIGNED (7 downto 0);
     vgablue : out  UNSIGNED (7 downto 0);
@@ -124,8 +122,12 @@ entity viciv is
     pixel_newraster : out std_logic;
     -- Pixel x counter scaled to count to about 640
     pixel_x_640 : out integer := 0;
+    -- And as above, but with the 800 pixel resolution.
+    pixel_x_800 : out integer := 0;
     -- And pixel X counter scaled to actual video mode (typically 800)
     -- (and corrected for video pipeline depth)
+    -- This one holds at zero until the first VIC-II/III sprite position in the
+    -- left border.
     native_x_640 : out integer := 0;
     native_y_200 : out integer := 0;
     native_y_400 : out integer := 0;
@@ -257,17 +259,13 @@ architecture Behavioral of viciv is
   -- The values here are simply those that apply on power up.
   signal frame_h_front : unsigned(7 downto 0) := to_unsigned(16,8);  
   -- 800x480 @ 50Hz for 100MHz pixelclock
-  signal frame_width : unsigned(13 downto 0) := to_unsigned(3196,14);
   signal display_width : unsigned(13 downto 0) := to_unsigned(2664,14);
   signal single_side_border : unsigned(13 downto 0) := to_unsigned(267,14);
-  signal frame_height : unsigned(11 downto 0) := to_unsigned(625,12); 
   signal display_height : unsigned(11 downto 0) := to_unsigned(600,12);
   signal display_height_drive : unsigned(11 downto 0) := to_unsigned(600,12);
   signal vsync_delay : unsigned(7 downto 0) := to_unsigned(18,8);
   signal vsync_delay_drive : unsigned(7 downto 0) := to_unsigned(18,8);
   signal vicii_ycounter_scale_minus_zero : unsigned(3 downto 0) := to_unsigned(2-1,4);
-  signal hsync_start : unsigned(13 downto 0) := to_unsigned(2764,14);
-  signal hsync_end : unsigned(13 downto 0) := to_unsigned(3100,14);
   -- Each logical pixel will be 120/n physical pixels wide
   -- For non-integer multiples, the fraction is represented as n/(2*2*2*3*3*3)
   -- to allow sufficient precision.
@@ -301,7 +299,7 @@ architecture Behavioral of viciv is
   
   constant frame_v_front : integer := 1;
 
-  signal lcd_in_letterbox : std_logic := '1';
+  signal lcd_in_letterbox_internal : std_logic := '1';
   
   -- Frame generator counters
   -- DEBUG: Start frame at a point that will soon trigger a badline
@@ -866,6 +864,9 @@ architecture Behavioral of viciv is
   signal xpixel_fw640 : unsigned(10 downto 0);
   signal xpixel_fw640_sub : unsigned(9 downto 0);
   signal chargen_x_scale_fw640 : unsigned(7 downto 0);
+  signal xpixel_fw800 : unsigned(10 downto 0);
+  signal xpixel_fw800_sub : unsigned(9 downto 0);
+  signal chargen_x_scale_fw800 : unsigned(7 downto 0);
   signal xpixel_fw640_last : unsigned(10 downto 0);
   
   -- Colour RAM access for video controller
@@ -897,12 +898,8 @@ architecture Behavioral of viciv is
   signal palette_bank_chargen_alt : std_logic_vector(1 downto 0) := "11";
   signal palette_bank_sprites : std_logic_vector(1 downto 0) := "11";
   
-  signal clear_hsync : std_logic := '0';
-  signal set_hsync : std_logic := '0';
-  signal hsync_drive : std_logic := '0';
-  signal vsync_drive : std_logic := '0';
-  signal vsync_polarity : std_logic := '1';
-  signal hsync_polarity : std_logic := '0';
+  signal vsync_polarity_internal : std_logic := '1';
+  signal hsync_polarity_internal : std_logic := '1';
 
   -- Mode line calculations
   type ss_table is array(0 to 10) of integer range 0 to 255;
@@ -1243,9 +1240,9 @@ begin
           sprite_x_scale_640,sprite_first_x,sprite_sixteen_colour_enables,
           vicii_ntsc,viciv_1080p,vicii_first_raster,vertical_flyback,
           palette_bank_chargen_alt,bitplane_sixteen_colour_mode_flags,
-          vsync_delay,hsync_end,vicii_ycounter_scale_minus_zero,
-          display_width,frame_width,display_height,frame_height,
-          hsync_start,hsync_polarity,vsync_polarity,ssx_table_phase          
+          vsync_delay,vicii_ycounter_scale_minus_zero,
+          display_width,display_height,
+          hsync_polarity_internal,vsync_polarity_internal,ssx_table_phase          
           ) is
     variable bitplane_number : integer;
 
@@ -1258,7 +1255,6 @@ begin
       -- can span full width when required)
       -- XXX Actually, we want 800px wide, not 640
       if display_width>=(11*640) then
-        -- 3 pixels per pixel
         chargen_x_scale_fw640 <= to_unsigned(120/11,8);
       elsif display_width>=(10*640) then
         chargen_x_scale_fw640 <= to_unsigned(120/10,8);
@@ -1281,6 +1277,31 @@ begin
       else
         -- <800 use natural pixels
         chargen_x_scale_fw640 <= x"78";
+      end if;
+
+      if display_width>=(11*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/11,8);
+      elsif display_width>=(10*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/10,8);
+      elsif display_width>=(9*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/9,8);
+      elsif display_width>=(8*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/8,8);
+      elsif display_width>=(7*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/7,8);
+      elsif display_width>=(6*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/6,8);
+      elsif display_width>=(5*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/5,8);
+      elsif display_width>=(4*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/4,8);
+      elsif display_width>=(3*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/3,8);
+      elsif display_width>=(2*800) then
+        chargen_x_scale_fw800 <= to_unsigned(120/2,8);
+      else
+        -- <800 use natural pixels
+        chargen_x_scale_fw800 <= x"78";
       end if;
       
       -- Calculate tables of horizontal smooth scroll values for 320, 640 and
@@ -1867,30 +1888,30 @@ begin
         elsif register_number=114 then -- $D3072
           fastio_rdata(7 downto 0) <= std_logic_vector(vsync_delay);
         elsif register_number=115 then -- $D3073
-          fastio_rdata(3 downto 0) <= std_logic_vector(hsync_end(13 downto 10));
+          fastio_rdata(3 downto 0) <= x"F";
           fastio_rdata(7 downto 4) <= std_logic_vector(vicii_ycounter_scale_minus_zero(3 downto 0));
         elsif register_number=116 then  -- $D3074
-          fastio_rdata <= std_logic_vector(hsync_end(9 downto 2));          
+          fastio_rdata <= x"FF";
         elsif register_number=117 then  -- $D3075
           fastio_rdata <= std_logic_vector(display_width(9 downto 2));
         elsif register_number=118 then  -- $D3076
-          fastio_rdata <= std_logic_vector(frame_width(9 downto 2));
+          fastio_rdata <= x"FF";
         elsif register_number=119 then  -- $D3077
           fastio_rdata(3 downto 0) <= std_logic_vector(display_width(13 downto 10));
-          fastio_rdata(7 downto 4) <= std_logic_vector(frame_width(13 downto 10));
+          fastio_rdata(7 downto 4) <= x"F";
         elsif register_number=120 then  -- $D3078
           fastio_rdata <= std_logic_vector(display_height(7 downto 0));
-        elsif register_number=121 then  -- $D3079
-          fastio_rdata <= std_logic_vector(frame_height(7 downto 0));
+        elsif register_number=121 then  -- $D3079 (was frame_height, now free)
+          fastio_rdata <= x"FF";
         elsif register_number=122 then  -- $D307A
           fastio_rdata(3 downto 0) <= std_logic_vector(display_height(11 downto 8));
-          fastio_rdata(7 downto 4) <= std_logic_vector(frame_height(11 downto 8));          
+          fastio_rdata(7 downto 4) <= x"F"; -- was frame_height MSBs, now free          
         elsif register_number=123 then  -- $D307B
-          fastio_rdata <= std_logic_vector(hsync_start(9 downto 2));
+          fastio_rdata <= x"FF";
         elsif register_number=124 then  -- $D307C
-          fastio_rdata(3 downto 0) <= std_logic_vector(hsync_start(13 downto 10));
-          fastio_rdata(4) <= hsync_polarity;
-          fastio_rdata(5) <= vsync_polarity;
+          fastio_rdata(3 downto 0) <= x"F";
+          fastio_rdata(4) <= hsync_polarity_internal;
+          fastio_rdata(5) <= vsync_polarity_internal;
           fastio_rdata(7 downto 6) <= pixelclock_select_internal(1 downto 0);
         elsif register_number=125 then
         -- fastio_rdata <=
@@ -1930,6 +1951,9 @@ begin
     
     
     if rising_edge(ioclock) then
+
+      hsync_polarity <= hsync_polarity_internal;
+      vsync_polarity <= vsync_polarity_internal;
 
       -- Calculate raster number for sprites.
       -- The -1 is an adjustment factor to make the sprites line up correctly
@@ -2393,10 +2417,7 @@ begin
                                                     pixelclock_select_internal <= fastio_wdata;
                                                   elsif register_number=81 then
                                         -- @IO:GS $D051 VIC-IV read horizontal position (MSB) (READ) xcounter
-                                        -- @IO:GS $D051 VIC-IV frame width, hsync fine tuning (WRITE ONLY)
-                                                    hsync_start(1 downto 0) <= unsigned(fastio_wdata(1 downto 0));
-                                                    hsync_end(1 downto 0) <= unsigned(fastio_wdata(3 downto 2));
-                                                    frame_width(1 downto 0) <= unsigned(fastio_wdata(5 downto 4));
+                                        -- @IO:GS $D051 VIC-IV UNUSED (WRITE ONLY)
                                                     null;
                                                   elsif register_number=82 then
                                         -- @IO:GS $D052 VIC-IV read physical raster/set raster compare (LSB)
@@ -2521,21 +2542,17 @@ begin
                                                     
                                                     case fastio_wdata(7 downto 6) is
                                                       when "00" => -- PAL, 800x600 @ 50Hz
-                                                        frame_width <=  to_unsigned(3196,14);
                                                         display_width <= to_unsigned(2664,14);
-                                                        frame_height <= to_unsigned(625,12);
                                                         display_height <= to_unsigned(600,12);
                                                         vsync_delay <= to_unsigned(18,8);
                                                         vicii_ycounter_scale_minus_zero <= to_unsigned(2-1,4);
-                                                        hsync_start <= to_unsigned(2764,14);
-                                                        hsync_end <= to_unsigned(3100,14);
                                                         vicii_max_raster <= pal_max_raster;
                                         -- Set 30MHz pixel clock for PAL
                                                         pixelclock_select_internal <= x"bc";
                                                         pixelclock_select_driver <= x"bc";
                                         -- VSYNC is negative for 50Hz (required for some monitors)
-                                                        hsync_polarity <= '0';
-                                                        vsync_polarity <= '1';
+                                                        hsync_polarity_internal <= '1';
+                                                        vsync_polarity_internal <= '1';
 
                                         -- 3 1/3 physical
                                         -- pixels per actual
@@ -2550,20 +2567,16 @@ begin
                                                         chargen_y_scale <= x"01";
                                                         
                                                       when "01" => -- PAL, 800x600 50Hz, NTSC max raster
-                                                        frame_width <=  to_unsigned(3196,14);
                                                         display_width <= to_unsigned(2664,14);
-                                                        frame_height <= to_unsigned(625,12);
                                                         display_height <= to_unsigned(600,12);
                                                         vsync_delay <= to_unsigned(18,8);
                                                         vicii_ycounter_scale_minus_zero <= to_unsigned(2-1,4);
-                                                        hsync_start <= to_unsigned(2764,14);
-                                                        hsync_end <= to_unsigned(3100,14);
                                                         vicii_max_raster <= ntsc_max_raster;
                                         -- Set 30MHz pixel clock for PAL
                                                         pixelclock_select_internal <= x"bc";
                                                         pixelclock_select_driver <= x"bc";
-                                                        hsync_polarity <= '0';
-                                                        vsync_polarity <= '1';
+                                                        hsync_polarity_internal <= '1';
+                                                        vsync_polarity_internal <= '1';
 
                                                         chargen_x_pixels <= 3;
                                                         chargen_x_pixels_sub <= 216/3;
@@ -2576,17 +2589,13 @@ begin
                                                         single_side_border <= to_unsigned(267,14);
 
                                                       when "10" => -- NTSC, 800x600 @ 60Hz
-                                                        frame_width <=  to_unsigned(2640,14);
                                                         display_width <= to_unsigned(2000,14);
-                                                        frame_height <= to_unsigned(628,12); 
                                                         display_height <= to_unsigned(600,12);
                                                         vsync_delay <= to_unsigned(22,8);
                                                         vicii_ycounter_scale_minus_zero <= to_unsigned(2-1,4);
                                                         vicii_max_raster <= ntsc_max_raster;
-                                                        hsync_start <= to_unsigned(2140,14);
-                                                        hsync_end <= to_unsigned(2540,14);
-                                                        hsync_polarity <= '0';
-                                                        vsync_polarity <= '0';
+                                                        hsync_polarity_internal <= '1';
+                                                        vsync_polarity_internal <= '1';
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
                                                         pixelclock_select_driver <= x"3e";
@@ -2602,22 +2611,18 @@ begin
                                                         single_side_border <= to_unsigned(200,14);
 
                                                       when "11" => -- NTSC 800x600 60Hz
-                                                        frame_width <=  to_unsigned(2640,14);
                                                         display_width <= to_unsigned(2000,14);
-                                                        frame_height <= to_unsigned(628,12); 
                                                         display_height <= to_unsigned(600,12);
                                                         vsync_delay <= to_unsigned(22,8);
                                                         vicii_ycounter_scale_minus_zero <= to_unsigned(2-1,4);
                                         -- NTSC but with PAL max raster
                                                         vicii_max_raster <= pal_max_raster;
-                                                        hsync_start <= to_unsigned(2140,14);
-                                                        hsync_end <= to_unsigned(2540,14);
-                                                        hsync_polarity <= '0';
-                                                        vsync_polarity <= '0';
+                                                        hsync_polarity_internal <= '1';
+                                                        vsync_polarity_internal <= '1';
 
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
-                                                        pixelclock_select_driver<= x"3e";
+                                                        pixelclock_select_driver <= x"3e";
                                                         
                                                         chargen_x_pixels <= 2;
                                                         chargen_x_pixels_sub <= 216/2;
@@ -2630,16 +2635,12 @@ begin
                                                         single_side_border <= to_unsigned(200,14);
 
                                                       when others => -- Default to NTSC 800x600 60Hz
-                                                        frame_width <=  to_unsigned(2640,14);
                                                         display_width <= to_unsigned(2000,14);
-                                                        frame_height <= to_unsigned(628,12); 
                                                         display_height <= to_unsigned(600,12);
                                                         vsync_delay <= to_unsigned(22,8);
                                                         vicii_ycounter_scale_minus_zero <= to_unsigned(2-1,4);
-                                                        hsync_start <= to_unsigned(2140,14);
-                                                        hsync_end <= to_unsigned(2540,14);
-                                                        hsync_polarity <= '0';
-                                                        vsync_polarity <= '0';
+                                                        hsync_polarity_internal <= '1';
+                                                        vsync_polarity_internal <= '1';
 
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
@@ -2674,48 +2675,47 @@ begin
                                                                                  -- @IO:GS $D072 VIC-IV VSYNC delay
                                                     vsync_delay <= unsigned(fastio_wdata);
                                                   elsif register_number=115 then -- $D3073
-                                                                                 -- @IO:GS $D073.0-3 VIC-IV hsync x4 end (MSB)
-                                                    hsync_end(13 downto 10)
-                                                      <= unsigned(fastio_wdata(3 downto 0));
+                                                                                 -- @IO:GS $D073 VIC-IV UNUSED
+                                                    null;
                                         -- @IO:GS $D073.4-7 VIC-IV physical rasters per VIC-II raster (1 to 16)
                                                     vicii_ycounter_scale_minus_zero(3 downto 0) <= unsigned(fastio_wdata(7 downto 4));
                                                   elsif register_number=116 then -- $D3074
-                                                                                 -- @IO:GS $D074 VIC-IV hsync x4 end (LSB)
-                                                    hsync_end(9 downto 2) <= unsigned(fastio_wdata);
+                                                                                 -- @IO:GS $D074 VIC-IV UNUSED
+                                                    null;
                                                   elsif register_number=117 then
                                         -- @IO:GS $D075 VIC-IV display_width x4 (LSB)
                                                     display_width(9 downto 2) <= unsigned(fastio_wdata);
                                                   elsif register_number=118 then
-                                        -- @IO:GS $D076 VIC-IV frame_width x4 (LSB)
-                                                    frame_width(9 downto 2) <= unsigned(fastio_wdata);
+                                        -- @IO:GS $D076 VIC-IV UNUSED
+                                                    null;
                                                   elsif register_number=119 then  -- $D3077
                                                                                   -- @IO:GS $D077.0-3 VIC-IV display_width x4 (MSB)
                                                     display_width(13 downto 10) <= unsigned(fastio_wdata(3 downto 0));
-                                        -- @IO:GS $D077.4-7 VIC-IV frame_width x4 (MSB)
-                                                    frame_width(13 downto 10) <= unsigned(fastio_wdata(7 downto 4));
+                                        -- @IO:GS $D077.4-7 VIC-IV UNUSED
+                                                    null;
 
                                                   elsif register_number=120 then  -- $D3078
                                                                                   -- @IO:GS $D078 VIC-IV display_height (LSB)
                                                     display_height(7 downto 0) <= unsigned(fastio_wdata);
                                                   elsif register_number=121 then  -- $D3079
-                                                                                  -- @IO:GS $D079 VIC-IV frame_height (LSB)
-                                                    frame_height(7 downto 0) <= unsigned(fastio_wdata);
+                                                                                  -- @IO:GS $D079 VIC-IV UNUSED
+                                                    null;
                                                   elsif register_number=122 then  -- $D307A
                                                                                   -- @IO:GS $D07A.0-3 VIC-IV display_height (MSB)
                                                     display_height(11 downto 8) <= unsigned(fastio_wdata(3 downto 0));
-                                        -- @IO:GS $D07A.4-7 VIC-IV frame_height (MSB)
-                                                    frame_height(11 downto 8) <= unsigned(fastio_wdata(7 downto 4));
+                                        -- @IO:GS $D07A.4-7 VIC-IV UNUSED
+                                                    null;
 
                                                   elsif register_number=123 then
-                                        -- @IO:GS $D07B VIC-IV hsync x4 start
-                                                    hsync_start(9 downto 2) <= unsigned(fastio_wdata);
+                                        -- @IO:GS $D07B VIC-IV UNUSED
+                                                    null;
                                                   elsif register_number=124 then
-                                        -- @IO:GS $D07C.0-3 VIC-IV hsync x4 start (MSB)
-                                                    hsync_start(13 downto 10) <= unsigned(fastio_wdata(3 downto 0));
+                                        -- @IO:GS $D07C.0-3 VIC-IV UNUSED
+                                                    null;
                                         -- @IO:GS $D07C.4 VIC-IV hsync polarity
-                                                    hsync_polarity <= fastio_wdata(4);
+                                                    hsync_polarity_internal <= fastio_wdata(4);
                                         -- @IO:GS $D07C.5 VIC-IV vsync polarity
-                                                    vsync_polarity <= fastio_wdata(5);
+                                                    vsync_polarity_internal <= fastio_wdata(5);
                                         -- @IO:GS $D07C.6-7 VIC-IV pixel clock select (30,33,40 or 50MHz)
                                                     pixelclock_select_driver(1 downto 0) <= fastio_wdata(7 downto 6);
                                                     pixelclock_select_internal(1 downto 0) <= fastio_wdata(7 downto 6);
@@ -2752,6 +2752,9 @@ begin
   begin    
     if rising_edge(pixelclock) and all_pause='0' then
 
+      lcd_in_letterbox <= lcd_in_letterbox_internal;
+      
+      report "ycounter = $" & to_hstring(ycounter) & ", ycounter_driver = $" & to_hstring(ycounter_driver);
       ycounter <= ycounter_driver;
       pixelclock_select <= pixelclock_select_driver;
       vgared <= vgared_driver;
@@ -2790,6 +2793,8 @@ begin
       if xcounter = 0 then
         xpixel_fw640_sub <= (others => '0');
         xpixel_fw640 <= (others => '0');
+        xpixel_fw800_sub <= (others => '0');
+        xpixel_fw800 <= (others => '0');
       else
         if xpixel_fw640_sub >= 240 then
           xpixel_fw640_sub <= xpixel_fw640_sub - 240 + chargen_x_scale_fw640;
@@ -2800,8 +2805,18 @@ begin
         else
           xpixel_fw640_sub <= xpixel_fw640_sub + chargen_x_scale_fw640;
         end if;
+        if xpixel_fw800_sub >= 240 then
+          xpixel_fw800_sub <= xpixel_fw800_sub - 240 + chargen_x_scale_fw800;
+          xpixel_fw800 <= xpixel_fw800 + 2;
+        elsif xpixel_fw800_sub >= 120 then
+          xpixel_fw800_sub <= xpixel_fw800_sub - 120 + chargen_x_scale_fw800;
+          xpixel_fw800 <= xpixel_fw800 + 1;
+        else
+          xpixel_fw800_sub <= xpixel_fw800_sub + chargen_x_scale_fw800;
+        end if;
       end if;
       pixel_x_640 <= to_integer(xpixel_fw640);
+      pixel_x_800 <= to_integer(xpixel_fw800);
       pixel_y_scale_400 <= chargen_y_scale_400(3 downto 0);
       pixel_y_scale_200 <= chargen_y_scale_200(3 downto 0);
 
@@ -2896,23 +2911,6 @@ begin
       -- over 3 cycles, including one pure drive cycle, which should hopefully
       -- fix it once and for all.
       xcounter_delayed <= xcounter;
-      if xcounter_delayed= hsync_start then
-        set_hsync <= '1';
-      else
-        set_hsync <= '0';
-      end if;
-      if xcounter_delayed = hsync_end then
-        clear_hsync <= '1';
-      else
-        clear_hsync <= '0';
-      end if;
-      if clear_hsync='1' then
-        hsync_drive <= '0' xor hsync_polarity;
-      elsif set_hsync='1' then
-        hsync_drive <= '1' xor hsync_polarity;
-      end if;
-      hsync <= hsync_drive;
-      lcd_hsync <= hsync_drive;
 
       if pixel_newframe_internal='1' then
         -- C65/VIC-III style 1Hz blink attribute clock
@@ -2933,7 +2931,6 @@ begin
       indisplay :='1';
 --      report "VICII: SPRITE: xcounter(320) = " & integer'image(to_integer(vicii_xcounter_320))
 --        & " (sub) = " & integer'image(vicii_xcounter_sub320);
---      if xcounter /= to_integer(frame_width) and external_frame_x_zero='0' then
       if external_frame_x_zero='0' then
         raster_buffer_read_address <= raster_buffer_read_address_next;
         raster_buffer_read_address_sub <= raster_buffer_read_address_sub_next;
@@ -2993,11 +2990,10 @@ begin
 
         chargen_active <= '0';
         chargen_active_soon <= '0';
---        if ycounter /= to_integer(frame_height) and external_frame_y_zero='0' then
         if xcounter > 255 then
           if external_frame_y_zero='0' then
             report "XZERO: incrementing ycounter from " & integer'image(to_integer(ycounter));
-            ycounter <= ycounter + 1;
+            ycounter_driver <= ycounter_driver + 1;
 
             displaycolumn0 <= '1';
             displayy <= displayy + 1;
@@ -3039,7 +3035,7 @@ begin
             end if;
           else
             -- Start of next frame
-            ycounter <= (others =>'0');
+            ycounter_driver <= (others =>'0');
             report "LEGACY: chargen_y_sub = 0, first_card_of_row = 0 due to start of frame";
             chargen_y_sub <= (others => '0');
             next_card_number <= (others => '0');
@@ -3070,7 +3066,7 @@ begin
       else
         xfrontporch <= '0';
       end if;
-      if xcounter=frame_width then
+      if external_frame_x_zero='1' then
         -- tell frame grabber about each new raster
         pixel_newraster <= '1';
       else
@@ -3131,7 +3127,7 @@ begin
       vsync_delay_drive <= vsync_delay;
       vsync_start <= frame_v_front+display_height_drive+to_integer(vsync_delay_drive);
       if ycounter=0 then
-        vsync_drive <= '1' xor vsync_polarity;
+        null;
       elsif ycounter=frame_v_front then
         vert_in_frame <= '1';
       elsif ycounter=vsync_start then
@@ -3140,7 +3136,6 @@ begin
         report "clearing indisplay because of vertical porch";
         vertical_flyback <= '1';        
 
-        vsync_drive <= '0' xor vsync_polarity;
         vert_in_frame <= '0';
         -- Send a 1 cycle pulse at the end of each frame for
         -- streaming display module to synchronise on.
@@ -3153,22 +3148,12 @@ begin
         end if;
 
       end if;
-      vsync <= vsync_drive;
-      -- LCD uses same VSYNC as VGA/HDMI output
-      lcd_vsync <= vsync_drive;
       -- LCD letter box starts after half the excess raster lines are gone, so
       -- that it is vertically centred on the 800x480 display.
       if to_integer(ycounter) = (to_integer(vsync_delay_drive) + (to_integer(display_height) - 480)/2) then
-        lcd_in_letterbox <= '1';
+        lcd_in_letterbox_internal <= '1';
       elsif vertical_flyback = '1' then
-        lcd_in_letterbox <= '0';
-      end if;
-      -- Gate LCD pixel enable based on whether we are in the active part of      
-      -- the scan, and within the LCD letter box region.
-      if postsprite_inborder='0' and lcd_in_letterbox='1' then
-        lcd_display_enable <= '1';
-      else
-        lcd_display_enable <= '0';
+        lcd_in_letterbox_internal <= '0';
       end if;
       -- Generate pixel clock based on x640 clock
       last_vicii_xcounter_640 <= vicii_xcounter_640;
