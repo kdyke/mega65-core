@@ -94,8 +94,39 @@ Written by
 `DBG wire dmagic_busy;
 `DBG wire dmagic_io_ready_ctl;
 
+reg [7:0] dmagic_mult_dx;
+reg [7:0] dmagic_mult_ex;
+reg [7:0] dmagic_mult_rx;
+wire load_mult48_dx, load_mult48_ex;
+
 `DBG wire dmagic_io_ready_reg_next;
 `DBG reg dmagic_io_ready_reg;
+
+reg [7:0] mult48_d[0:3];
+reg [7:0] mult48_e[0:3];
+reg [7:0] mult48_r[0:5];
+
+always @(*)
+begin
+  dmagic_mult_dx = mult48_d[dmagic_io_address_next[1:0]];
+  dmagic_mult_ex = mult48_d[dmagic_io_address_next[1:0]];
+  dmagic_mult_rx = mult48_d[dmagic_io_address_next[2:0]];
+end
+  
+always @(posedge clk)
+begin
+  if(load_mult48_dx)
+    mult48_d[dmagic_io_address_next[1:0]] <= dmagic_io_wdata_next;
+  if(load_mult48_ex)
+    mult48_e[dmagic_io_address_next[1:0]] <= dmagic_io_wdata_next;
+end
+
+always @(posedge clk)
+begin
+  {mult48_r[5],mult48_r[4],mult48_r[3],mult48_r[2],mult48_r[1],mult48_r[0]} <= 
+      {mult48_e[3][0],mult48_e[2],mult48_e[1],mult48_e[0]} * 
+      {mult48_d[2][1:0],mult48_d[1],mult48_d[0]};
+end      
 
 always @(posedge clk)
 begin
@@ -128,6 +159,7 @@ assign dmagic_io_ready = (dmagic_io_ready_ctl|dmagic_io_ready_reg) & dmagic_io_c
   dmagic_output_reg output_reg(.clk(clk), .dmagic_list_addr(dmagic_list_addr), .support_f01b(support_f01b), 
                                .dmagic_pio_base_addr(dmagic_pio_base_addr), .dmagic_pio_index(dmagic_pio_index), 
                                .dmagic_read_data(dmagic_read_data), .dmagic_io_data(dmagic_io_data), .dmagic_busy(dmagic_busy),
+                               .dmagic_mult_dx(dmagic_mult_dx), .dmagic_mult_ex(dmagic_mult_ex), .dmagic_mult_rx(dmagic_mult_rx),                               
                                .data_op_read(data_op_read), .dmagic_data_op_next(dmagic_data_op_next));
 
   dmagic_io_decode io_decode(.dmagic_io_cs(dmagic_io_cs), .dmagic_io_ack(dmagic_io_ack), .dmagic_io_ready_reg_next(dmagic_io_ready_reg_next),
@@ -136,6 +168,7 @@ assign dmagic_io_ready = (dmagic_io_ready_ctl|dmagic_io_ready_reg) & dmagic_io_c
                              .load_list_addr0(load_list_addr0), .load_list_addr1(load_list_addr1), .load_list_addr2(load_list_addr2), .load_status(load_status),
                              .load_pio_base_addr0(load_pio_base_addr0), .load_pio_base_addr1(load_pio_base_addr1), .load_pio_base_addr2(load_pio_base_addr2), 
                              .load_pio_index(load_pio_index), .increment_index(increment_index), .load_pio(load_pio), 
+                             .load_mult48_dx(load_mult48_dx), .load_mult48_ex(load_mult48_ex),                             
                              .clear_job_uses_options(clear_job_uses_options), .set_job_uses_options(set_job_uses_options),
                              .start_job(start_job), .start_cpu_write(start_cpu_write), .start_cpu_read(start_cpu_read), .dmagic_data_op_next(dmagic_data_op_next));
                                          
@@ -583,9 +616,13 @@ endmodule
                                          output reg load_list_addr0, output reg load_list_addr1, output reg load_list_addr2, output reg load_status,
                                          output reg load_pio_base_addr0, output reg load_pio_base_addr1, output reg load_pio_base_addr2, output reg load_pio_index,
                                          output reg increment_index, output reg load_pio, output reg clear_job_uses_options, output reg set_job_uses_options,
+                                         output reg load_mult48_dx, output reg load_mult48_ex,
                                          output reg start_job, output reg start_cpu_write, output reg start_cpu_read, output reg [3:0] dmagic_data_op_next);
 
 parameter Data_Idle                     = 4'h0,
+          Data_Mult48_Dx                = 4'h1,
+          Data_Mult48_Ex                = 4'h2,
+          Data_Mult48_Rx                = 4'h3,
           Data_List0                    = 4'h8,
           Data_List1                    = 4'h9,
           Data_List2                    = 4'hA,
@@ -614,7 +651,9 @@ begin
   start_job = 0;
   start_cpu_write = 0;
   start_cpu_read = 0;
-
+  load_mult48_dx = 0;
+  load_mult48_ex = 0;
+  
   dmagic_data_op_next = Data_Idle;
   
   if (dmagic_io_cs) begin  
@@ -662,6 +701,14 @@ begin
         else
           start_cpu_read = 1;
       end
+    end else if({dmagic_io_address_next[7:2],2'b0}==8'h70) begin
+      load_mult48_dx = dmagic_io_write_next;
+      dmagic_data_op_next = Data_Mult48_Dx;
+    end else if({dmagic_io_address_next[7:2],2'b0}==8'h74) begin
+      load_mult48_ex = dmagic_io_write_next;
+      dmagic_data_op_next = Data_Mult48_Ex;
+    end else if({dmagic_io_address_next[7:3],3'b0}==8'h78) begin
+      dmagic_data_op_next = Data_Mult48_Ex;
     end
   end
 end
@@ -672,9 +719,13 @@ endmodule
 `SCHEM_KEEP_HIER module dmagic_output_reg(input clk, input data_op_read, input [3:0] dmagic_data_op_next, 
                                           input [19:0] dmagic_list_addr, input support_f01b, input [19:0] dmagic_pio_base_addr,
                                           input [7:0] dmagic_pio_index, input [7:0] dmagic_read_data, 
+                                          input [7:0] dmagic_mult_dx, input [7:0] dmagic_mult_ex, input [7:0] dmagic_mult_rx,
                                           input dmagic_busy, output reg [7:0] dmagic_io_data);
 
 parameter Data_Idle                     = 4'h0,
+          Data_Mult48_Dx                = 4'h1,
+          Data_Mult48_Ex                = 4'h2,
+          Data_Mult48_Rx                = 4'h3,
           Data_List0                    = 4'h8,
           Data_List1                    = 4'h9,
           Data_List2                    = 4'hA,
@@ -690,6 +741,9 @@ begin
     dmagic_io_data <= dmagic_read_data;
   else begin
     case (dmagic_data_op_next)
+      Data_Mult48_Dx: dmagic_io_data <= dmagic_mult_dx;
+      Data_Mult48_Ex: dmagic_io_data <= dmagic_mult_ex;
+      Data_Mult48_Rx: dmagic_io_data <= dmagic_mult_rx;
       Data_List0:     dmagic_io_data <= dmagic_list_addr[7:0];
       Data_List1:     dmagic_io_data <= dmagic_list_addr[15:8];
       Data_List2:     dmagic_io_data <= {4'h0, dmagic_list_addr[19:16]};

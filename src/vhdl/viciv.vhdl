@@ -857,9 +857,6 @@ architecture Behavioral of viciv is
   signal raster_buffer_write_data : unsigned(17 downto 0);
   signal raster_buffer_write : std_logic;  
 
-  signal xpixel_640 : unsigned(10 downto 0);
-  signal xpixel_640_sub : unsigned(9 downto 0);
-
 
   signal xpixel_fw640 : unsigned(10 downto 0);
   signal xpixel_fw640_sub : unsigned(9 downto 0);
@@ -2771,24 +2768,6 @@ begin
         sprite_number_for_data_tx <= sprite_number_for_data_tx + 1;
       end if;
 
-      -- Output the logical pixel number assuming H640 output
-      -- (Used for Matrix Mode and visual keyboard compositers, so that
-      -- they know how the actual mode is laid out).
-      if displayx_drive = 0 then
-        xpixel_640_sub <= (others => '0');
-        xpixel_640 <= (others => '0');
-      else
-        if xpixel_640_sub >= 240 then
-          xpixel_640_sub <= xpixel_640_sub - 240 + chargen_x_scale;
-          xpixel_640 <= xpixel_640 + 2;
-        elsif xpixel_640_sub >= 120 then
-          xpixel_640_sub <= xpixel_640_sub - 120 + chargen_x_scale;
-          xpixel_640 <= xpixel_640 + 1;
-        else
-          xpixel_640_sub <= xpixel_640_sub + chargen_x_scale;
-        end if;
-      end if;
-
       -- Update counters for X and Y position for compositers
       if xcounter = 0 then
         xpixel_fw640_sub <= (others => '0');
@@ -3159,8 +3138,10 @@ begin
       last_vicii_xcounter_640 <= vicii_xcounter_640;
       if vicii_xcounter_640 /= last_vicii_xcounter_640 then
         lcd_pixel_strobe <= indisplay;
+        report "lcd_pixel_strobe = " & std_logic'image(indisplay);
       else
         lcd_pixel_strobe <= '0';
+        report "lcd_pixel_strobe = 0";
       end if;
       
       -- Stop drawing characters when we reach the end of the prepared data
@@ -3855,13 +3836,13 @@ begin
           
           -- Work out if character is full colour (ignored for bitmap mode but
           -- calculated outside of if test to flatten logic).
-          if screen_ram_buffer_dout(3 downto 0) = "0000" then
+          if screen_ram_buffer_dout(4 downto 0) = "00000" then
             glyph_full_colour <= fullcolour_8bitchars;
           else
             glyph_full_colour <= fullcolour_extendedchars;
           end if;
           if text_mode='1' then
-            -- We only allow 4096 characters in extended mode.
+            -- We only allow 8192 characters in extended mode.
             -- The spare bits are used to provide some (hopefully useful)
             -- extended attributes.
             glyph_number(12 downto 8) <= screen_ram_buffer_dout(4 downto 0);
@@ -4085,7 +4066,7 @@ begin
             full_colour_data(63 downto 56) <= "00000000";
           end if;
           if glyph_reverse='1' then
-            full_colour_data(63 downto 56) <= not ramdata;
+            full_colour_data(63 downto 56) <= ramdata xor "11111111";
           end if;
           if glyph_underline='1' then
             full_colour_data(63 downto 56) <= "11111111";
@@ -4459,14 +4440,14 @@ begin
           paint_full_colour_data <= full_colour_data;
           paint_fsm_state <= PaintFullColourPixels;
         when PaintFullColourPixels =>
-          if paint_full_colour_data(7 downto 0) = x"00" then
-            -- background pixel
-            raster_buffer_write_data(16 downto 9) <= x"FF";  -- solid alpha
-            raster_buffer_write_data(8) <= '0';
-            raster_buffer_write_data(7 downto 0) <= paint_background;
-          else
-            -- foreground pixel
-            if paint_with_alpha='0' then
+          if paint_with_alpha='0' then
+            if paint_full_colour_data(7 downto 0) = x"00" then
+              -- background pixel
+              raster_buffer_write_data(16 downto 9) <= x"FF";  -- solid alpha
+              raster_buffer_write_data(8) <= '0';
+              raster_buffer_write_data(7 downto 0) <= paint_background;
+            else
+              -- foreground pixel
               report "LEGACY: full-colour glyph painting pixel $" & to_hstring(paint_full_colour_data(7 downto 0))
                 & " into buffer @ $" & to_hstring(raster_buffer_write_address);
               raster_buffer_write_data(16 downto 9) <= x"FF";  -- solid alpha
@@ -4476,19 +4457,19 @@ begin
               else
                 raster_buffer_write_data(7 downto 0) <= paint_foreground;
               end if;
-            else
-              -- XXX Add alternate alpha mode where alhpa value is picked by
-              -- colour RAM, allowing full colour chars to be faded in and out
-              -- from background?
-              report "LEGACY: full-colour glyph painting alpha pixel $"
-                & to_hstring(paint_full_colour_data(7 downto 0))
-                & " with alpha value $" & to_hstring(paint_full_colour_data(7 downto 0));
-              -- 8-bit pixel values provide the alpha
-              raster_buffer_write_data(16 downto 9) <= paint_full_colour_data(7 downto 0);
-              raster_buffer_write_data(8) <= '1';
-              -- colour RAM colour provides the foreground
-              raster_buffer_write_data(7 downto 0) <= paint_foreground;
             end if;
+          else
+            -- XXX Add alternate alpha mode where alhpa value is picked by
+            -- colour RAM, allowing full colour chars to be faded in and out
+            -- from background?
+            report "LEGACY: full-colour glyph painting alpha pixel $"
+              & to_hstring(paint_full_colour_data(7 downto 0))
+              & " with alpha value $" & to_hstring(paint_full_colour_data(7 downto 0));
+            -- 8-bit pixel values provide the alpha
+            raster_buffer_write_data(16 downto 9) <= paint_full_colour_data(7 downto 0);
+            raster_buffer_write_data(8) <= '1';
+            -- colour RAM colour provides the foreground
+            raster_buffer_write_data(7 downto 0) <= paint_foreground;
           end if;
           paint_full_colour_data(55 downto 0) <= paint_full_colour_data(63 downto 8);
           raster_buffer_write_address <= raster_buffer_write_address + 1;

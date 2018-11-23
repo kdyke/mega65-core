@@ -85,6 +85,11 @@ module monitor_ctrl(input clk, input pixclk, input reset, output wire reset_out,
 						   `MARK_DEBUG input monitor_hypervisor_mode,
 						   `MARK_DEBUG output wire monitor_hyper_trap,
 						   `MARK_DEBUG input [7:0] protected_hardware,
+
+		    /* For controling access to secure mode */
+				input 		   secure_mode_from_cpu,
+				output reg 	   secure_mode_from_monitor,
+		                output reg         clear_matrix_mode_toggle,
                                     
                     /* Watch interface */
 				output reg [23:0]  monitor_watch,
@@ -102,24 +107,28 @@ module monitor_ctrl(input clk, input pixclk, input reset, output wire reset_out,
 						   `MARK_DEBUG input monitor_char_toggle,
 						   `MARK_DEBUG output reg monitor_char_busy,
 
-				input [7:0]	   uart_char,
+				input [7:0] 	   uart_char,
 				input 		   uart_char_valid,
 		    
 		    
 				output wire [15:0] bit_rate_divisor, input rx, output wire tx, output reg activity);
 
+   initial  secure_mode_from_monitor = 0;
+   
 // Internal debugging
 `MARK_DEBUG wire [7:0] monitor_di;
 assign monitor_di = di;
 
 // MON_RESET_TIMEOUT
-reg [7:0] reset_timeout;
-reg reset_processing;
+reg [7:0] reset_timeout = 255;
+reg reset_processing = 0;
 // reset_out is asserted any time reset_timeout != 0
 assign reset_out = (reset_timeout != 0);
 
 always @(posedge clk)
-begin
+  begin
+     $display("reset=%b, reset_processing=%b, reset_timeoud=%u",reset,reset_processing,reset_timeout);
+     
   if(reset & ~reset_processing)
   begin
     reset_processing <= 1;
@@ -313,6 +322,16 @@ begin
     begin
       history_write_index[9:8] = di[1:0];
       mem_trace_reg[2] <= 0;
+    end
+    if(address == `MON_UART_STATUS)
+    begin
+       // cancel matrix mode if we write to $900A
+       clear_matrix_mode_toggle <= ~clear_matrix_mode_toggle;
+    end 
+    if(address == `MON_STATE_CNT)
+    begin
+       // Writing to $901C from the monitor also instructs CPU to
+       secure_mode_from_monitor <= di[7];
     end
     if(address == `MON_TRACE_CTRL)
     begin
@@ -640,8 +659,8 @@ begin
   `MON_UART_RX:          do <= rx_data;
     `MON_KEYBOARD_RX:    do <= uart_char;    
 //  `MON_UART_TX:          do <= tx_data;
-  `MON_UART_STATUS:      do <= { rx_data_ready & ~rx_data_ack, tx_ready, uart_char_waiting, 5'b000000}; // Once we ack, mask off data ready bit.
-  `MON_STATE_CNT:        do <= { 3'b000, cpu_state_write_index_reg };
+  `MON_UART_STATUS:      do <= { rx_data_ready & ~rx_data_ack, tx_ready, uart_char_waiting, 5'b00000}; // Once we ack, mask off data ready bit.
+  `MON_STATE_CNT:        do <= { secure_mode_from_cpu, 2'b00, cpu_state_write_index_reg };
   
 //  `MON_WATCH_ADDR0:      do <= monitor_watch[7:0];
 //  `MON_WATCH_ADDR1:      do <= monitor_watch[15:8];

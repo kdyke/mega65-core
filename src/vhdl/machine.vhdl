@@ -110,8 +110,8 @@ entity machine is
          -------------------------------------------------------------------------
          -- CIA1 ports for keyboard and joysticks
          -------------------------------------------------------------------------
-         porta_pins : inout  std_logic_vector(7 downto 0);
-         portb_pins : inout  std_logic_vector(7 downto 0);
+         porta_pins : inout  std_logic_vector(7 downto 0) := (others => 'Z');
+         portb_pins : in  std_logic_vector(7 downto 0);
          keyleft : in std_logic;
          keyup : in std_logic;
          keyboard_column8 : out std_logic;
@@ -316,8 +316,8 @@ architecture Behavioral of machine is
     monitor_sp : out unsigned(15 downto 0);
     monitor_map_offset_low : in unsigned(11 downto 0);
     monitor_map_offset_high : in unsigned(11 downto 0);
-    monitor_map_enables_low : in std_logic_vector(3 downto 0);
-    monitor_map_enables_high : in std_logic_vector(3 downto 0)
+    monitor_map_enables_low : in unsigned(3 downto 0);
+    monitor_map_enables_high : in unsigned(3 downto 0)
     );
   end component;
   
@@ -429,6 +429,9 @@ architecture Behavioral of machine is
       protected_hardware_in : in unsigned(7 downto 0);
       uart_char : in unsigned(7 downto 0);
       uart_char_valid : in std_logic;
+      secure_mode_from_cpu : in std_logic;
+      secure_mode_from_monitor : out std_logic := '0';
+      clear_matrix_mode_toggle : out std_logic := '0';
 
       monitor_char_out : out unsigned(7 downto 0);
       monitor_char_valid : out std_logic;
@@ -453,7 +456,7 @@ architecture Behavioral of machine is
       monitor_watch : out unsigned(23 downto 0) := x"7FFFFF";
       monitor_watch_match : in std_logic;
       monitor_opcode : in unsigned(7 downto 0);
-      monitor_ibytes : in std_logic_vector(3 downto 0);
+      monitor_ibytes : in unsigned(3 downto 0);
       monitor_arg1 : in unsigned(7 downto 0);
       monitor_arg2 : in unsigned(7 downto 0);
       monitor_memory_access_address : in unsigned(31 downto 0);
@@ -468,8 +471,8 @@ architecture Behavioral of machine is
       monitor_p : in unsigned(7 downto 0);
       monitor_map_offset_low : in unsigned(11 downto 0);
       monitor_map_offset_high : in unsigned(11 downto 0);
-      monitor_map_enables_low : in std_logic_vector(3 downto 0);
-      monitor_map_enables_high : in std_logic_vector(3 downto 0);
+      monitor_map_enables_low : in unsigned(3 downto 0);
+      monitor_map_enables_high : in unsigned(3 downto 0);
       monitor_interrupt_inhibit : in std_logic;
 
       monitor_char : in unsigned(7 downto 0);
@@ -636,8 +639,8 @@ architecture Behavioral of machine is
   signal monitor_mem_wdata : unsigned(7 downto 0);
   signal monitor_map_offset_low : unsigned(11 downto 0);
   signal monitor_map_offset_high : unsigned(11 downto 0);
-  signal monitor_map_enables_low : std_logic_vector(3 downto 0);
-  signal monitor_map_enables_high : std_logic_vector(3 downto 0);   
+  signal monitor_map_enables_low : unsigned(3 downto 0);
+  signal monitor_map_enables_high : unsigned(3 downto 0);   
   signal monitor_mem_read : std_logic;
   signal monitor_mem_write : std_logic;
   signal monitor_mem_setpc : std_logic;
@@ -663,7 +666,7 @@ architecture Behavioral of machine is
   signal monitor_sp : unsigned(15 downto 0);
   signal monitor_p : unsigned(7 downto 0);
   signal monitor_opcode : unsigned(7 downto 0);
-  signal monitor_ibytes : std_logic_vector(3 downto 0);
+  signal monitor_ibytes : unsigned(3 downto 0);
   signal monitor_arg1 : unsigned(7 downto 0);
   signal monitor_arg2 : unsigned(7 downto 0);
 
@@ -714,7 +717,6 @@ architecture Behavioral of machine is
   signal hsync_ntsc60_uninverted : std_logic := '0';
   signal hsync_pal50_driver_uninverted : std_logic := '0';
   signal vsync_drive1 : std_logic := '0';
-  signal lcd_pixel_strobe1 : std_logic := '0';
   signal lcd_display_enable1 : std_logic := '0';
 
   signal hsync_polarity : std_logic := '0';
@@ -816,6 +818,8 @@ architecture Behavioral of machine is
   signal zoom_en_always : std_logic;
   signal keyboard_at_top : std_logic;
   signal alternate_keyboard : std_logic;
+  signal osk_ystart : unsigned(11 downto 0); 
+  
   signal osk_x : unsigned(11 downto 0);
   signal osk_y : unsigned(11 downto 0);
   signal osk_key1 : unsigned(7 downto 0);
@@ -835,6 +839,9 @@ architecture Behavioral of machine is
   signal osk_touch2_key_driver : unsigned(7 downto 0) := x"FF";
 
   signal secure_mode_flag : std_logic := '0';
+  signal secure_mode_from_monitor : std_logic := '0';
+  signal secure_mode_triage_required : std_logic := '0';
+  signal clear_matrix_mode_toggle : std_logic := '0';
   signal matrix_rain_seed : unsigned(15 downto 0);
   signal hsync_drive : std_logic := '0';
   signal vsync_drive : std_logic := '0';
@@ -943,7 +950,13 @@ architecture Behavioral of machine is
   
 begin
 
-  monitor_roms <= colourram_at_dc00 & rom_at_e000  & rom_at_c000 & rom_at_a000 & rom_at_8000 & monitor_cpuport;
+  monitor_roms(7) <= colourram_at_dc00;
+  monitor_roms(6) <= rom_at_e000;
+  monitor_roms(5) <= rom_at_c000;
+  monitor_roms(4) <= rom_at_a000;
+  monitor_roms(3) <= rom_at_8000;
+  monitor_roms(2 downto 0) <= monitor_cpuport;
+
   slow_access_write   <= system_write;
   slow_access_address <= unsigned(system_address);
   slow_access_wdata   <= unsigned(system_wdata);
@@ -969,16 +982,17 @@ begin
       report "reset asserted via power_on_reset(0)";
       reset_combined <= '0';
     elsif reset_monitor='0' then
-      report "reset asserted via reset_monitor";
+      report "reset asserted via reset_monitor = " & std_logic'image(reset_monitor);
       reset_combined <= '0';
     else
+      report "reset_combined not asserted";
       reset_combined <= '1';
     end if;
 
     hyper_trap_combined <= hyper_trap and monitor_hyper_trap;
     
   -- report "btnCpuReset = " & std_logic'image(btnCpuReset) & ", reset_io = " & std_logic'image(reset_io) & ", sw(15) = " & std_logic'image(sw(15)) severity note;
-  -- report "reset_combined = " & std_logic'image(reset_combined) severity note;
+    report "reset_combined = " & std_logic'image(reset_combined) severity note;
   end process;
     
   process(pixelclock,ioclock)
@@ -1008,7 +1022,8 @@ begin
       led(4) <= io_irq;
       led(5) <= io_nmi;
       led(6) <= '0';
-      led(7) <= '0';
+      led(7) <= clear_matrix_mode_toggle;
+
       led(8) <= motor;
       led(9) <= drive_led_out;
       led(10) <= cpu_hypervisor_mode;
@@ -1227,6 +1242,7 @@ begin
       iomode              => viciii_iomode,
       iomode_set          => iomode_set,
       iomode_set_toggle   => iomode_set_toggle
+
     );
   
   --cpu0: entity work.gs4510
@@ -1253,6 +1269,8 @@ begin
   --    cpuis6502 => cpuis6502,
   --    cpuspeed => cpuspeed,
   --    secure_mode_out => secure_mode_flag,
+  --    secure_mode_from_monitor => secure_mode_from_monitor,
+  --    clear_matrix_mode_toggle => clear_matrix_mode_toggle,
   --    matrix_rain_seed => matrix_rain_seed,
   --
   --    irq_hypervisor => sw(4 downto 2),    -- JBM
@@ -1620,6 +1638,7 @@ begin
       green_o => vgagreen_sig_driver,
       blue_o => vgablue_sig_driver,      
 
+      raster_strobe => external_frame_x_zero,
       hsync_i => hsync_drive1,
       hsync_o => hsync_driver,
       vsync_i => vsync_drive1,
@@ -1636,7 +1655,7 @@ begin
       lcd_display_enable_i => lcd_display_enable1,
       lcd_display_enable_o => lcd_display_enable,
 
-      lcd_pixel_strobe_i => lcd_pixel_strobe1,
+      lcd_pixel_strobe_i => pixel_strobe,
       lcd_pixel_strobe_o => lcd_pixel_strobe
 
       );
@@ -2078,11 +2097,14 @@ begin
     lcd_in_letterbox => lcd_in_letterbox,
     pixel_y_scale_200 => pixel_y_scale_200,
     pixel_y_scale_400 => pixel_y_scale_400,
-    ycounter_in => ycounter,	
+    ycounter_in => ycounter,
+    osk_ystart => osk_ystart,
+    visual_keyboard_enable => visual_keyboard_enable,
+    keyboard_at_top => keyboard_at_top,
     clk => uartclock,
     pixelclock => pixelclock,
     matrix_mode_enable => protected_hardware_sig(6),--sw(5),
-    secure_mode_flag =>  secure_mode_flag,
+    secure_mode_flag =>  secure_mode_triage_required,
     vgared_in => vgared_sig,
     vgagreen_in => vgagreen_sig,
     vgablue_in => vgablue_sig,
@@ -2110,6 +2132,7 @@ begin
     keyboard_at_top => keyboard_at_top,
     alternate_keyboard => alternate_keyboard,
     instant_at_top => '0',
+    osk_ystart => osk_ystart,
     key1 => osk_key1,
     key2 => osk_key2,
     key3 => osk_key3,
@@ -2159,6 +2182,10 @@ begin
     terminal_emulator_ack => terminal_emulator_ack,
     
     force_single_step => sw(11),
+
+    secure_mode_from_cpu => secure_mode_flag,
+    secure_mode_from_monitor => secure_mode_from_monitor,
+    clear_matrix_mode_toggle => clear_matrix_mode_toggle,
     
     fastio_read => system_read,
     fastio_write => system_write,
@@ -2218,6 +2245,8 @@ begin
   begin
     if rising_edge(cpuclock) then
 
+      secure_mode_triage_required <= protected_hardware_sig(7) or secure_mode_from_monitor;
+      
       osk_touch1_key <= osk_touch1_key_driver;
       osk_touch2_key <= osk_touch2_key_driver;
       
@@ -2334,7 +2363,6 @@ begin
       lcd_hsync1 <= hsync_pal50;
       lcd_vsync1 <= not lcd_vsync_pal50;
       lcd_display_enable1 <= lcd_inframe_pal50;
-      lcd_pixel_strobe1 <= clock30;
       external_frame_x_zero_driver <= x_zero_pal50;
       external_frame_y_zero_driver <= y_zero_pal50;
     else
@@ -2345,7 +2373,6 @@ begin
       lcd_hsync1 <= hsync_ntsc60;
       lcd_vsync1 <= lcd_vsync_ntsc60;
       lcd_display_enable1 <= lcd_inframe_ntsc60;
-      lcd_pixel_strobe1 <= clock40;
       external_frame_x_zero_driver <= x_zero_ntsc60;
       external_frame_y_zero_driver <= y_zero_ntsc60;
     end if;

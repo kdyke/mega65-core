@@ -526,7 +526,8 @@ begin
     dmagic_cs_next <= '0';
     if io_sel_next='1' and viciii_iomode(0)='1' then
       if system_address_next(11 downto 4) = x"71" or 
-         system_address_next(11 downto 4) = x"70" then
+         system_address_next(11 downto 4) = x"70" or
+         system_address_next(11 downto 4) = x"77" then
         dmagic_cs_next <= '1';
       end if;
     end if;

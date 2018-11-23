@@ -44,6 +44,8 @@ architecture behavioral of matrix_to_ascii is
   constant repeat_start_timer : integer := clock_frequency/scan_frequency/2; -- 0.5 sec
   constant repeat_again_timer : integer := clock_frequency/scan_frequency/10; -- 0.1 sec
 
+  signal ascii_key_valid_countdown : integer range 0 to 255 := 0;
+
   signal repeat_key_timer : integer range 0 to repeat_start_timer := 0;
 
   -- This one snoops the input and gets atomically snapshotted at each keyscan interval
@@ -100,7 +102,7 @@ architecture behavioral of matrix_to_ascii is
     24 => x"37", -- '/7
     25 => x"79", -- Y/y
     26 => x"67", -- G/g
-    27 => x"38", -- {/8
+    27 => x"38", -- (/8
     28 => x"62", -- B/b
     29 => x"68", -- H/h
     30 => x"75", -- U/u
@@ -108,7 +110,7 @@ architecture behavioral of matrix_to_ascii is
     32 => x"39", -- )/9
     33 => x"69", -- I/i
     34 => x"6a", -- J/j
-    35 => x"30", -- {/0
+    35 => x"30", -- 0/0
     36 => x"6d", -- M/m
     37 => x"6b", -- K/k
     38 => x"6f", -- O/o
@@ -177,7 +179,7 @@ architecture behavioral of matrix_to_ascii is
     24 => x"27", -- '/7
     25 => x"59", -- Y/y
     26 => x"47", -- G/g
-    27 => x"7b", -- {/8
+    27 => x"28", -- (/8
     28 => x"42", -- B/b
     29 => x"48", -- H/h
     30 => x"55", -- U/u
@@ -203,11 +205,11 @@ architecture behavioral of matrix_to_ascii is
     50 => x"5d", -- ]/;
     51 => x"93", -- CLR/HOM
     52 => x"00", -- RIGHT/SHIFT
-    53 => x"7d", -- }/=
+    53 => x"5f", -- _/=
     54 => x"00", -- SPECIAL/UNPRINTABLE/^
     55 => x"3f", -- ?//
     56 => x"21", -- !/1
-    57 => x"7e", -- SPECIAL/UNPRINTABLE/_
+    57 => x"60", -- `/_
     58 => x"00", -- CTRL/NO KEY
     59 => x"22", -- "/2
     60 => x"20", -- SPACE/BAR
@@ -284,7 +286,7 @@ architecture behavioral of matrix_to_ascii is
     54 => x"00", -- SPECIAL/UNPRINTABLE/^
     55 => x"2f", -- ?//
     56 => x"05", -- !/SPECIAL/UNPRINTABLE
-    57 => x"5f", -- SPECIAL/UNPRINTABLE/_
+    57 => x"60", -- SPECIAL/UNPRINTABLE/_
     58 => x"00", -- CTRL/NO KEY
     59 => x"1c", -- "/SPECIAL/UNPRINTABLE
     60 => x"20", -- SPACE/BAR
@@ -348,20 +350,20 @@ architecture behavioral of matrix_to_ascii is
     41 => x"d0", -- P/SPECIAL/UNPRINTABLE
     42 => x"cc", -- L/SPECIAL/UNPRINTABLE
     43 => x"2d", -- NO KEY/-
-    44 => x"2e", -- >/.
-    45 => x"3a", -- [/:
+    44 => x"7c", -- >/./|
+    45 => x"7b", -- [/:/{
     46 => x"40", -- NO KEY/@
-    47 => x"2c", -- </,
+    47 => x"7e", -- </,/~
     48 => x"00", -- SPECIAL/UNPRINTABLE/NO KEY
     49 => x"00", -- */NO KEY
-    50 => x"3b", -- ]/;
+    50 => x"7d", -- ]/;/}
     51 => x"93", -- CLR/HOM
     52 => x"00", -- RIGHT/SHIFT
-    53 => x"3d", -- }/=
+    53 => x"5f", -- _/=
     54 => x"00", -- SPECIAL/UNPRINTABLE/^
-    55 => x"2f", -- ?//
+    55 => x"5c", -- ?///\
     56 => x"95", -- !/SPECIAL/UNPRINTABLE
-    57 => x"ef", -- SPECIAL/UNPRINTABLE/_    C= + <- = matrix mode (for C64 keyboards)
+    57 => x"60", -- _/`/`
     58 => x"00", -- CTRL/NO KEY
     59 => x"96", -- "/SPECIAL/UNPRINTABLE
     60 => x"20", -- SPACE/BAR
@@ -555,7 +557,11 @@ begin
             -- lines will be detected as firmly down.            
             if (repeat_key /= key_num) or (suppress_key_retrigger='0') then
               repeat_key_timer <= repeat_start_timer;
-              ascii_key_valid <= '1';
+              if key_matrix(key_num) = x"11" or key_matrix(key_num) = x"1D" then
+                ascii_key_valid_countdown <= 255;
+              else
+                ascii_key_valid <= '1';
+              end if;
             end if;
           else
             ascii_key_valid <= '0';
@@ -577,6 +583,18 @@ begin
               --ascii_key_valid <= '0';              
             end if;
           end if;
+        end if;
+
+        -- Do delayed presentation of down/right, modifying it to up/left if
+        -- the shift key has gone down in the meantime.
+        if ascii_key_valid_countdown = 1 then
+          ascii_key_valid_countdown <= 0;
+          ascii_key_valid <= '1';
+          ascii_key(7) <= bucky_key_internal(1);
+        elsif ascii_key_valid_countdown /= 0 then
+          ascii_key_valid_countdown <= ascii_key_valid_countdown - 1;
+        else
+          null;
         end if;
         
         if key_num /= 71 then

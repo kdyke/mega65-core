@@ -28,6 +28,9 @@
   output reg key_scancode_toggle,
       
   input force_single_step,
+  input secure_mode_from_cpu,
+  output secure_mode_from_monitor,
+  output clear_matrix_mode_toggle,
     
   input fastio_read,
   input fastio_write,
@@ -201,6 +204,9 @@
                            .monitor_hypervisor_mode(monitor_hypervisor_mode),
                            .monitor_hyper_trap(monitor_hyper_trap),
                            .protected_hardware(protected_hardware_in),
+			   .secure_mode_from_monitor(secure_mode_from_monitor),
+			   .secure_mode_from_cpu(secure_mode_from_cpu),
+			   .clear_matrix_mode_toggle(clear_matrix_mode_toggle),
                            .monitor_p(monitor_p), .monitor_pc(monitor_pc),
                            .monitor_watch(monitor_watch), .monitor_watch_match(monitor_watch_match),
                            .monitor_char_out(monitor_char_out), .monitor_char_valid(monitor_char_valid), .terminal_emulator_ready(terminal_emulator_ready),

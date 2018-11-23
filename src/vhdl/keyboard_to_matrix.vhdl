@@ -7,7 +7,7 @@ use work.debugtools.all;
 
 entity keyboard_to_matrix is
   port (Clk : in std_logic;        
-        porta_pins : inout  std_logic_vector(7 downto 0) := (others => 'H');
+        porta_pins : inout  std_logic_vector(7 downto 0) := (others => 'Z');
         portb_pins : in  std_logic_vector(7 downto 0);
         keyboard_column8_out : out std_logic := '1';
         key_left : in std_logic;
@@ -59,15 +59,19 @@ begin
     if rising_edge(clk) then
 
       -- Present virtualised keyboard
+      -- XXX Note that the virtualised keyboard is out by one column,
+      -- which we correct at the hardware by rearranging the colunms
+      -- we connect. This just leaves left and up that simulate specific
+      -- keys that we have to shift left one column to match
       scan_mask := x"FF";      
-      if scan_phase = 0 then
+      if scan_phase = 8 then
         if key_left = scan_mode(0) then
           scan_mask(2) := '0';
         end if;
         if key_up = scan_mode(0) then
           scan_mask(7) := '0';
         end if;
-      elsif scan_phase = (52 / 8) then
+      elsif scan_phase = 5 then
         if key_left = scan_mode(0) or key_up = scan_mode(0) then
           scan_mask(52 mod 8) := '0';
         end if;
@@ -81,11 +85,11 @@ begin
       -- problems that cause multiple key presses on the same row/column
       -- to lead to too many pull-ups combining to leave the input
       -- voltage too high to register a key press.
-      --if counter<8 then
-      --  portb_pins <= (others => 'Z');
-      --else
-      --  portb_pins <= (others => 'H');
-      --end if;
+--      if counter<8 then
+--        portb_pins <= (others => 'Z');
+--      else
+--        portb_pins <= (others => 'Z');
+--      end if;
       
       keyram_wea <= x"00";
       
@@ -117,6 +121,13 @@ begin
         -- Driving columns low works just fine, however. What it seems like is
         -- that the row pins (portb_pins) is being driven high, instead of
         -- tristates, i.e., '1' instead of 'H' or 'Z'.
+
+        -- We got this sorted out in ISE, but now under Vivado, we have the same
+        -- problem again. (eg. right-shift + M doesn't work).  However, as we will
+        -- be moving to the fancy new keyboard that will feed the matrix data
+        -- directly in, rather than being scanned in the old way, it isn't such
+        -- an issue, although it would still be really nice to figure it out and
+        -- fix it.
 
         -- Don't enable if we see pins staying tied low
         if portb_pins = "11111111" then

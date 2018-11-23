@@ -129,6 +129,7 @@
       .space      trace_continuous    1       ; monitor state flag      
       .space      fill_value          1       ; memory fill value
       .space      in_matrix_mode      1
+      .space      in_secure_mode      1
       .space      hex_value           4       ; 4 bytes for parsed hex value
       .space      target_addr         4       ; 4 bytes for target hex address
       .space      flag_ptr            2       ; pointer to flag byte
@@ -227,11 +228,28 @@ accepting_input:
 
 check_protected_hw:
       bit         protected_hw
+      bmi	  maybe_enter_secure_mode
+      lda	  in_secure_mode
+      bne	  leave_secure_mode
       bvs         maybe_enter_matrix_mode
       lda         #0
 update_protected_hw:
       sta         in_matrix_mode
 check_protected_hw_exit:
+      rts
+leave_secure_mode:
+;	`printstr	securemode_exit_msg
+	lda	#0
+	sta	in_secure_mode
+	rts
+
+maybe_enter_secure_mode:
+      lda	  in_secure_mode
+      bne	  +
+      ; XXX - We should indicate how much space is transfer
+;      `printstr	  securemode_entry_msg      
+*     lda	  #$80
+      sta	  in_secure_mode
       rts
 maybe_enter_matrix_mode:
       lda         in_matrix_mode
@@ -321,20 +339,22 @@ wipememory:
 	jsr   	erase_memory
 	jmp	accepting_input
 
-cursorup:
-	; Subtract $100 from mem_addr, and act as though M was pressed
-	; (actually subtract $200, since we want to end $100 behind)
+cursordown:
+	; Subtract $80 from mem_addr, and act as though M was pressed
+	; (actually subtract $100, since we want to end $80 behind)
 
 	; XXX - Should actually skip over memory pages that are empty
 
-	lda   #16
+	; We display exactly 8 rows, since it is 1/2 a screen with no visual
+	; keyboard, or a full screen with visual keyboard on.
+	lda   #8
 	sta   mem_line_cnt
 	lda   #$0d
 	jsr   output_char
 
 	lda 	   mem_addr+1
 	sec
-	sbc	#$02
+	sbc	#$01
 	sta	mem_addr+1
 	lda	mem_addr+2
 	sbc	#$00
@@ -346,10 +366,12 @@ cursorup:
 ; and repeat accordingly.
 	jmp	   dump_mem
 
-cursordown:
+cursorup:
 	; display next page of memory
 
-	lda   #16
+	; We display exactly 8 rows, since it is 1/2 a screen with no visual
+	; keyboard, or a full screen with visual keyboard on.
+	lda   #8
 	sta   mem_line_cnt
 	lda   #$0d
 	jsr   output_char
@@ -470,9 +492,11 @@ accept_command:
 	; Accept is like reject, except that we don't erase memory first.
 	; It is up to the hypervisor to spot the difference.
 
-	; Resume CPU
-	lda   #$00	
-	sta   mon_trace
+	; Resume CPU by confirming mode change to/from secure mode
+	lda   in_secure_mode
+	sta   $901c
+	; And then cancel matrix mode
+	sta   $900a
 
 	jmp	next_command
 
@@ -483,6 +507,36 @@ erase_memory:
 	; all the other funny bits, like ethernet frame buffer, SD card buffers etc.
 	; basically we have to prevent ANY state being leaked out.  This is actually
 	; the hardest part of the whole system to get right.
+
+	; 1. Fill the first 1MB of address space
+	lda #$00
+	ldx #3
+*	sta mem_addr,x
+	sta top_addr,x
+	dex
+	bpl -
+	; Set top to 1MB mark
+	ldy #$10
+	sty top_addr+2
+	jsr fill_loop
+
+	; 2. Fill the IO address space $FF00000-$FFEFFFF
+	; ($FFFxxxx has the hypervisor memory, which we need to leave alone)
+	;
+	lda #$0F
+	sta mem_addr+3
+	sta top_addr+3
+	lda #$f0
+	sta mem_addr+2
+	ldy #$fe
+	sty top_addr+2
+	jsr fill_loop
+
+	; 3. XXX - Fill other colour palettes and other funny memories around
+	; the place.
+	; XXX - We could lock colour palette bank in secure mode to make life
+	; simpler for us here.
+	
 	rts
 
 bad_bitrate:
@@ -532,6 +586,11 @@ fill_mem_cmd:
       
       lda         hex_value             ; get fill value
       tay                               ; stash in Y
+
+      jsr	do_memory_fill
+      jmp	next_command
+
+do_memory_fill:
       
       ; Compare current address to top address using 32-bit unsigned compare (or subtract, in this case)
 fill_loop:
@@ -559,7 +618,7 @@ fill_bad_addr:
 bad_fill:
       `printstr   bad_fill_msg
 fill_done:
-      jmp         next_command
+      rts
       
 ; -------------------------------------
 ; Set Memory Command (s or S)   S forces upper address bytes to $0777
@@ -582,7 +641,7 @@ set_mem_start:
 set_mem_loop:
       jsr         parse_hex_value
       cpy         #0
-      beq         fill_done
+      beq         next_command
       cpy         #3
       beq         bad_fill
       
@@ -1702,13 +1761,24 @@ cmd_jmp_table:
       .word       reset_cmd,dump_cpu_memory_cmd,dump_memory_cmd,print_banner,print_banner,show_registers_cmd
       .word       trace_cmd,history_cmd,watch_cmd,break_cmd,set_pc_cmd,set_bitrate_cmd,irq_cmd,hyper_trap_cmd
       .word       flag_break_cmd,fill_mem_cmd,set_mem_cmd,load_mem_cmd,disassemble_mem_cmd
-      
+
+;securemode_entry_msg:
+;	.byte   "All storage and communications devices have been disconnected.",13,10
+;	.byte   "To proceed, type ACCEPT, or to abort, type REJECT.",13,10
+;	.byte 0
+
+;securemode_exit_msg:
+;	.byte	"Check that only what you expect is in memory before proceeding.",13,10
+;	.byte	"To release the data, type ACCEPT, or destroy it by typing REJECT."
+;	.byte 13,10,0
+
 banner_msg:
       .byte       "MEGA65 Serial Monitor",13,10
       .byte       "build "
       .include    "version.a65"
 crlf_str:
       .byte       13,10,0
+
 prompt_str:
       .byte       13,10,".",0
 backspace_msg:
