@@ -184,17 +184,18 @@ architecture Behavioral of container is
   signal cpu_game : std_logic := '1';
   signal cpu_exrom : std_logic := '1';
 
-  signal halfpixelclock : std_logic := '1';  
   signal pixelclock : std_logic;
+  signal ethclock : std_logic;
   signal cpuclock : std_logic;
   signal clock30 : std_logic;
-  signal clock33 : std_logic;
   signal clock40 : std_logic;
+  signal clock120 : std_logic;
+  signal clock100 : std_logic := '0';
   signal clock200 : std_logic;
+  signal clock240 : std_logic;
   
   signal segled_counter : unsigned(31 downto 0) := (others => '0');
 
-  signal clock100mhz : std_logic := '0';
 
   signal slow_access_request_toggle : std_logic;
   signal slow_access_ready_toggle : std_logic;
@@ -263,12 +264,13 @@ begin
 
   dotclock1: entity work.dotclock100
     port map ( clk_in1 => CLK_IN,
-               clock100 => pixelclock, -- 100MHz
+               clock80 => pixelclock, -- 80MHz
+               clock40 => cpuclock, -- 40MHz
+               clock50 => ethclock,
                clock30 => clock30,
-               clock33 => clock33,
-               clock40 => clock40,
-               clock50 => cpuclock, -- 50MHz
-               clock200 => clock200
+               clock100 => clock100,
+               clock120 => clock120,
+               clock240 => clock240
                );
 
   fpgatemp0: entity work.fpgatemp
@@ -334,19 +336,19 @@ begin
   
   machine0: entity work.machine
     generic map (
-      cpufrequency => 50)
+      cpufrequency => 40)
     port map (
       pixelclock      => pixelclock,
       cpuclock        => cpuclock,
-      clock30 => clock30,
-      clock33 => clock33,
-      clock40 => clock40,
-      clock50mhz      => cpuclock,
---      ioclock         => ioclock, -- 32MHz
---      uartclock         => ioclock, -- must be 32MHz
-      uartclock         => cpuclock, -- Match CPU clock (48MHz)
+      uartclock       => cpuclock, -- Match CPU clock
       ioclock         => cpuclock, -- Match CPU clock
-      clock200 => clock200,
+      clock100 => clock100,
+      clock240 => clock240,
+      clock120 => clock120,
+      clock40 => clock40,
+      clock30 => clock30,
+      clock50mhz      => ethclock,
+
       btncpureset => btncpureset,
       reset_out => reset_out,
       irq => irq,

@@ -20,7 +20,9 @@ entity alpha_blend_top is
     b_strm1:     in  std_logic_vector(9 downto 0);
     de_alpha:    in  std_logic;
     alpha_strm:  in  std_logic_vector(9 downto 0);
- 
+
+    alpha_delay : in unsigned(3 downto 0);
+    
      pixclk_out: out std_logic;
      hsync_blnd: out std_logic;
      vsync_blnd: out std_logic;
@@ -48,6 +50,20 @@ architecture behavioural of alpha_blend_top is
   signal alpha_strm_drive: unsigned(10 downto 0);
   signal oneminusalpha : integer;
 
+  signal alpha_delayed : unsigned(10 downto 0);
+  signal oneminusalpha_delayed : integer;
+  signal alpha_delayed1 : unsigned(10 downto 0);
+  signal oneminusalpha_delayed1 : integer;
+  signal alpha_delayed2 : unsigned(10 downto 0);
+  signal oneminusalpha_delayed2 : integer;
+  signal alpha_delayed3 : unsigned(10 downto 0);
+  signal oneminusalpha_delayed3 : integer;
+  signal alpha_delayed4 : unsigned(10 downto 0);
+  signal oneminusalpha_delayed4 : integer;
+  signal alpha_delayed5 : unsigned(10 downto 0);
+  signal oneminusalpha_delayed5 : integer;
+  
+  
 begin
   
   process (clk1x) is
@@ -60,26 +76,62 @@ begin
       -- and will avoid the wrap-around from stark white to black that we are seeing.
       alpha_strm_drive <= unsigned("0"&alpha_strm);
       oneminusalpha <= (1024-to_integer(unsigned(alpha_strm)));
+
+      alpha_delayed1 <= alpha_strm_drive;
+      oneminusalpha_delayed1 <= oneminusalpha;
+
+      alpha_delayed2 <= alpha_delayed1;
+      oneminusalpha_delayed2 <= oneminusalpha_delayed1;
+
+      alpha_delayed3 <= alpha_delayed2;
+      oneminusalpha_delayed3 <= oneminusalpha_delayed2;
+
+      alpha_delayed4 <= alpha_delayed3;
+      oneminusalpha_delayed4 <= oneminusalpha_delayed3;
+
+      alpha_delayed5 <= alpha_delayed4;
+      oneminusalpha_delayed5 <= oneminusalpha_delayed4;
+      
+      case alpha_delay is
+        when x"1" =>
+          alpha_delayed <= alpha_delayed1;
+          oneminusalpha_delayed <= oneminusalpha_delayed1;
+        when x"2" =>
+          alpha_delayed <= alpha_delayed2;
+          oneminusalpha_delayed <= oneminusalpha_delayed2;
+        when x"3" =>
+          alpha_delayed <= alpha_delayed3;
+          oneminusalpha_delayed <= oneminusalpha_delayed3;
+        when x"4" =>
+          alpha_delayed <= alpha_delayed4;
+          oneminusalpha_delayed <= oneminusalpha_delayed4;
+        when x"5" =>
+          alpha_delayed <= alpha_delayed5;
+          oneminusalpha_delayed <= oneminusalpha_delayed5;
+        when others =>
+          alpha_delayed <= alpha_strm_drive;
+          oneminusalpha_delayed <= oneminusalpha;
+      end case;                    
       
       r0 <= to_integer(unsigned(r_strm0))
-            *to_integer(alpha_strm_drive);
-      r1 <= to_integer(unsigned(r_strm1))*oneminusalpha;
+            *to_integer(alpha_delayed);
+      r1 <= to_integer(unsigned(r_strm1))*oneminusalpha_delayed;
       r0drive <= r0;
       r1drive <= r1;
       temp := to_unsigned(r0drive+r1drive,20);
       r_blnd <= std_logic_vector(temp(19 downto 10));
 
       g0 <= to_integer(unsigned(g_strm0))
-            *to_integer(alpha_strm_drive);
-      g1 <= to_integer(unsigned(g_strm1))*oneminusalpha;
+            *to_integer(alpha_delayed);
+      g1 <= to_integer(unsigned(g_strm1))*oneminusalpha_delayed;
       g0drive <= g0;
       g1drive <= g1;
       temp := to_unsigned(g0drive+g1drive,20);
       g_blnd <= std_logic_vector(temp(19 downto 10));
       
       b0 <= to_integer(unsigned(b_strm0))
-            *to_integer(alpha_strm_drive);
-      b1 <= to_integer(unsigned(b_strm1))*oneminusalpha;
+            *to_integer(alpha_delayed);
+      b1 <= to_integer(unsigned(b_strm1))*oneminusalpha_delayed;
       b0drive <= b0;
       b1drive <= b1;
       temp := to_unsigned(b0drive+b1drive,20);

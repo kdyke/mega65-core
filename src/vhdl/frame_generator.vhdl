@@ -25,8 +25,9 @@ use Std.TextIO.all;
 entity frame_generator is
   generic (
     frame_width : integer := 960;
-    display_width : integer := 800;  -- 32 cycles of video pipeline
-    pipeline_delay : integer := 20;
+    display_width : integer := 800;
+    clock_divider : integer := 4;
+    pipeline_delay : integer := 0;
     frame_height : integer := 625;
     lcd_height : integer := 480;
     display_height : integer := 600;
@@ -36,23 +37,37 @@ entity frame_generator is
     hsync_end : integer := 880
     );
   port (
-    clock : in std_logic;
+    clock240 : in std_logic;
+    clock120 : in std_logic;
+    clock80 : in std_logic;
+
+    -- 80MHz oriented configuration flags
     hsync_polarity : in std_logic;
     vsync_polarity : in std_logic;
+
+    -- 120MHz video output oriented signals
     hsync : out std_logic := '0';
     hsync_uninverted : out std_logic := '0';
     vsync : out std_logic := '0';
     inframe : out std_logic := '0';
+    pixel_strobe_120 : out std_logic := '0';   -- used to clock read-side of
+                                               -- raster buffer fifo
 
+    lcd_hsync : out std_logic := '0';
     lcd_vsync : out std_logic := '0';
     lcd_inframe : out std_logic := '0';
 
-    x_zero : out std_logic := '0';
-    y_zero : out std_logic := '0';
-    
     red_o : out unsigned(7 downto 0) := x"00";
     green_o : out unsigned(7 downto 0) := x"00";
-    blue_o : out unsigned(7 downto 0) := x"00"
+    blue_o : out unsigned(7 downto 0) := x"00";
+
+    -- 80MHz oriented signals for VIC-IV
+    pixel_strobe_80 : out std_logic := '0';
+    x_zero_80 : out std_logic := '0';
+    x_zero_120 : out std_logic := '0';
+    y_zero_120 : out std_logic := '0';
+    y_zero_80 : out std_logic := '0'
+    
     
     );
 
@@ -62,7 +77,13 @@ architecture brutalist of frame_generator is
 
   signal x : integer := 0;
   signal x_zero_driver : std_logic := '0';
+  signal x_zero_driver2 : std_logic := '0';
+  signal x_zero_driver80 : std_logic := '0';
+  signal x_zero_driver80b : std_logic := '0';
   signal y_zero_driver : std_logic := '0';
+  signal y_zero_driver2 : std_logic := '0';
+  signal y_zero_driver80 : std_logic := '0';
+  signal y_zero_driver80b : std_logic := '0';
   signal y : integer := 0;
   signal inframe_internal : std_logic := '0';
 
@@ -72,19 +93,61 @@ architecture brutalist of frame_generator is
   signal hsync_driver : std_logic := '0';
   signal hsync_uninverted_driver : std_logic := '0';
 
+  signal pixel_toggle120 : std_logic := '0';
+  signal pixel_toggle80 : std_logic := '0';
+  signal last_pixel_toggle80 : std_logic := '0';
+  signal pixel_strobe_counter : integer range 0 to clock_divider := 0;
+
+  signal pixel_strobe120_drive : std_logic := '0';
   
 begin
 
-  process (clock) is
+  process (clock240,clock120,clock80) is
   begin
 
-    if rising_edge(clock) then
+    if rising_edge(clock80) then
+      -- Cross from 120MHz to 80MHz clock domains for VIC-IV signals
+      x_zero_80 <= x_zero_driver80b;
+      y_zero_80 <= y_zero_driver80b;
+      x_zero_driver80b <= x_zero_driver80;
+      y_zero_driver80b <= y_zero_driver80;      
+      x_zero_driver80 <= x_zero_driver2;
+      y_zero_driver80 <= y_zero_driver2;      
 
+      -- Pixel strobe to VIC-IV can just be a 50MHz pulse
+      -- train, since it all goes into a buffer.
+      -- But better is to still try to follow the 120MHz driven
+      -- chain.
+      pixel_toggle80 <= pixel_toggle120;
+      last_pixel_toggle80 <= pixel_toggle80;
+      if pixel_toggle80 /= last_pixel_toggle80 then
+        pixel_strobe_80 <= '1';
+      else
+        pixel_strobe_80 <= '0';
+      end if;
+    end if;
+
+    if rising_edge(clock120) then
+
+      x_zero_driver2 <= x_zero_driver;
+      y_zero_driver2 <= y_zero_driver;
+      x_zero_120 <= x_zero_driver;
+      y_zero_120 <= y_zero_driver;
+      
       vsync <= vsync_driver;
       hsync <= hsync_driver;
       hsync_uninverted <= hsync_uninverted_driver;
-      x_zero <= x_zero_driver;
-      y_zero <= y_zero_driver;
+      pixel_strobe_120 <= pixel_strobe120_drive;
+
+      -- Generate pixel strobe train
+      if pixel_strobe_counter = 0 then
+        pixel_strobe_counter <= (clock_divider - 1);
+        pixel_strobe120_drive <= '1';
+        pixel_toggle120 <= not pixel_toggle120;
+      else
+        pixel_strobe120_drive <= '0';
+        pixel_strobe_counter <= pixel_strobe_counter - 1;
+      end if;
       
       if x < frame_width then
         x <= x + 1;
@@ -104,32 +167,48 @@ begin
         end if;
       end if;
 
+      -- LCD HSYNC is expected to be just before start of pixels
+      if x = (frame_width - 200) then
+        lcd_hsync <= '0';
+      end if;
+      if x = (frame_width - 400) then
+        lcd_hsync <= '1';
+      end if;
+      -- HSYNC for VGA follows the settings passed via the generics
       if x = hsync_start then
-        hsync_driver <= hsync_polarity; 
+        hsync_driver <= not hsync_polarity; 
         hsync_uninverted_driver <= '1'; 
       end if;
       if x = hsync_end then
-        hsync_driver <= not hsync_polarity;
+        hsync_driver <= hsync_polarity;
         hsync_uninverted_driver <= '0';
       end if;
+
       if y = ( frame_height - lcd_height ) / 2 then
+        if lcd_inletterbox='0' then
+          report "entering letter box";
+        end if;
         lcd_inletterbox <= '1';
       end if;
       if y = frame_height - (frame_height - lcd_height ) / 2 then
+        if lcd_inletterbox='1' then
+          report "leaving letter box";
+        end if;
         lcd_inletterbox <= '0';
       end if;
-      if x = pipeline_delay and lcd_inletterbox = '1' then
+      report "preparing for lcd_inframe check at (" & integer'image(x) & "," & integer'image(y) & ").";
+      if x = (1 + pipeline_delay) and lcd_inletterbox = '1' then
         lcd_inframe <= '1';
+        report "lcd_inframe=1 at x = " & integer'image(x);
       end if;
-      if x = 0 and lcd_inletterbox = '1' then
-        lcd_vsync <= '0';
-      end if;
-      if x = 0 and lcd_inletterbox = '0' then
+      if x = (1 + pipeline_delay + display_width) then
+        report "lcd_inframe=0 at x = " & integer'image(x);
+        lcd_vsync <= lcd_inletterbox;
         lcd_inframe <= '0';
-        lcd_vsync <= '1';
       end if;
-      if x = 0 and y < display_height then
+      if x = pipeline_delay and y < display_height then
         inframe <= '1';
+        inframe_internal <= '1';
       end if;
       if y = vsync_start then
         vsync_driver <= vsync_polarity;
@@ -147,7 +226,7 @@ begin
       end if;
       
       -- Draw white edge on frame
-      if x = 0 and y < display_height then
+      if x = pipeline_delay and y < display_height then
         inframe <= '1';
         inframe_internal <= '1';
         red_o <= x"FF";
@@ -163,7 +242,6 @@ begin
       end if;
       -- Black outside of frame
       if x = display_width + pipeline_delay then
-        lcd_inframe <= '0';
         inframe <= '0';
         inframe_internal <= '0';
         red_o <= x"00";

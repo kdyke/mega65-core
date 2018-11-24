@@ -104,6 +104,7 @@ entity vicii_sprites is
     signal pixel_out : out unsigned(7 downto 0);
     signal alpha_out : out unsigned(7 downto 0);
     signal sprite_colour_out : out unsigned(7 downto 0);
+    signal sprite_number_out : out integer range 0 to 7;
     signal is_sprite_out : out std_logic;
     signal sprite_fg_map_final : out std_logic_vector(7 downto 0);
     signal sprite_map_final : out std_logic_vector(7 downto 0);
@@ -276,6 +277,15 @@ architecture behavioural of vicii_sprites is
   signal is_sprite_1_0 : std_logic;
   signal is_sprite_0_bp : std_logic;
   signal is_sprite_final : std_logic;
+  signal sprite_number_7_6 : integer range 0 to 7;
+  signal sprite_number_6_5 : integer range 0 to 7;
+  signal sprite_number_5_4 : integer range 0 to 7;
+  signal sprite_number_4_3 : integer range 0 to 7;
+  signal sprite_number_3_2 : integer range 0 to 7;
+  signal sprite_number_2_1 : integer range 0 to 7;
+  signal sprite_number_1_0 : integer range 0 to 7;
+  signal sprite_number_0_bp : integer range 0 to 7;
+  signal sprite_number_final : integer range 0 to 7;  
   signal sprite_colour_7_6 : unsigned(7 downto 0);
   signal sprite_colour_6_5 : unsigned(7 downto 0);
   signal sprite_colour_5_4 : unsigned(7 downto 0);
@@ -349,6 +359,7 @@ begin
              pixel_in => pixel_in,
              alpha_in => alpha_in,
              is_sprite_in => '0',
+             sprite_number_in => 0,
              sprite_colour_in => x"00",
              is_foreground_out => is_foreground_7_6,
              is_background_out => is_background_7_6,
@@ -359,6 +370,7 @@ begin
              pixel_out => pixel_7_6,
              alpha_out => alpha_7_6,
              is_sprite_out => is_sprite_7_6,
+             sprite_number_out => sprite_number_7_6,
              sprite_colour_out => sprite_colour_7_6,
              
              -- Also pass in sprite data
@@ -417,6 +429,7 @@ begin
              pixel_in => pixel_7_6,
              alpha_in => alpha_7_6,
              is_sprite_in => is_sprite_7_6,
+             sprite_number_in => sprite_number_7_6,
              sprite_colour_in => sprite_colour_7_6,
              is_foreground_out => is_foreground_6_5,
              is_background_out => is_background_6_5,
@@ -427,6 +440,7 @@ begin
              pixel_out => pixel_6_5,
              alpha_out => alpha_6_5,
              is_sprite_out => is_sprite_6_5,
+             sprite_number_out => sprite_number_6_5,
              sprite_colour_out => sprite_colour_6_5,
              
              -- Also pass in sprite data
@@ -486,6 +500,7 @@ begin
              pixel_in => pixel_6_5,
              alpha_in => alpha_6_5,
              is_sprite_in => is_sprite_6_5,
+             sprite_number_in => sprite_number_6_5,
              sprite_colour_in => sprite_colour_6_5,
              is_foreground_out => is_foreground_5_4,
              is_background_out => is_background_5_4,
@@ -496,6 +511,7 @@ begin
              pixel_out => pixel_5_4,
              alpha_out => alpha_5_4,
              is_sprite_out => is_sprite_5_4,
+             sprite_number_out => sprite_number_5_4,
              sprite_colour_out => sprite_colour_5_4,
              
              -- Also pass in sprite data
@@ -555,6 +571,7 @@ begin
              pixel_in => pixel_5_4,
              alpha_in => alpha_5_4,
              is_sprite_in => is_sprite_5_4,
+             sprite_number_in => sprite_number_5_4,
              sprite_colour_in => sprite_colour_5_4,
              is_foreground_out => is_foreground_4_3,
              is_background_out => is_background_4_3,
@@ -565,6 +582,7 @@ begin
              pixel_out => pixel_4_3,
              alpha_out => alpha_4_3,
              is_sprite_out => is_sprite_4_3,
+             sprite_number_out => sprite_number_4_3,
              sprite_colour_out => sprite_colour_4_3,
              
              -- Also pass in sprite data
@@ -624,6 +642,7 @@ begin
              pixel_in => pixel_4_3,
              alpha_in => alpha_4_3,
              is_sprite_in => is_sprite_4_3,
+             sprite_number_in => sprite_number_4_3,
              sprite_colour_in => sprite_colour_4_3,
              is_foreground_out => is_foreground_3_2,
              is_background_out => is_background_3_2,
@@ -634,6 +653,7 @@ begin
              pixel_out => pixel_3_2,
              alpha_out => alpha_3_2,
              is_sprite_out => is_sprite_3_2,
+             sprite_number_out => sprite_number_3_2,
              sprite_colour_out => sprite_colour_3_2,
              
              -- Also pass in sprite data
@@ -693,6 +713,7 @@ begin
              pixel_in => pixel_3_2,
              alpha_in => alpha_3_2,
              is_sprite_in => is_sprite_3_2,
+             sprite_number_in => sprite_number_3_2,
              sprite_colour_in => sprite_colour_3_2,
              is_foreground_out => is_foreground_2_1,
              is_background_out => is_background_2_1,
@@ -703,6 +724,7 @@ begin
              pixel_out => pixel_2_1,
              alpha_out => alpha_2_1,
              is_sprite_out => is_sprite_2_1,
+             sprite_number_out => sprite_number_2_1,
              sprite_colour_out => sprite_colour_2_1,
              
              -- Also pass in sprite data
@@ -762,6 +784,7 @@ begin
              pixel_in => pixel_2_1,
              alpha_in => alpha_2_1,
              is_sprite_in => is_sprite_2_1,
+             sprite_number_in => sprite_number_2_1,
              sprite_colour_in => sprite_colour_2_1,
              is_foreground_out => is_foreground_1_0,
              is_background_out => is_background_1_0,
@@ -772,6 +795,7 @@ begin
              pixel_out => pixel_1_0,
              alpha_out => alpha_1_0,
              is_sprite_out => is_sprite_1_0,
+             sprite_number_out => sprite_number_1_0,
              sprite_colour_out => sprite_colour_1_0,
              
              -- Also pass in sprite data
@@ -831,6 +855,7 @@ begin
              pixel_in => pixel_1_0,
              alpha_in => alpha_1_0,
              is_sprite_in => is_sprite_1_0,
+             sprite_number_in => sprite_number_1_0,
              sprite_colour_in => sprite_colour_1_0,
              is_foreground_out => is_foreground_0_bp,
              is_background_out => is_background_0_bp,
@@ -841,6 +866,7 @@ begin
              pixel_out => pixel_0_bp,
              alpha_out => alpha_0_bp,
              is_sprite_out => is_sprite_0_bp,
+             sprite_number_out => sprite_number_0_bp,
              sprite_colour_out => sprite_colour_0_bp,
              
              -- Also pass in sprite data
@@ -914,6 +940,7 @@ begin
              pixel_in => pixel_0_bp,
              alpha_in => alpha_0_bp,
              is_sprite_in => is_sprite_0_bp,
+             sprite_number_in => sprite_number_0_bp,
              sprite_colour_in => sprite_colour_0_bp,
              is_foreground_out => is_foreground_out,
              is_background_out => is_background_out,
@@ -923,6 +950,7 @@ begin
              pixel_out => pixel_final,
              alpha_out => alpha_final,
              is_sprite_out => is_sprite_final,
+             sprite_number_out => sprite_number_final,
              sprite_colour_out => sprite_colour_final,
              
              sprite_fg_map_in => sprite_fg_map_0_bp,
@@ -1017,10 +1045,13 @@ begin
   process(pixelclock) is
   begin
     -- Merge chargen and sprite pixels
+    sprite_number_out <= sprite_number_final;
     is_sprite_out <= is_sprite_final;
     if is_sprite_final = '1' then
       report "VIC-II: SPRITE: Compositing sprite pixel colour $" & to_hstring(sprite_colour_final);
       pixel_out <= sprite_colour_final;
+      -- XXX Do we need to make sure we have the foreground and background
+      -- values set correctly here for the alpha blending?
       alpha_out <= x"ff";
     else
       pixel_out <= pixel_final;

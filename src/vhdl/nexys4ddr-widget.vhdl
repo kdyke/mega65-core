@@ -197,10 +197,10 @@ architecture Behavioral of container is
   
   signal segled_counter : unsigned(31 downto 0) := (others => '0');
 
-  signal slow_access_request : std_logic;
-  signal slow_access_ready : std_logic;
+  signal slow_access_request_toggle : std_logic;
+  signal slow_access_ready_toggle : std_logic;
   signal slow_access_write : std_logic;
-  signal slow_access_address : unsigned(19 downto 0);
+  signal slow_access_address : unsigned(27 downto 0);
   signal slow_access_wdata : unsigned(7 downto 0);
   signal slow_access_rdata : unsigned(7 downto 0);
 
@@ -267,8 +267,6 @@ architecture Behavioral of container is
   signal lcd_display_enable : std_logic;
   signal pal50_select : std_logic;
   
-  signal phi_special : std_logic;
-  
 begin
   
   dotclock1: entity work.dotclock100
@@ -302,8 +300,8 @@ begin
       qspicsn => qspicsn,      
 --      qspisck => '1',
 
-      slow_access_request => slow_access_request,
-      slow_access_ready => slow_access_ready,
+      slow_access_request_toggle => slow_access_request_toggle,
+      slow_access_ready_toggle => slow_access_ready_toggle,
       slow_access_write => slow_access_write,
       slow_access_address => slow_access_address,
       slow_access_wdata => slow_access_wdata,
@@ -474,13 +472,14 @@ begin
       ps2data =>      ps2data,
       ps2clock =>     ps2clk,
 
+      -- Widget board interface
       pmod_clock => jblo(1),
       pmod_start_of_sequence => jblo(2),
       pmod_data_in(1 downto 0) => jblo(4 downto 3),
-      pmod_data_in(3 downto 2) => "00", -- jbhi(8 downto 7),
---      pmod_data_out => jbhi(10 downto 9),
---      pmoda(3 downto 0) => jalo(4 downto 1),
---      pmoda(7 downto 4) => jahi(10 downto 7),
+      pmod_data_in(3 downto 2) => jbhi(8 downto 7),
+      pmod_data_out => jbhi(10 downto 9),
+      pmoda(3 downto 0) => jalo(4 downto 1),
+      pmoda(7 downto 4) => jahi(10 downto 7),
 
       uart_rx => jclo(1),
       uart_tx => jclo(2),
@@ -491,8 +490,8 @@ begin
       buffereduart2_tx => jchi(10),
       buffereduart_ringindicate => jchi(8),
       
-      slow_access_request => slow_access_request,
-      slow_access_ready => slow_access_ready,
+      slow_access_request_toggle => slow_access_request_toggle,
+      slow_access_ready_toggle => slow_access_ready_toggle,
       slow_access_address => slow_access_address,
       slow_access_write => slow_access_write,
       slow_access_wdata => slow_access_wdata,
@@ -510,8 +509,6 @@ begin
       led(15 downto 13) => dummy,
       sw => sw,
       btn => btn,
-      
-      phi_special => phi_special,
 
       UART_TXD => UART_TXD,
       RsRx => RsRx,
@@ -521,15 +518,12 @@ begin
       );
     
   -- Hardware buttons for triggering IRQ & NMI
-  irq <= not btn(2);
+  irq <= not btn(0);
   nmi <= not btn(4);
   restore_key <= not btn(1);
 
-  led(13) <= sw(13);
-  phi_special <= sw(13);
-  
   -- Push correct clock to LCD panel
-  jbhi(7) <= not clock30 when pal50_select='1' else not cpuclock;
+  -- jbhi(7) <= not clock30 when pal50_select='1' else not cpuclock;
   
   process (cpuclock,clock120,clock30,cpuclock,pal50_select)
   begin
@@ -546,12 +540,12 @@ begin
       end if;
 
       -- VGA out on LCD panel
-      jalo <= std_logic_vector(buffer_vgablue(7 downto 4));
-      jahi <= std_logic_vector(buffer_vgared(7 downto 4));
-      jblo <= std_logic_vector(buffer_vgagreen(7 downto 4));
-      jbhi(8) <= lcd_hsync;
-      jbhi(9) <= lcd_vsync;
-      jbhi(10) <= lcd_display_enable;
+--      jalo <= std_logic_vector(buffer_vgablue(7 downto 4));
+--      jahi <= std_logic_vector(buffer_vgared(7 downto 4));
+--      jblo <= std_logic_vector(buffer_vgagreen(7 downto 4));
+--      jbhi(8) <= lcd_hsync;
+--      jbhi(9) <= lcd_vsync;
+--      jbhi(10) <= lcd_display_enable;
     end if;
 
     if rising_edge(cpuclock) then

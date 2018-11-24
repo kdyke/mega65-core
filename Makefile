@@ -1,6 +1,8 @@
 .SUFFIXES: .bin .prg 
 .PRECIOUS:	%.ngd %.ncd %.twx vivado/%.xpr bin/%.bit bin/%.mcs bin/%.M65 bin/%.BIN
 
+#COPT=	-Wall -g -std=gnu99 -fsanitize=address -fno-omit-frame-pointer -fsanitize-address-use-after-scope
+#CC=	clang
 COPT=	-Wall -g -std=gnu99
 CC=	gcc
 OPHIS=	Ophis/bin/ophis
@@ -39,6 +41,7 @@ KICKSTARTSRCS = $(SRCDIR)/kickstart.a65 \
 		$(SRCDIR)/kickstart_virtual_f011.a65 \
 		$(SRCDIR)/kickstart_debug.a65 \
 		$(SRCDIR)/kickstart_ultimax.a65 \
+		$(SRCDIR)/kickstart_debugtests.a65 \
 		$(SRCDIR)/kickstart_mem.a65
 
 # if you want your PRG to appear on "MEGA65.D81", then put your PRG in "./d81-files"
@@ -63,11 +66,12 @@ TOOLS=	$(TOOLDIR)/etherkick/etherkick \
 	$(TOOLDIR)/etherload/etherload \
 	$(TOOLDIR)/hotpatch/hotpatch \
 	$(TOOLDIR)/monitor_load \
+	$(TOOLDIR)/mega65_ftp \
 	$(TOOLDIR)/monitor_save \
 	$(TOOLDIR)/on_screen_keyboard_gen \
 	$(TOOLDIR)/pngprepare/pngprepare
 
-all:	$(SDCARD_DIR)/MEGA65.D81 $(BINDIR)/mega65r1.mcs $(BINDIR)/nexys4.mcs $(BINDIR)/nexys4ddr.mcs $(TOOLDIR)/monitor_load $(TOOLDIR)/monitor_save
+all:	$(SDCARD_DIR)/MEGA65.D81 $(BINDIR)/mega65r1.mcs $(BINDIR)/nexys4.mcs $(BINDIR)/nexys4ddr.mcs $(TOOLDIR)/monitor_load $(TOOLDIR)/mega65_ftp $(TOOLDIR)/monitor_save
 
 $(CBMCONVERT):
 	git submodule init
@@ -134,6 +138,7 @@ C65VHDL=		$(SIDVHDL) \
 
 VICIVVHDL=		$(VHDLSRCDIR)/viciv.vhdl \
 			$(VHDLSRCDIR)/pixel_driver.vhdl \
+			$(VHDLSRCDIR)/pixel_fifo.vhdl \
 			$(VHDLSRCDIR)/frame_generator.vhdl \
 			$(VHDLSRCDIR)/sprite.vhdl \
 			$(VHDLSRCDIR)/vicii_sprites.vhdl \
@@ -190,7 +195,7 @@ OVERLAYVHDL=		$(VHDLSRCDIR)/rain.vhdl \
 			$(VHDLSRCDIR)/termmem.vhdl \
 
 SERMONVHDL=		$(VHDLSRCDIR)/ps2_to_uart.vhdl \
-			$(VHDLSRCDIR)/uart_monitor.vhdl \
+			$(VHDLSRCDIR)/dummy_uart_monitor.vhdl \
 			$(VHDLSRCDIR)/uart_rx.vhdl \
 
 M65VHDL=		$(VHDLSRCDIR)/machine.vhdl \
@@ -434,7 +439,7 @@ $(BINDIR)/KICKUP.M65:	$(KICKSTARTSRCS) $(SRCDIR)/version.a65 $(OPHIS)
 $(SRCDIR)/monitor/monitor_dis.a65: $(SRCDIR)/monitor/gen_dis
 	$(SRCDIR)/monitor/gen_dis >$(SRCDIR)/monitor/monitor_dis.a65
 
-$(BINDIR)/monitor.m65:	$(SRCDIR)/monitor/monitor.a65 $(SRCDIR)/monitor/monitor_dis.a65
+$(BINDIR)/monitor.m65:	$(SRCDIR)/monitor/monitor.a65 $(SRCDIR)/monitor/monitor_dis.a65 $(SRCDIR)/monitor/version.a65
 	$(OPHIS_MON) $< -l monitor.list -m monitor.map
 
 # ============================ done moved, print-warn, clean-target
@@ -459,9 +464,9 @@ $(VHDLSRCDIR)/kickstart.vhdl:	$(TOOLDIR)/makerom/rom_template.vhdl $(BINDIR)/KIC
 $(VHDLSRCDIR)/colourram.vhdl:	$(TOOLDIR)/makerom/colourram_template.vhdl $(BINDIR)/COLOURRAM.BIN $(TOOLDIR)/makerom/makerom
 	$(TOOLDIR)/makerom/makerom $(TOOLDIR)/makerom/colourram_template.vhdl $(BINDIR)/COLOURRAM.BIN $(VHDLSRCDIR)/colourram ram8x32k
 
-$(VHDLSRCDIR)/shadowram.vhdl:	$(TOOLDIR)/mempacker/mempacker_new $(SDCARD_DIR)/BANNER.M65
+$(VHDLSRCDIR)/shadowram.vhdl:	$(TOOLDIR)/mempacker/mempacker_new $(SDCARD_DIR)/BANNER.M65 $(ASSETS)/alphatest.bin Makefile
 	mkdir -p $(SDCARD_DIR)
-	$(TOOLDIR)/mempacker/mempacker_new -n shadowram -s 262143 -f $(VHDLSRCDIR)/shadowram.vhdl $(SDCARD_DIR)/BANNER.M65@3D00
+	$(TOOLDIR)/mempacker/mempacker_new -n shadowram -s 262143 -f $(VHDLSRCDIR)/shadowram.vhdl $(SDCARD_DIR)/BANNER.M65@3D00 $(ASSETS)/alphatest.bin@0400
 
 $(VERILOGSRCDIR)/monitor/monitor_mem.v:	$(TOOLDIR)/mempacker/mempacker_v $(BINDIR)/monitor.m65
 	$(TOOLDIR)/mempacker/mempacker_v -n monitormem -w 12 -s 4096 -f $(VERILOGSRCDIR)/monitor/monitor_mem.v $(BINDIR)/monitor.m65@0000
@@ -548,6 +553,9 @@ monitor_drive:	monitor_drive.c Makefile
 $(TOOLDIR)/monitor_load:	$(TOOLDIR)/monitor_load.c Makefile
 	$(CC) $(COPT) -o $(TOOLDIR)/monitor_load $(TOOLDIR)/monitor_load.c
 
+$(TOOLDIR)/mega65_ftp:	$(TOOLDIR)/mega65_ftp.c Makefile
+	$(CC) $(COPT) -o $(TOOLDIR)/mega65_ftp $(TOOLDIR)/mega65_ftp.c -lreadline
+
 $(TOOLDIR)/monitor_save:	$(TOOLDIR)/monitor_save.c Makefile
 	$(CC) $(COPT) -o $(TOOLDIR)/monitor_save $(TOOLDIR)/monitor_save.c
 
@@ -613,7 +621,7 @@ clean:
 	rm -f $(VERILOGSRCDIR)/monitor/monitor_mem.v
 	rm -f monitor_drive monitor_load read_mem ghdl-frame-gen chargen_debug dis4510 em4510 4510tables
 	rm -f c65-rom-911001.txt c65-911001-rom-annotations.txt c65-dos-context.bin c65-911001-dos-context.bin
-	rm -f thumbnail.prg
+	rm -f thumbnail.prg work-obj93.cf
 	rm -f textmodetest.prg textmodetest.list etherload_done.bin etherload_stub.bin
 	rm -f $(BINDIR)/videoproxy $(BINDIR)/vncserver
 	rm -rf vivado/mega65r1.cache vivado/mega65r1.runs vivado/mega65r1.hw vivado/mega65r1.ip_user_files vivado/mega65r1.srcs vivado/mega65r1.xpr

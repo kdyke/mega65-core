@@ -7,7 +7,7 @@ use work.debugtools.all;
 
 entity iomapper is
   port (Clk : in std_logic;
-        clock200 : in std_logic;
+        clock100 : in std_logic;
         protected_hardware_in : in unsigned(7 downto 0);
         virtualised_hardware_in : in unsigned(7 downto 0);
         -- Enables for the various chip select lines
@@ -183,7 +183,6 @@ entity iomapper is
         pixel_valid : in std_logic;
         pixel_newframe : in std_logic;
         pixel_newraster : in std_logic;
-        pixel_x_640 : in integer;
 
         monitor_pc : in unsigned(15 downto 0);
         monitor_opcode : in unsigned(7 downto 0);        
@@ -526,6 +525,7 @@ begin
   framepacker0: entity work.framepacker port map (
     ioclock => clk,
     pixelclock => pixelclk,
+    ethclock => clock50mhz,
     hypervisor_mode => cpu_hypervisor_mode,
     thumbnail_cs => thumbnail_cs,
 
@@ -869,7 +869,7 @@ begin
 
   ethernet0 : entity work.ethernet port map (
     clock50mhz => clock50mhz,
-    clock200 => clock200,
+    clock100 => clock100,
     clock => clk,
     reset => reset,
     irq => ethernet_irq,
@@ -908,7 +908,6 @@ begin
   
   buffered_uart0 : entity work.buffereduart port map (
     clock50mhz => clock50mhz,
-    clock200 => clock200,
     clock => clk,
     reset => reset,
     irq => uart_irq,

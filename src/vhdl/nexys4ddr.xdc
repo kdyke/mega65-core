@@ -3,9 +3,16 @@
 ## - uncomment the lines corresponding to used pins
 ## - rename the used ports (in each line, after get_ports) according to the top level signal names in the project
 
+# Ignore false paths crossing clock domains in pixel output stage
+
 ## Clock signal
 set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports CLK_IN]
 create_clock -period 10.000 -name sys_clk_pin -waveform {0.000 5.000} -add [get_ports CLK_IN]
+
+set_false_path -from [get_cells led*]
+set_false_path -to [get_cells vga*]
+set_false_path -to [get_cells *jb*]
+
 
 ## Switches
 set_property -dict {PACKAGE_PIN J15 IOSTANDARD LVCMOS33} [get_ports {sw[0]}]
@@ -93,7 +100,7 @@ set_property -dict {PACKAGE_PIN D14 IOSTANDARD LVCMOS33} [get_ports {jblo[1]}]
 set_property -dict {PACKAGE_PIN F16 IOSTANDARD LVCMOS33} [get_ports {jblo[2]}]
 set_property -dict {PACKAGE_PIN G16 IOSTANDARD LVCMOS33} [get_ports {jblo[3]}]
 set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports {jblo[4]}]
-set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports {jbhi[7]}]
+set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33 SLEW=FAST DRIVE=24} [get_ports {jbhi[7]}]
 set_property -dict {PACKAGE_PIN F13 IOSTANDARD LVCMOS33} [get_ports {jbhi[8]}]
 set_property -dict {PACKAGE_PIN G13 IOSTANDARD LVCMOS33} [get_ports {jbhi[9]}]
 set_property -dict {PACKAGE_PIN H16 IOSTANDARD LVCMOS33} [get_ports {jbhi[10]}]
@@ -120,14 +127,6 @@ set_property -dict {PACKAGE_PIN G2 IOSTANDARD LVCMOS33} [get_ports {jdhi[9]}]
 set_property -dict {PACKAGE_PIN F3 IOSTANDARD LVCMOS33} [get_ports {jdhi[10]}]
 
 ##Pmod Header JXADC
-set_property -dict { PACKAGE_PIN A14 IOSTANDARD LVCMOS33 } [get_ports {JXADC[0]}]
-set_property -dict { PACKAGE_PIN A13 IOSTANDARD LVCMOS33 } [get_ports {JXADC[1]}]
-set_property -dict { PACKAGE_PIN A16 IOSTANDARD LVCMOS33 } [get_ports {JXADC[2]}]
-set_property -dict { PACKAGE_PIN A15 IOSTANDARD LVCMOS33 } [get_ports {JXADC[3]}]
-set_property -dict { PACKAGE_PIN B17 IOSTANDARD LVCMOS33 } [get_ports {JXADC[4]}]
-set_property -dict { PACKAGE_PIN B16 IOSTANDARD LVCMOS33 } [get_ports {JXADC[5]}]
-set_property -dict { PACKAGE_PIN A18 IOSTANDARD LVCMOS33 } [get_ports {JXADC[6]}]
-set_property -dict { PACKAGE_PIN B18 IOSTANDARD LVCMOS33 } [get_ports {JXADC[7]}]
 
 ##VGA Connector
 set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports {vgared[0]}]
@@ -217,5 +216,20 @@ set_property -dict {PACKAGE_PIN L13 IOSTANDARD LVCMOS33} [get_ports QspiCSn]
 
 
 
-
-
+#set_false_path -from [get_clocks -of_objects [get_pins dotclock1/mmcm_adv_inst/CLKOUT2]] -to [get_clocks -of_objects [get_pins dotclock1/mmcm_adv_inst/CLKOUT3]]
+#set_false_path -from [get_clocks -of_objects [get_pins dotclock1/mmcm_adv_inst/CLKOUT3]] -to [get_clocks -of_objects [get_pins dotclock1/mmcm_adv_inst/CLKOUT0]]
+set_false_path -from [get_pins {machine0/viciv0/bitplanes_x_start_reg[2]/C}] -to [get_pins machine0/viciv0/vicii_sprites0/bitplanes0/x_in_bitplanes_reg/D]
+set_false_path -from [get_pins {jblo_reg[3]/C}] -to [get_pins {machine0/pmodb_in_buffer_reg[2]/D}]
+set_false_path -from [get_pins {jblo_reg[4]/C}] -to [get_pins {machine0/pmodb_in_buffer_reg[3]/D}]
+set_false_path -from [get_pins machine0/iomapper0/block4b.c65uart0/reg_status3_rx_framing_error_reg/C] -to [get_pins {machine0/cpu0/read_data_copy_reg[3]/D}]
+set_false_path -from [get_pins machine0/iomapper0/block4b.c65uart0/reg_status0_rx_full_reg/C] -to [get_pins {machine0/cpu0/read_data_copy_reg[0]/D}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprite_bitmap_collisions_reg[6]/C}] -to [get_pins {machine0/cpu0/read_data_copy_reg[6]/D}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprite_sprite_collisions_reg[5]/C}] -to [get_pins {machine0/cpu0/read_data_copy_reg[5]/D}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[12]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[13]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[13]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[15]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[14]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[5]}]
+set_false_path -from [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/v_bitplane_y_start_reg[5]/C}] -to [get_pins {machine0/viciv0/vicii_sprites0/bitplanes0/p_0_out/A[10]}]
+set_false_path -through [get_pints {machine0/iomapper0/ethernet0/eth_tx_trigger_reg/C}]

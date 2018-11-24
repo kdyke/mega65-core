@@ -155,9 +155,9 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/charrom.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/frame_generator.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/pixel_driver.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pixel_fifo.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/viciv.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/iomapper.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/gs4510.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/divider32.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/shifter32.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/multiply32.vhdl"]"\
@@ -445,6 +445,10 @@ set file "vhdl/pixel_driver.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
+set file "vhdl/pixel_fifo.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
 set file "vhdl/viciv.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
@@ -458,10 +462,6 @@ set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
 set file "vhdl/iomapper.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-set file "vhdl/gs4510.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 

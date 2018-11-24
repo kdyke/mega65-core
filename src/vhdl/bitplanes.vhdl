@@ -79,6 +79,7 @@ entity bitplanes is
     signal alpha_in : in unsigned(7 downto 0);
     -- and information from the previous sprite
     signal is_sprite_in : in std_logic;
+    signal sprite_number_in : integer range 0 to 7;
     signal sprite_colour_in : in unsigned(7 downto 0);
     signal sprite_map_in : in std_logic_vector(7 downto 0);
     signal sprite_fg_map_in : in std_logic_vector(7 downto 0);
@@ -93,6 +94,7 @@ entity bitplanes is
     signal alpha_out : out unsigned(7 downto 0);
     signal sprite_colour_out : out unsigned(7 downto 0);
     signal is_sprite_out : out std_logic;
+    signal sprite_number_out : out integer range 0 to 7;
     signal sprite_map_out : out std_logic_vector(7 downto 0);
     signal sprite_fg_map_out : out std_logic_vector(7 downto 0)
 
@@ -161,6 +163,7 @@ architecture behavioural of bitplanes is
   signal bitplane_data_offsets_next : bdo;
   signal bitplane_y_card_position : spritedatabytenumber := 0;
   signal bitplane_y_card_number : spritedatabytenumber := 0;
+  signal bitplane_y_card_number_drive : spritedatabytenumber := 0;
   
   signal bitplanedatabuffer_cs : std_logic := '1';
   signal bitplanedatabuffer_write : std_logic := '0';
@@ -255,12 +258,13 @@ begin  -- behavioural
 --        report "bitplane_y_start_drive = " & integer'image(to_integer(signed(std_logic_vector(bitplanes_y_start_drive))));
         bitplane_y_card_position
           <= integer((y_in - (v_bitplane_y_start + to_integer(signed(std_logic_vector(bitplanes_y_start_drive))))) mod 8);
-        bitplane_y_card_number
+        bitplane_y_card_number_drive
           <= integer(((y_in - (v_bitplane_y_start + to_integer(signed(std_logic_vector(bitplanes_y_start_drive))))) / 8));
       else
         bitplane_y_card_position <= integer(y_in mod 8);
         bitplane_y_card_number <= 0;
       end if;
+      bitplane_y_card_number <= bitplane_y_card_number_drive;
       
       -- Copy sprite colission status out
       sprite_map_out <= sprite_map_in;
@@ -500,6 +504,7 @@ begin  -- behavioural
       end if;
       is_sprite_out <= is_sprite_in;
       sprite_colour_out <= sprite_colour_in;
+      sprite_number_out <= sprite_number_in;
     end if;
   end process main;
 

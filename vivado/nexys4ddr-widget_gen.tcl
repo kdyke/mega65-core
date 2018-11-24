@@ -7,7 +7,7 @@ if { [info exists ::origin_dir_loc] } {
 }
 
 # Set the project name
-set project_name "nexysvideo"
+set project_name "nexys4ddr-widget"
 
 # Use project name variable, if specified in the tcl shell
 if { [info exists ::user_project_name] } {
@@ -15,7 +15,7 @@ if { [info exists ::user_project_name] } {
 }
 
 variable script_file
-set script_file "nexysvideo.tcl"
+set script_file "nexys4ddr-widget.tcl"
 
 # Help information for this script
 proc help {} {
@@ -63,7 +63,7 @@ if { $::argc > 0 } {
 }
 
 # Create project
-create_project -force ${project_name} vivado/ -part xc7a200tfbg484-2
+create_project -force ${project_name} vivado/ -part xc7a100tcsg324-1
 
 # Set the directory path for the new project
 set proj_dir [get_property directory [current_project]]
@@ -77,7 +77,7 @@ set_property -name "default_lib" -value "xil_defaultlib" -objects $obj
 set_property -name "dsa.num_compute_units" -value "60" -objects $obj
 set_property -name "ip_cache_permissions" -value "read write" -objects $obj
 set_property -name "ip_output_repo" -value "$proj_dir/${project_name}.cache/ip" -objects $obj
-set_property -name "part" -value "xc7a200tfbg484-2" -objects $obj
+set_property -name "part" -value "xc7a100tcsg324-1" -objects $obj
 set_property -name "sim.ip.auto_export_scripts" -value "1" -objects $obj
 set_property -name "simulator_language" -value "Mixed" -objects $obj
 set_property -name "source_mgmt_mode" -value "DisplayOnly" -objects $obj
@@ -109,8 +109,8 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/ghdl_videobuffer.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x512.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x4096.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/ghdl_ram32x1024_sync.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x4096_sync.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/ghdl_ram32x1024_sync.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/colourram.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/crc.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/bitplanes.vhdl"]"\
@@ -129,6 +129,8 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/i2s_transceiver.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/pcm_clock.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/pcm_transceiver.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/i2c_master.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_bits_to_bytes.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_decoder.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_gaps_to_bits.vhdl"]"\
@@ -156,9 +158,6 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/pixel_fifo.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/viciv.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/iomapper.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/bus_interface.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/bus_arbiter.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/address_resolver.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/divider32.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/shifter32.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/multiply32.vhdl"]"\
@@ -167,13 +166,13 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/expansion_port_controller.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/machine.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/fpgatemp.vhd"]"\
+ "[file normalize "$origin_dir/src/vhdl/ddrwrapper.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/nexys4ddr-widget.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/rain.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/visual_keyboard.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/oskmem.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ps2_to_uart.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/uart_charrom.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/ddrwrapper.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/nexysvideo.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/keyboard_complex.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/virtual_to_matrix.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/keyboard_to_matrix.vhdl"]"\
@@ -183,35 +182,18 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/termmem.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/lfsr16.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ram32x1024.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/i2c_master.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/pdm_to_pcm.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/kb_matrix_ram.vhdl"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_inc.vh"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_alu.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_mux.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_reg.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_timing.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_top.v"]"\
- "[file normalize "$origin_dir/src/verilog/6502/6502_ucode.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor/monitor_top.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor/monitor_mem.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor/monitor_ctrl.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor/monitor_bus.v"]"\
- "[file normalize "$origin_dir/src/verilog/monitor/asym_ram_sdp.v"]"\
- "[file normalize "$origin_dir/src/verilog/dmagic/dmagic.v"]"\
- "[file normalize "$origin_dir/src/verilog/sys/speed_ctl.v"]"\
- "[file normalize "$origin_dir/src/verilog/sys/cpu_port.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_inc.vh"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_core.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_alu.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_mux.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_reg.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_timing.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/65ce02_ucode.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/4510_top.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/4510_mapper.v"]"\
- "[file normalize "$origin_dir/src/verilog/4510/4510_hyper.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_alu.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_mux.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_reg.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_timing.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_top.v"]"\
+ "[file normalize "$origin_dir/src/verilog/6502_ucode.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor_top.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor_mem.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor_ctrl.v"]"\
+ "[file normalize "$origin_dir/src/verilog/monitor_bus.v"]"\
+ "[file normalize "$origin_dir/src/verilog/asym_ram_sdp.v"]"\
 ]
 set imported_files [add_files -fileset sources_1 $files]
 
@@ -483,18 +465,6 @@ set file "vhdl/iomapper.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/bus_interface.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-set file "vhdl/bus_arbiter.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-set file "vhdl/address_resolver.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
 set file "vhdl/divider32.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
@@ -527,7 +497,7 @@ set file "ipcore_dir/dotclock100.vhd"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/nexysvideo.vhdl"
+set file "vhdl/nexys4ddr-widget.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
@@ -575,113 +545,51 @@ set file "vhdl/ram32x1024.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/pdm_to_pcm.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
 set file "vhdl/kb_matrix_ram.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "verilog/6502/6502_inc.vh"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog Header" -objects $file_obj
-set_property is_global_include false -objects $file_obj
-
-set file "verilog/6502/6502_alu.v"
+set file "verilog/6502_alu.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502/6502_mux.v"
+set file "verilog/6502_mux.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502/6502_reg.v"
+set file "verilog/6502_reg.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502/6502_timing.v"
+set file "verilog/6502_timing.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502/6502_top.v"
+set file "verilog/6502_top.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/6502/6502_ucode.v"
+set file "verilog/6502_ucode.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor/monitor_top.v"
+set file "verilog/monitor_top.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor/monitor_mem.v"
+set file "verilog/monitor_mem.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor/monitor_ctrl.v"
+set file "verilog/monitor_ctrl.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor/monitor_bus.v"
+set file "verilog/monitor_bus.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/monitor/asym_ram_sdp.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/dmagic/dmagic.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/sys/speed_ctl.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/sys/cpu_port.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_core.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_inc.vh"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog Header" -objects $file_obj
-set_property is_global_include false -objects $file_obj
-
-set file "verilog/4510/65ce02_alu.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_mux.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_reg.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_timing.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/65ce02_ucode.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/4510_top.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/4510_mapper.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
-set file "verilog/4510/4510_hyper.v"
+set file "verilog/asym_ram_sdp.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
@@ -698,9 +606,9 @@ if {[string equal [get_filesets -quiet constrs_1] ""]} {
 set obj [get_filesets constrs_1]
 
 # Add/Import constrs file and set constrs file properties
-set file "[file normalize "$origin_dir/src/vhdl/nexysvideo.xdc"]"
+set file "[file normalize "$origin_dir/src/vhdl/nexys4ddr-widget.xdc"]"
 set file_imported [add_files -fileset constrs_1 $file]
-set file "vhdl/nexysvideo.xdc"
+set file "vhdl/nexys4ddr-widget.xdc"
 set file_obj [get_files -of_objects [get_filesets constrs_1] [list "*$file"]]
 set_property -name "file_type" -value "XDC" -objects $file_obj
 
@@ -722,7 +630,7 @@ set_property -name "top" -value "unknown" -objects $obj
 
 # Create 'synth_1' run (if not found)
 if {[string equal [get_runs -quiet synth_1] ""]} {
-    create_run -name synth_1 -part xc7a200tfbg484-2 -flow {Vivado Synthesis 2017} -strategy "Vivado Synthesis Defaults" -report_strategy {No Reports} -constrset constrs_1
+    create_run -name synth_1 -part xc7a100tcsg324-1 -flow {Vivado Synthesis 2017} -strategy "Vivado Synthesis Defaults" -report_strategy {No Reports} -constrset constrs_1
 } else {
   set_property strategy "Vivado Synthesis Defaults" [get_runs synth_1]
   set_property flow "Vivado Synthesis 2017" [get_runs synth_1]
@@ -741,17 +649,15 @@ if { $obj != "" } {
 }
 set obj [get_runs synth_1]
 set_property -name "needs_refresh" -value "1" -objects $obj
-set_property -name "part" -value "xc7a200tfbg484-2" -objects $obj
+set_property -name "part" -value "xc7a100tcsg324-1" -objects $obj
 set_property -name "strategy" -value "Vivado Synthesis Defaults" -objects $obj
-#set_property -name "steps.synth_design.args.gated_clock_conversion" -value "auto" -objects $obj
-#set_property -name "steps.synth_design.args.retiming" -value "1" -objects $obj
 
 # set the current synth run
 current_run -synthesis [get_runs synth_1]
 
 # Create 'impl_1' run (if not found)
 if {[string equal [get_runs -quiet impl_1] ""]} {
-    create_run -name impl_1 -part xc7a200tfbg484-2 -flow {Vivado Implementation 2017} -strategy "Vivado Implementation Defaults" -report_strategy {No Reports} -constrset constrs_1 -parent_run synth_1
+    create_run -name impl_1 -part xc7a100tcsg324-1 -flow {Vivado Implementation 2017} -strategy "Vivado Implementation Defaults" -report_strategy {No Reports} -constrset constrs_1 -parent_run synth_1
 } else {
   set_property strategy "Vivado Implementation Defaults" [get_runs impl_1]
   set_property flow "Vivado Implementation 2017" [get_runs impl_1]
@@ -902,8 +808,9 @@ if { [ string equal [get_report_configs -of_objects [get_runs impl_1] impl_1_rou
 }
 set obj [get_report_configs -of_objects [get_runs impl_1] impl_1_route_report_timing_summary_0]
 if { $obj != "" } {
-
+set_property -name "is_enabled" -value "1" -objects $obj
 }
+
 # Create 'impl_1_route_report_incremental_reuse_0' report (if not found)
 if { [ string equal [get_report_configs -of_objects [get_runs impl_1] impl_1_route_report_incremental_reuse_0] "" ] } {
   create_report_config -report_name impl_1_route_report_incremental_reuse_0 -report_type report_incremental_reuse:1.0 -steps route_design -runs impl_1
@@ -930,7 +837,7 @@ if { $obj != "" } {
 }
 set obj [get_runs impl_1]
 set_property -name "needs_refresh" -value "1" -objects $obj
-set_property -name "part" -value "xc7a200tfbg484-2" -objects $obj
+set_property -name "part" -value "xc7a100tcsg324-1" -objects $obj
 set_property -name "strategy" -value "Vivado Implementation Defaults" -objects $obj
 set_property -name "steps.write_bitstream.args.readback_file" -value "0" -objects $obj
 set_property -name "steps.write_bitstream.args.verbose" -value "0" -objects $obj

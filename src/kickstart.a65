@@ -86,8 +86,8 @@ trap_entry_points:
 	nop                             ; refer: kickstart_mem.a65
 	jmp syspart_trap		; Trap #$02
 	nop                             ; refer: kickstart_syspart.a65
-	jmp nosuchtrap
-	nop
+	jmp serialwrite			; Trap #$03
+	nop 				; refer serialwrite in this file
 	jmp nosuchtrap
 	nop
 	jmp nosuchtrap
@@ -555,8 +555,8 @@ reset_machine_state:
 		ora #$40
 		sta $d031
 		; 2. MEGA65 48MHz enable (requires C65 or C128 fast mode to truly enable, hence the above)
-		lda #$40
-		tsb $d054
+		lda #$c5
+		sta $d054
 
 		; sprites off, and normal mode
 		lda #$00
@@ -642,116 +642,10 @@ reset_entry:
 		sei
 		lda #$bf	; set hypervisor zero page
 		tab
-		
+
+		.include "kickstart_debugtests.a65"
+
 		jsr audiomix_setup
-
-.macro	buffereduarttest
-		; 115200 bps for both
-		LDA	#$b2
-		STA	$D0E6
-		STA	$D0EE
-		LDA	#$01
-		STA	$D0EF
-		STA	$D0E7
-		; Hook the two UARTs together
-		LDA    #$11
-		STA	$D0E2
-		STA	$D0EA
-		; Write a bunch of bytes
-		LDA	#$11
-@ll:		STA	$D0E8
-		CLC
-		ADC	#$11
-		CMP	#$10
-		BNE	@ll
-
-		LDA	#$00
-		TAX
-		TAY
-		TAZ
-		; See if they get read correctly
-@ll2:		LDX	$D0E1
-		LDA	$D0E0
-		JMP	@ll2
-.macend		
-;		.invoke buffereduarttest
-
-.macro sdtest
-		; Reset SD card
-		lda #$00
-		sta sd_ctrl
-		lda #$01
-		sta sd_ctrl
-
-
-		; map sector buffer
-		lda #$81
-		sta sd_ctrl
-		; put some data in sector buffer
-		ldx #$01
-		stx $de00
-		inx
-		stx $de01
-		inx
-		stx $de02
-		inx
-		stx $de03
-		; Issue write block command
-		lda #$03
-		sta sd_ctrl
-foo:		jmp foo
-.macend
-;		.invoke sdtest
-.macro f011test
-		; use real floppy drive
-		lda #$01
-		sta sd_fdc_select
-
-		; 10x MFM speed for simulation data
-		lda #$0a
-		sta fdc_mfm_speed
-
-		lda #$68 ; floppy motor + LED on, head side 1
-		sta $d080
-
-		; Request sector T39,S1,H1
-		lda #0
-		sta $d084
-		lda #1
-		sta $d085
-		sta $d086
-
-		lda $d087 ; clear DRQ flag
-		; reset buffer pointers
-		lda #$01
-		sta $d081
-
-		; Test sector buffer access
-		lda #$11
-		sta $d087
-		lda #$22
-		sta $d087
-		lda #$01
-		sta $d081
-		lda $d087
-		lda $d087
-
-		; Issue read request
-		lda #$40
-		sta $d081
-
-bytewait:
-		lda $d082
-		and #$20
-		bne bytewait
-
-		; read next byte
-		lda $d087
-
-		; get next byte
-		jmp bytewait
-.macend
-;		.invoke f011test
 
 		jsr reset_machine_state
 
@@ -792,13 +686,6 @@ bytewait:
 ;	========================
 
 normalboot:
-
-	; check for ALT key to jump to utility menu
-	lda buckykey_status
-	and #$10
-	bne utility_menu
-
-nokey1:
 
 	jsr dump_disk_count	; debugging to Checkpoint
 	jsr dumpcurrentfd	; debugging to Checkpoint
@@ -1054,7 +941,8 @@ waitkickdmabusy:
 		; copy complete, so mark ourselves upgraded, and jump into hypervisor
 		; as though we were just reset.
 
-		; BG: here we should store non-zero, not ZERO ?
+		; (it doesn't matter what gets written to this register, it is just the fact that it has been
+		; written to, that sets the flag).
 		;
 		sta hypervisor_kickedup_flag	; mark ourselves as having kicked up, (00=virgin, else already-kicked)
 		jmp $8100
@@ -1429,6 +1317,7 @@ loaddiskmenu:
 	jsr dumpcurrentfd	; debugging to Checkpoint
 
 	; check for keyboard input to jump to utility menu
+	jsr utility_menu_check
 	jsr scankeyboard
 	bcs nokey4
 	cmp #$20
@@ -1707,10 +1596,10 @@ resetdisplay:
 		sta $D020	; border
 		sta $D021	; background
 
-		; Enable alpha blending and horizontal blending to smooth display
-		; slightly
-		lda #$28  ; XXX alpha blending has problems still
-		sta $D054	;VIC-IV Control Register C
+		; Start in 60Hz mode, since most monitors support it
+		; (Also required to make sure matrix mode pixels aren't ragged on first boot).
+		lda #$80
+		sta $d06f
 
 		; We use VIC-II style registers as this resets video frame in
 		; least instructions, and 40 columns is fine for us.
@@ -1733,8 +1622,8 @@ resetdisplay:
 		; Now switch to 16-bit text mode so that we can use proportional
 		; characters and full-colour characters for chars >$FF for the logo
 		;
-		lda #$05	; 0000 0101
-		tsb $d054	; VIC-IV Control Register C
+		lda #$c5	
+		lda $d054	; VIC-IV Control Register C
 
 		; and 80 bytes (40 16-bit characters) per row.
 		;
@@ -2216,9 +2105,7 @@ l41:		lda buckykey_status
 
 l41a:
 		; check for ALT key to jump to utility menu
-		lda buckykey_status
-		and #$10
-		bne utility_menu
+		jsr utility_menu_check
 
 		; and otherwise wait until CTRL is released
 		lda buckykey_status
@@ -2245,9 +2132,9 @@ g61:		sta $0800,x
 		inx
 		bne g61		
 
-		; reset video mode to normal (but with PAL + compositing enabled)
+		; reset video mode to normal
 		; and return CPU to slow speed for exit
-		lda #$28    ; XXX no compositing for now, as it still has problems
+		lda #$00
 		sta $d054
 
 		lda #<40
@@ -2323,15 +2210,25 @@ l1:		; Enable VIC-IV / MEGA65 IO
 ;	========================
 		.include "kickstart_keyboard.a65"
 
+utility_menu_check:
+  		lda buckykey_status
+		cmp #$03
+		beq utility_menu
+		and #$10
+		bne utility_menu
+		rts
+
 keyboardread:
 
 ; Check for keyboard activity, and change which ROM we intend to read
 ; based on that, i.e., holding any key down during boot will load MEGA65<that character>.ROM instead of MEGA65.ROM
 
+  	   	 jsr utility_menu_check
+
 		jsr scankeyboard		
 		bcs kr2  ; if an error occured
 		cmp #$20
-		beq utility_menu
+		beq utility_menu		
 		cmp #$30
 		bcc kr2
 		cmp #$39
@@ -2852,6 +2749,13 @@ utillist_rewind:
 
 msg_utilitymenu:
 	.byte "SELECT UTILITY TO LAUNCH",0
+
+serialwrite:
+	; write character to serial port
+	; XXX - Have some kind of permission control on this
+	; XXX - $D67C should not work when matrix mode is enabled at all?
+	sta	hypervisor_write_char_to_serial_monitor	
+	sta	hypervisor_enterexit_trigger
 
 ;	========================
 

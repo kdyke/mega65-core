@@ -1694,7 +1694,8 @@ begin  -- behavioural
                   sd_dowrite <= '0';                  
                   sdio_error <= '0';
                   sdio_fsm_error <= '0';
-                  sd_sector <= (others => '0');
+                  -- Don't reset sector number on reset                
+--                  sd_sector <= (others => '0');
                   sdio_busy <= '0';
 
                 when x"10" =>
@@ -1722,7 +1723,7 @@ begin  -- behavioural
                   -- goes idle. This is to work around a bug we have seen where
                   -- if you don't request a read from the SD card soon enough after
                   -- reset, then no read will ever succeed.
-                  read_on_idle <= '1';
+                  read_on_idle <= '0';
                   
                   -- XXX DEBUG provision for finding out why SD card
                   -- gets jammed.
@@ -2308,7 +2309,7 @@ begin  -- behavioural
           report "Starting to write sector from unified FDC/SD buffer.";
           f011_buffer_cpu_address <= (others => '0');
           sb_cpu_read_request <= '1';
-          f011_buffer_disk_pointer_advance <= '1';
+--          f011_buffer_disk_pointer_advance <= '1';
           -- Abort CPU buffer read if in progess, since we are reading the buffer
           sb_cpu_reading <= '0';
 
@@ -2349,7 +2350,7 @@ begin  -- behavioural
               -- Byte has been accepted, write next one
               sd_state <= WritingSectorAckByte;
 
-              f011_buffer_disk_pointer_advance <= '1';
+--              f011_buffer_disk_pointer_advance <= '1';
               sd_buffer_offset <= sd_buffer_offset + 1;
 
               sd_wrote_byte <= '1';
