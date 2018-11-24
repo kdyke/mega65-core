@@ -1,5 +1,5 @@
 // For when I want to synthesize and keep the full internal hierarchy
-`define EN_SCHEM_KEEP 1
+//`define EN_SCHEM_KEEP 1
 `ifdef EN_SCHEM_KEEP
 `define SCHEM_KEEP_HIER (* keep_hierarchy = "yes" *)
 `else
@@ -106,11 +106,17 @@ reg [7:0] mult48_d[0:3];
 reg [7:0] mult48_e[0:3];
 reg [7:0] mult48_r[0:5];
 
+wire [47:0] mult48_result;
+
+mult18x25 mult18x25(clk, {mult48_d[2][1:0],mult48_d[1],mult48_d[0]},
+                                   {mult48_e[3][0],mult48_e[2],mult48_e[1],mult48_e[0]},
+                                   mult48_result);
+
 always @(*)
 begin
   dmagic_mult_dx = mult48_d[dmagic_io_address_next[1:0]];
-  dmagic_mult_ex = mult48_d[dmagic_io_address_next[1:0]];
-  dmagic_mult_rx = mult48_d[dmagic_io_address_next[2:0]];
+  dmagic_mult_ex = mult48_e[dmagic_io_address_next[1:0]];
+  dmagic_mult_rx = mult48_r[dmagic_io_address_next[2:0]];
 end
   
 always @(posedge clk)
@@ -123,9 +129,12 @@ end
 
 always @(posedge clk)
 begin
-  {mult48_r[5],mult48_r[4],mult48_r[3],mult48_r[2],mult48_r[1],mult48_r[0]} <= 
-      {mult48_e[3][0],mult48_e[2],mult48_e[1],mult48_e[0]} * 
-      {mult48_d[2][1:0],mult48_d[1],mult48_d[0]};
+  mult48_r[5] <= mult48_result[47:40];
+  mult48_r[4] <= mult48_result[39:32];
+  mult48_r[3] <= mult48_result[31:24];
+  mult48_r[2] <= mult48_result[23:16];
+  mult48_r[1] <= mult48_result[15:8];
+  mult48_r[0] <= mult48_result[7:0];
 end      
 
 always @(posedge clk)
@@ -139,63 +148,14 @@ assign dmagic_io_ready = (dmagic_io_ready_ctl|dmagic_io_ready_reg) & dmagic_io_c
 // DMAgic Debugging support
 `DBG reg [15:0] dmagic_serial;
 
-  dmagic_ctrl dmagic_ctrl0(.clk(clk), .reset(reset), .start_job(start_job), .start_cpu_read(start_cpu_read), .start_cpu_write(start_cpu_write),
-                                   .dmagic_bus_ready(dmagic_bus_ready), .dmagic_io_cs(dmagic_io_cs), .dmagic_io_ack(dmagic_io_ack), 
-                                   .dmagic_read_data(dmagic_read_data), 
-                                   .set_job_uses_options(set_job_uses_options), .clear_job_uses_options(clear_job_uses_options),
-                                   .dmagic_dma_req(dmagic_dma_req), .dmagic_cpu_req(dmagic_cpu_req), 
-                                   .dmagic_io_ready(dmagic_io_ready_ctl), .dmagic_ack(dmagic_ack),                                   
-                                   .load_src_addr0(load_src_addr0), .load_src_addr1(load_src_addr1),
-                                   .load_src_addr2(load_src_addr2), .update_src_addr(update_src_addr),
-                                   .load_dst_addr0(load_dst_addr0), .load_dst_addr1(load_dst_addr1), 
-                                   .load_dst_addr2(load_dst_addr2), .update_dst_addr(update_dst_addr),
-                                   .load_wdata_fill(load_wdata_fill), .load_wdata_bus(load_wdata_bus),
-                                   .increment_list_addr(increment_list_addr), .dmagic_memory_access_write_next(dmagic_memory_access_write_next),
-                                   .dmagic_addr_sel_next(dmagic_addr_sel_next), .data_op_read(data_op_read), .dmagic_wdata_sel_read(dmagic_wdata_sel_read),
-                                   .load_dir_cmd(load_dir_cmd), .load_srcdst_opts(load_srcdst_opts), .load_src_opts(load_src_opts),
-                                   .load_dst_opts(load_dst_opts),  .dmagic_busy(dmagic_busy),
-                                   .load_mod0(load_mod0), .load_mod1(load_mod1));
-
-  dmagic_output_reg output_reg(.clk(clk), .dmagic_list_addr(dmagic_list_addr), .support_f01b(support_f01b), 
-                               .dmagic_pio_base_addr(dmagic_pio_base_addr), .dmagic_pio_index(dmagic_pio_index), 
-                               .dmagic_read_data(dmagic_read_data), .dmagic_io_data(dmagic_io_data), .dmagic_busy(dmagic_busy),
-                               .dmagic_mult_dx(dmagic_mult_dx), .dmagic_mult_ex(dmagic_mult_ex), .dmagic_mult_rx(dmagic_mult_rx),                               
-                               .data_op_read(data_op_read), .dmagic_data_op_next(dmagic_data_op_next));
-
-  dmagic_io_decode io_decode(.dmagic_io_cs(dmagic_io_cs), .dmagic_io_ack(dmagic_io_ack), .dmagic_io_ready_reg_next(dmagic_io_ready_reg_next),
-                             .dmagic_io_address_next(dmagic_io_address_next), .dmagic_io_write_next(dmagic_io_write_next), 
-                             .dmagic_busy(dmagic_busy),
-                             .load_list_addr0(load_list_addr0), .load_list_addr1(load_list_addr1), .load_list_addr2(load_list_addr2), .load_status(load_status),
-                             .load_pio_base_addr0(load_pio_base_addr0), .load_pio_base_addr1(load_pio_base_addr1), .load_pio_base_addr2(load_pio_base_addr2), 
-                             .load_pio_index(load_pio_index), .increment_index(increment_index), .load_pio(load_pio), 
-                             .load_mult48_dx(load_mult48_dx), .load_mult48_ex(load_mult48_ex),                             
-                             .clear_job_uses_options(clear_job_uses_options), .set_job_uses_options(set_job_uses_options),
-                             .start_job(start_job), .start_cpu_write(start_cpu_write), .start_cpu_read(start_cpu_read), .dmagic_data_op_next(dmagic_data_op_next));
-                                         
-  dmagic_addr_mux addr_mux(.dmagic_addr_sel_next(dmagic_addr_sel_next),  
-                           .dmagic_src_addr(dmagic_src_addr), .dmagic_src_io(dmagic_src_io),
-                           .dmagic_dst_addr(dmagic_dst_addr), .dmagic_dst_io(dmagic_dst_io),
-                           .dmagic_list_addr_next(dmagic_list_addr_next), .dmagic_pio_addr(dmagic_pio_addr),
-                           .dmagic_memory_access_address_next(dmagic_memory_access_address_next), 
-                           .dmagic_memory_access_io_next(dmagic_memory_access_io_next));
-   
-  dmagic_wdata_reg wdata_reg(.clk(clk), .load_pio(load_pio), .dmagic_io_wdata_next(dmagic_io_wdata_next),
-                                         .load_wdata_fill(load_wdata_fill), .dmagic_src_addr(dmagic_src_addr[7:0]),
-                                         .load_wdata_bus(load_wdata_bus), .dmagic_read_data(dmagic_read_data),
-                                         .dmagic_wdata_next(dmagic_wdata_next));
-                                          
-  dmagic_wdata_mux wdata_mux(.dmagic_wdata_sel_read(dmagic_wdata_sel_read), .dmagic_read_data(dmagic_read_data), .dmagic_wdata_next(dmagic_wdata_next),
-                                                  .dmagic_memory_access_wdata_next(dmagic_memory_access_wdata_next));
-   
-  dmagic_list_addr_reg list_reg(.clk(clk), .load_addr0(load_list_addr0), .load_addr1(load_list_addr1), .load_addr2(load_list_addr2), 
-                                .increment_list_addr(increment_list_addr), .wdata(dmagic_io_wdata_next),
-                                .dmagic_list_addr(dmagic_list_addr), .dmagic_list_addr_next(dmagic_list_addr_next));
-   
-  dmagic_pio_addr_ctrl pio_addr_ctrl(.clk(clk), .load_pio(load_pio), .increment_index(increment_index), 
-                                     .load_pio_base_addr0(load_pio_base_addr0), .load_pio_base_addr1(load_pio_base_addr1), 
-                                     .load_pio_base_addr2(load_pio_base_addr2), .load_pio_index(load_pio_index),
-                                     .dmagic_io_wdata_next(dmagic_io_wdata_next), .dmagic_pio_addr(dmagic_pio_addr), 
-                                     .dmagic_pio_base_addr(dmagic_pio_base_addr), .dmagic_pio_index(dmagic_pio_index));
+  dmagic_ctrl dmagic_ctrl0(.*);
+  dmagic_output_reg output_reg(.*);
+  dmagic_io_decode io_decode(.*);                                         
+  dmagic_addr_mux addr_mux(.*);   
+  dmagic_wdata_reg wdata_reg(.dmagic_fill_data(dmagic_src_addr[7:0]), .*);                                          
+  dmagic_wdata_mux wdata_mux(.*); 
+  dmagic_list_addr_reg list_reg(.*);
+  dmagic_pio_addr_ctrl pio_addr_ctrl(.*);
                              
   dmagic_addr_ctrl src_addr(.clk(clk), .load_addr0(load_src_addr0), .load_addr1(load_src_addr1), .load_addr2(load_src_addr2), .update_addr(update_src_addr), 
                            .load_opts_rdata(load_src_opts), .read_data(dmagic_read_data), .mod_hold(dmagic_read_data[1:0]), .load_mod_hold(load_srcdst_opts),
@@ -384,7 +344,7 @@ begin
       end
       
       // During DMAgic_CPUAccessRead we are driving our output signals with the data we want.  We're waiting
-      // to be told the data is available.  We also hold dmagic_io_ready low since the bus interface will sill be
+      // to be told the data is available.  We also hold dmagic_io_ready low since the bus interface will still be
       // feeding the CPU from FastIO (i.e. us) during this cycle and we don't have the data yet.
     end
     DMAgic_CPUAccessRead: begin
@@ -796,7 +756,7 @@ end
 endmodule
 
 `SCHEM_KEEP_HIER module dmagic_wdata_reg(input clk, input load_pio, input [7:0] dmagic_io_wdata_next,
-                                         input load_wdata_fill, input [7:0] dmagic_src_addr,
+                                         input load_wdata_fill, input [7:0] dmagic_fill_data,
                                          input load_wdata_bus, input [7:0] dmagic_read_data,
                                          output reg [7:0] dmagic_wdata_next);
 
@@ -805,7 +765,7 @@ begin
   if (load_pio)
     dmagic_wdata_next <= dmagic_io_wdata_next;
   else if (load_wdata_fill)
-    dmagic_wdata_next <= dmagic_src_addr[7:0];
+    dmagic_wdata_next <= dmagic_fill_data;
   else if (load_wdata_bus)
     dmagic_wdata_next <= dmagic_read_data;
 end
@@ -827,7 +787,7 @@ end
 
 endmodule
 
-`SCHEM_KEEP_HIER module dmagic_list_addr_reg(input clk, input load_addr0, input load_addr1, input load_addr2, input increment_list_addr, input [7:0] wdata,
+`SCHEM_KEEP_HIER module dmagic_list_addr_reg(input clk, input load_list_addr0, input load_list_addr1, input load_list_addr2, input increment_list_addr, input [7:0] dmagic_io_wdata_next,
                                              output wire [19:0] dmagic_list_addr, output reg [19:0] dmagic_list_addr_next);
 
 always @(*)
@@ -838,8 +798,8 @@ begin
     dmagic_list_addr_next = dmagic_list_addr;
 end
 
-  dmagic_addr_reg addr_reg(.clk(clk), .w(increment_list_addr), .w0(load_addr0), .w1(load_addr1), .w2(load_addr2), 
-                           .addr_in(dmagic_list_addr_next), .data_in(wdata), .out(dmagic_list_addr));
+  dmagic_addr_reg addr_reg(.clk(clk), .w(increment_list_addr), .w0(load_list_addr0), .w1(load_list_addr1), .w2(load_list_addr2), 
+                           .addr_in(dmagic_list_addr_next), .data_in(dmagic_io_wdata_next), .out(dmagic_list_addr));
 
 endmodule
 
@@ -859,6 +819,25 @@ begin
       if (load_count1)
         dmagic_count[15:8] <= read_data;
     end
+end
+
+endmodule
+
+(* use_dsp48 = "yes" *) module mult18x25 (
+ input clk,
+ input signed [17:0] a,
+ input signed [24:0] b,
+ output reg signed [47:0] product
+);
+
+reg [42:0] tmp;
+
+always @(*)
+  tmp = a * b;
+  
+// Sign extend result to 48 bits.
+always @(posedge clk) begin
+  product <= tmp;
 end
 
 endmodule

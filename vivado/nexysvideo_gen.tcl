@@ -199,7 +199,7 @@ set files [list \
  "[file normalize "$origin_dir/src/verilog/monitor/monitor_ctrl.v"]"\
  "[file normalize "$origin_dir/src/verilog/monitor/monitor_bus.v"]"\
  "[file normalize "$origin_dir/src/verilog/monitor/asym_ram_sdp.v"]"\
- "[file normalize "$origin_dir/src/verilog/dmagic/dmagic.v"]"\
+ "[file normalize "$origin_dir/src/verilog/dmagic/dmagic.sv"]"\
  "[file normalize "$origin_dir/src/verilog/sys/speed_ctl.v"]"\
  "[file normalize "$origin_dir/src/verilog/sys/cpu_port.v"]"\
  "[file normalize "$origin_dir/src/verilog/4510/65ce02_inc.vh"]"\
@@ -632,9 +632,9 @@ set file "verilog/monitor/asym_ram_sdp.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
-set file "verilog/dmagic/dmagic.v"
+set file "verilog/dmagic/dmagic.sv"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "file_type" -value "SystemVerilog" -objects $file_obj
 
 set file "verilog/sys/speed_ctl.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
