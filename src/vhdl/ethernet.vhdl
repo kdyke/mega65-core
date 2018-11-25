@@ -640,7 +640,7 @@ begin  -- behavioural
               if (to_unsigned(txbuffer_readaddress,12) >= video_packet_header'length) then
                 dumpram_raddr(10 downto 0) <= std_logic_vector(to_unsigned(txbuffer_readaddress - video_packet_header'length,11));
               else
-                dumpram_raddr(10 downto 0) <= std_logic_vector(to_unsigned(0,12));
+                dumpram_raddr(11 downto 0) <= std_logic_vector(to_unsigned(0,12));
               end if;
             elsif ((eth_tx_viciv='0')
                 and (to_unsigned(txbuffer_readaddress,12) /= eth_tx_size_padded))

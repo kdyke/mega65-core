@@ -92,7 +92,7 @@ Written by
 `DBG wire set_job_uses_options, clear_job_uses_options;
 `DBG wire start_job, start_cpu_write, start_cpu_read;
 `DBG wire dmagic_busy;
-`DBG wire dmagic_io_ready_ctl;
+`DBG wire dmagic_io_ready_ctrl;
 
 reg [7:0] dmagic_mult_dx;
 reg [7:0] dmagic_mult_ex;
@@ -143,7 +143,7 @@ begin
 end
 
 // Don't drive ready unless our CS is also active.
-assign dmagic_io_ready = (dmagic_io_ready_ctl|dmagic_io_ready_reg) & dmagic_io_cs;
+assign dmagic_io_ready = (dmagic_io_ready_ctrl|dmagic_io_ready_reg) & dmagic_io_cs;
 
 // DMAgic Debugging support
 `DBG reg [15:0] dmagic_serial;
@@ -200,7 +200,7 @@ endmodule
                                    input dmagic_bus_ready, input dmagic_io_cs, input dmagic_io_ack, 
                                    input [7:0] dmagic_read_data, 
                                    input set_job_uses_options, input clear_job_uses_options,
-                                   output reg dmagic_dma_req, output reg dmagic_cpu_req, output reg dmagic_io_ready, output reg dmagic_ack,
+                                   output reg dmagic_dma_req, output reg dmagic_cpu_req, output reg dmagic_io_ready_ctrl, output reg dmagic_ack,
                                    output reg load_src_addr0, output reg load_src_addr1, output reg load_src_addr2, output reg update_src_addr,
                                    output reg load_dst_addr0, output reg load_dst_addr1, output reg load_dst_addr2, output reg update_dst_addr,
                                    output reg load_wdata_fill, output reg load_wdata_bus,
@@ -288,7 +288,7 @@ begin
   dmagic_state_next = dmagic_state;
   dmagic_dma_req = 0;
   dmagic_cpu_req = 0;
-  dmagic_io_ready = 0;
+  dmagic_io_ready_ctrl = 0;
   dmagic_ack = 1;
   
   dmagic_addr_sel_next = Addr_Src;
@@ -349,7 +349,7 @@ begin
     end
     DMAgic_CPUAccessRead: begin
       dmagic_addr_sel_next = Addr_PIO;
-      dmagic_io_ready = 0;
+      dmagic_io_ready_ctrl = 0;
       dmagic_cpu_req = 1;
       if (dmagic_bus_ready) begin
         dmagic_cpu_req = 0; // Let CPU have the bus again (it should start driving our own address immediately
@@ -366,7 +366,7 @@ begin
     end
     
     DMAgic_CPUAccessReadWait: begin
-      dmagic_io_ready = 1;
+      dmagic_io_ready_ctrl = 1;
       dmagic_addr_sel_next = Addr_PIO;
       if (dmagic_io_cs)              // Wait for bus arbiter to direct control back to us
         dmagic_state_next = DMAgic_CPUAccessAck;
@@ -374,7 +374,7 @@ begin
     
     DMAgic_CPUAccessWrite: begin
       dmagic_addr_sel_next = Addr_PIO;
-      dmagic_io_ready = 1;  // This is set to 1 to make this act like a posted write.
+      dmagic_io_ready_ctrl = 1;  // This is set to 1 to make this act like a posted write.
       dmagic_cpu_req = 1;
       dmagic_memory_access_write_next = 1;
       if (dmagic_bus_ready) begin
@@ -384,7 +384,7 @@ begin
     end
     
     DMAgic_CPUAccessAck: begin
-      dmagic_io_ready = 1;
+      dmagic_io_ready_ctrl = 1;
       if (dmagic_io_cs==0)  // Wait for CPU to stop talking to us before we go idle so we can't accidentally trigger again.
         dmagic_state_next = DMAgic_Idle;
     end
