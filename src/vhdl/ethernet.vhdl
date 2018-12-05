@@ -156,6 +156,15 @@ architecture behavioural of ethernet is
                           );
   signal eth_state : ethernet_state := Idle;
 
+  type ethernet_output_source is (
+    EtherNone,
+    EtherRxBuffer,
+    EtherRegister
+    );
+
+  -- This controls the output mux state.
+  signal ethernet_fastio_source : ethernet_output_source;
+
   -- MAC address and filtering functions
   signal eth_mac : unsigned(47 downto 0) := x"024753656565";
   signal eth_mac_shift : unsigned(39 downto 0) := (others => '0');
@@ -167,12 +176,14 @@ architecture behavioural of ethernet is
   signal frame_is_for_me : std_logic := '0';
  
   signal fastio_rdata : unsigned(7 downto 0);
+  signal fastio_rdata_ram : unsigned(7 downto 0);
   
   signal rx_keyinput : std_logic := '0';
   signal eth_keycode_toggle_internal : std_logic := '0';
  
   signal last_buffer_moby_toggle : std_logic := '0';
- 
+  signal buffer_moby_toggle_internal : std_logic := '0';
+  
   -- If asserted, collect raw signals for exactly one frame, then do nothing.
   signal debug_rx : std_logic := '0';
  
@@ -331,14 +342,14 @@ begin  -- behavioural
   
   -- FIXME - This should be updated (with some additional output muxing) to use a block RAM. There's
   -- no reason for it to need to be a distributed RAM at this point any more.
-  rxbuffer0: entity work.ram8x4096 port map (
-    clk => clock50mhz,
-    cs => rxbuffer_cs,
-    w => rxbuffer_write,
-    write_address => rxbuffer_writeaddress,
-    wdata => rxbuffer_wdata,
-    address => rxbuffer_readaddress,
-    rdata => fastio_rdata);  
+  rxbuffer0: entity work.ram8x4096_sync_dp port map (
+    clkA => clock50mhz,
+    wea => rxbuffer_write,
+    addressA => rxbuffer_writeaddress,
+    diA => rxbuffer_wdata,
+    clkB => clock,
+    addressB => rxbuffer_readaddress,
+    dob => fastio_rdata_ram);  
 
   txbuffer0: entity work.ram8x4096 port map (
     clk => clock50mhz,
@@ -454,6 +465,9 @@ begin  -- behavioural
     if rising_edge(clock50mhz) then
       eth_txd_phase_drive <= eth_txd_phase;
       
+      -- Resample this in our clock domain.
+      buffer_moby_toggle_internal <= buffer_moby_toggle;
+      
       eth_rxd <= eth_rxd_in;
       eth_rxdv <= eth_rxdv_in;
       
@@ -526,15 +540,15 @@ begin  -- behavioural
             eth_tx_state <= WaitBeforeTX;
             eth_tx_viciv <= '0';
             eth_tx_dump <= '1';
-          elsif (eth_videostream='1') and (buffer_moby_toggle /= last_buffer_moby_toggle) then            
+          elsif (eth_videostream='1') and (buffer_moby_toggle_internal /= last_buffer_moby_toggle) then            
             -- start sending an IPv6 multicast packet containing the compressed
             -- video.
             report "FRAMEPACKER: Sending next packet ("
               & std_logic'image(buffer_moby_toggle) & " vs " &
               std_logic'image(last_buffer_moby_toggle) & ")"
               severity note;
-            last_buffer_moby_toggle <= buffer_moby_toggle;
-            buffer_address <= (not buffer_moby_toggle) & "00000000000";
+            last_buffer_moby_toggle <= buffer_moby_toggle_internal;
+            buffer_address <= (not buffer_moby_toggle_internal) & "00000000000";
             eth_tx_commenced <= '1';
             eth_tx_complete <= '0';
             tx_preamble_count <= 29;
@@ -993,114 +1007,125 @@ begin  -- behavioural
 
   begin
 
-    -- Synchronous output.
+    -- output select mux, based on clocked mux selection below
+    case ethernet_fastio_source is
+      when EtherRxBuffer => ether_rdata <= fastio_rdata_ram;
+      when EtherRegister => ether_rdata <= fastio_rdata;
+      when others => ether_rdata <= (others => '0');
+    end case;
+
+    -- Update output mux
     if rising_edge(clock) then
-      ether_rdata <= fastio_rdata;
-    end if;
-    
-    fastio_rdata <= (others => 'Z');
-    
-    if fastio_read='1' then
---      report "MEMORY: Reading from fastio";
-
-      if ethernet_cs='1' then
-        report "MEMORY: Reading from ethernet register block";
-        case fastio_addr(3 downto 0) is
-          -- @IO:GS $D6E0 Ethernet control
-          when x"0" =>
-            -- @IO:GS $D6E0.7 ETH_MDIO
-            fastio_rdata(7) <= eth_mdio;
-          -- @IO:GS $D6E0.4 Allow remote keyboard input via magic ethernet frames
-            fastio_rdata(4) <= eth_keycode_toggle_internal;
-          -- @IO:GS $D6E0.3 Read ethernet RX data valid
-            fastio_rdata(3) <= eth_rxdv;
-          -- @IO:GS $D6E0.1-2 Read ethernet TX bits currently on the wire
-            fastio_rdata(2 downto 1) <= eth_rxd;
-            fastio_rdata(0) <= eth_reset_int;
-          -- @IO:GS $D6E1 - Ethernet interrupt and control register
-          -- (unused bits = 0 to allow expansion of number of RX buffer slots
-          -- from 2 to something bigger)
-          when x"1" =>
-            -- @IO:GS $D6E1.7 - Enable ethernet RX IRQ
-            fastio_rdata(7) <= eth_irqenable_rx;
-            -- @IO:GS $D6E1.6 - Enable ethernet TX IRQ
-            fastio_rdata(6) <= eth_irqenable_tx;
-            -- @IO:GS $D6E1.5 - Ethernet RX IRQ status
-            fastio_rdata(5) <= eth_irq_rx;
-            -- @IO:GS $D6E1.4 - Ethernet TX IRQ status
-            fastio_rdata(4) <= eth_irq_tx;
-            -- $D6E1.3 - Enable streaming of CPU instruction stream or VIC-IV display on ethernet
-            fastio_rdata(3) <= eth_videostream;
-            -- @IO:GS $D6E1.2 - Indicate which RX buffer was most recently used
-            fastio_rdata(2) <= eth_rx_buffer_last_used_48mhz;            
-            -- @IO:GS $D6E1.1 - Set which RX buffer is memory mapped
-            fastio_rdata(1) <= eth_rx_buffer_moby;
-            -- $D6E1.0 - Clear to hold ethernet adapter in reset.
-            fastio_rdata(0) <= eth_reset_int;
-          -- @IO:GS $D6E2 - TX Packet size (low byte)
-          when x"2" =>
-            fastio_rdata <= eth_tx_size(7 downto 0);
-            -- @IO:GS $D6E3 - TX Packet size (high byte)
-          when x"3" =>
-            fastio_rdata(7 downto 4) <= "0000";
-            fastio_rdata(3 downto 0) <= eth_tx_size(11 downto 8);
-          -- $D6E4 - Status of frame transmitter (DEBUG ONLY)
-          when x"4"  =>
-            fastio_rdata(0) <= eth_tx_trigger;
-            fastio_rdata(1) <= eth_tx_commenced;
-            fastio_rdata(2) <= eth_tx_complete;
-            fastio_rdata(3) <= eth_txen_int;
-            fastio_rdata(5 downto 4) <= eth_txd_int(1 downto 0);
-            fastio_rdata(6) <= eth_tx_viciv;
-            fastio_rdata(7) <= '0';
-          when x"5" =>
-            -- @IO:GS $D6E5.0 - Ethernet disable promiscuous mode
-            fastio_rdata(0) <= eth_mac_filter;
-            -- @IO:GS $D6E5.1 Disable CRC check for received packets
-            fastio_rdata(1) <= eth_disable_crc_check;
-            -- @IO:GS $D6E5.2-3 Ethernet TX clock phase adjust
-            fastio_rdata(3 downto 2) <= eth_txd_phase;
-            -- @IO:GS $D6E5.4 Accept broadcast frames
-            fastio_rdata(4) <= eth_accept_broadcast;
-            -- @IO:GS $D6E5.5 Accept multicast frames
-            fastio_rdata(5) <= eth_accept_multicast;
-            fastio_rdata(7 downto 6) <= (others => '0');
-          when x"6" =>
-            -- @IO:GS $D6E6.0-4 - Ethernet MIIM register number
-            -- @IO:GS $D6E6.7-5 - Ethernet MIIM PHY number (use 0 for Nexys4, 1 for MEGA65 r1 PCBs)
-            fastio_rdata(4 downto 0) <= miim_register;
-            fastio_rdata(7 downto 5) <= miim_phyid(2 downto 0);
-          when x"7" =>
-            -- @IO:GS $D6E7 - Ethernet MIIM register value (LSB)
-            fastio_rdata <= miim_read_value(7 downto 0);
-          when x"8" =>
-            -- @IO:GS $D6E8 - Ethernet MIIM register value (MSB)
-            fastio_rdata <= miim_read_value(15 downto 8);
-          -- @IO:GS $D6E9-E - Ethernet MAC address
-          when x"9" => fastio_rdata <= eth_mac(47 downto 40);
-          when x"A" => fastio_rdata <= eth_mac(39 downto 32);
-          when x"B" => fastio_rdata <= eth_mac(31 downto 24);
-          when x"C" => fastio_rdata <= eth_mac(23 downto 16);
-          when x"D" => fastio_rdata <= eth_mac(15 downto 8);
-          when x"E" => fastio_rdata <= eth_mac(7 downto 0);
-          when x"f" =>
-            -- @ IO:GS $D6EF - DEBUG show current ethernet RX state
-            fastio_rdata <= to_unsigned(ethernet_state'pos(eth_state),8);
-          when others =>
-            fastio_rdata <= (others => 'Z');
-        end case;
-      elsif (fastio_addr(19 downto 8) = x"DE0") then
-        case fastio_addr(7 downto 0) is
-          -- Registers $00 - $3F map to ethernet MDIO registers
-          when others => fastio_rdata <= (others => 'Z');
-        end case;
-      else
-        fastio_rdata <= (others => 'Z');
+      ethernet_fastio_source <= EtherNone;
+      if fastio_read='1' then
+        if ethernet_cs='1' then
+          ethernet_fastio_source <= EtherRegister;
+        elsif rxbuffer_cs='1' then
+          ethernet_fastio_source <= EtherRxBuffer;
+        end if;
       end if;
-    else
-      fastio_rdata <= (others => 'Z');
     end if;
+    
+    if rising_edge(clock) then
+    
+      if fastio_read='1' then
+  --      report "MEMORY: Reading from fastio";
 
+        if ethernet_cs='1' then
+          report "MEMORY: Reading from ethernet register block";
+          case fastio_addr(3 downto 0) is
+            -- @IO:GS $D6E0 Ethernet control
+            when x"0" =>
+              -- @IO:GS $D6E0.7 ETH_MDIO
+              fastio_rdata(7) <= eth_mdio;
+            -- @IO:GS $D6E0.4 Allow remote keyboard input via magic ethernet frames
+              fastio_rdata(4) <= eth_keycode_toggle_internal;
+            -- @IO:GS $D6E0.3 Read ethernet RX data valid
+              fastio_rdata(3) <= eth_rxdv;
+            -- @IO:GS $D6E0.1-2 Read ethernet TX bits currently on the wire
+              fastio_rdata(2 downto 1) <= eth_rxd;
+              fastio_rdata(0) <= eth_reset_int;
+            -- @IO:GS $D6E1 - Ethernet interrupt and control register
+            -- (unused bits = 0 to allow expansion of number of RX buffer slots
+            -- from 2 to something bigger)
+            when x"1" =>
+              -- @IO:GS $D6E1.7 - Enable ethernet RX IRQ
+              fastio_rdata(7) <= eth_irqenable_rx;
+              -- @IO:GS $D6E1.6 - Enable ethernet TX IRQ
+              fastio_rdata(6) <= eth_irqenable_tx;
+              -- @IO:GS $D6E1.5 - Ethernet RX IRQ status
+              fastio_rdata(5) <= eth_irq_rx;
+              -- @IO:GS $D6E1.4 - Ethernet TX IRQ status
+              fastio_rdata(4) <= eth_irq_tx;
+              -- $D6E1.3 - Enable streaming of CPU instruction stream or VIC-IV display on ethernet
+              fastio_rdata(3) <= eth_videostream;
+              -- @IO:GS $D6E1.2 - Indicate which RX buffer was most recently used
+              fastio_rdata(2) <= eth_rx_buffer_last_used_48mhz;            
+              -- @IO:GS $D6E1.1 - Set which RX buffer is memory mapped
+              fastio_rdata(1) <= eth_rx_buffer_moby;
+              -- $D6E1.0 - Clear to hold ethernet adapter in reset.
+              fastio_rdata(0) <= eth_reset_int;
+            -- @IO:GS $D6E2 - TX Packet size (low byte)
+            when x"2" =>
+              fastio_rdata <= eth_tx_size(7 downto 0);
+              -- @IO:GS $D6E3 - TX Packet size (high byte)
+            when x"3" =>
+              fastio_rdata(7 downto 4) <= "0000";
+              fastio_rdata(3 downto 0) <= eth_tx_size(11 downto 8);
+            -- $D6E4 - Status of frame transmitter (DEBUG ONLY)
+            when x"4"  =>
+              fastio_rdata(0) <= eth_tx_trigger;
+              fastio_rdata(1) <= eth_tx_commenced;
+              fastio_rdata(2) <= eth_tx_complete;
+              fastio_rdata(3) <= eth_txen_int;
+              fastio_rdata(5 downto 4) <= eth_txd_int(1 downto 0);
+              fastio_rdata(6) <= eth_tx_viciv;
+              fastio_rdata(7) <= '0';
+            when x"5" =>
+              -- @IO:GS $D6E5.0 - Ethernet disable promiscuous mode
+              fastio_rdata(0) <= eth_mac_filter;
+              -- @IO:GS $D6E5.1 Disable CRC check for received packets
+              fastio_rdata(1) <= eth_disable_crc_check;
+              -- @IO:GS $D6E5.2-3 Ethernet TX clock phase adjust
+              fastio_rdata(3 downto 2) <= eth_txd_phase;
+              -- @IO:GS $D6E5.4 Accept broadcast frames
+              fastio_rdata(4) <= eth_accept_broadcast;
+              -- @IO:GS $D6E5.5 Accept multicast frames
+              fastio_rdata(5) <= eth_accept_multicast;
+              fastio_rdata(7 downto 6) <= (others => '0');
+            when x"6" =>
+              -- @IO:GS $D6E6.0-4 - Ethernet MIIM register number
+              -- @IO:GS $D6E6.7-5 - Ethernet MIIM PHY number (use 0 for Nexys4, 1 for MEGA65 r1 PCBs)
+              fastio_rdata(4 downto 0) <= miim_register;
+              fastio_rdata(7 downto 5) <= miim_phyid(2 downto 0);
+            when x"7" =>
+              -- @IO:GS $D6E7 - Ethernet MIIM register value (LSB)
+              fastio_rdata <= miim_read_value(7 downto 0);
+            when x"8" =>
+              -- @IO:GS $D6E8 - Ethernet MIIM register value (MSB)
+              fastio_rdata <= miim_read_value(15 downto 8);
+            -- @IO:GS $D6E9-E - Ethernet MAC address
+            when x"9" => fastio_rdata <= eth_mac(47 downto 40);
+            when x"A" => fastio_rdata <= eth_mac(39 downto 32);
+            when x"B" => fastio_rdata <= eth_mac(31 downto 24);
+            when x"C" => fastio_rdata <= eth_mac(23 downto 16);
+            when x"D" => fastio_rdata <= eth_mac(15 downto 8);
+            when x"E" => fastio_rdata <= eth_mac(7 downto 0);
+            when x"f" =>
+              -- @ IO:GS $D6EF - DEBUG show current ethernet RX state
+              fastio_rdata <= to_unsigned(ethernet_state'pos(eth_state),8);
+            when others =>
+              fastio_rdata <= (others => '0');
+          end case;
+        elsif (fastio_addr(19 downto 8) = x"DE0") then
+          case fastio_addr(7 downto 0) is
+            -- Registers $00 - $3F map to ethernet MDIO registers
+            when others => fastio_rdata <= (others => '0');
+          end case;
+        end if;
+      end if;
+    end if;
+    
     if rising_edge(clock) then
 
       miim_request <= '0';

@@ -87,7 +87,7 @@ end entity address_resolver;
 --purpose: Convert a 16-bit C64 address to native RAM (or I/O or ROM) address
 architecture Behavioural of address_resolver is
 
---attribute keep_hierarchy of Behavioural : architecture is "yes";
+attribute keep_hierarchy of Behavioural : architecture is "yes";
 
 begin
 
@@ -224,42 +224,73 @@ begin
         map_ext := '1';
       end if;
 
+      -- I have commented this out since it slows down the critical path, and from
+      -- what I can tell, in real Ultimax mode, these regions were not mapped to anything
+      -- at all on a real C64, not even external memory.  It was all considered to be
+      -- unmapped, except for the stuff the VIC needed which wasn't done here really anyway.
       -- Expose remaining address space to cartridge port in ultimax mode
-      if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
-        if (blocknum=1) then
-          -- $1000 - $1FFF Ultimax mode
-          map_ext := '1';
-        end if;
-        if (blocknum=2 ) then
-          -- $2000 - $2FFF Ultimax mode
-          -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
-          -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
-          -- it down. Not yet implemented, and won't be perfectly compatible.
-          map_ext := '1';
-        end if;
-        if ((blocknum=4) or (blocknum=5)) then
-          -- $4000 - $5FFF Ultimax mode
-          map_ext := '1';
-        end if;
-        if ((blocknum=6) or (blocknum=7)) then
-          -- $6000 - $7FFF Ultimax mode
-          map_ext := '1';
-        end if;
-        if (blocknum=12) then
-          -- $C000 - $CFFF Ultimax mode
-          map_ext := '1';
-        end if;
-      end if;
+      --if (gated_exrom='1') and (gated_game='0') and (hypervisor_mode='0') then
+      --  if (blocknum=1) then
+      --    -- $1000 - $1FFF Ultimax mode
+      --    map_ext := '1';
+      --  end if;
+      --  if (blocknum=2 ) then
+      --    -- $2000 - $2FFF Ultimax mode
+      --    -- XXX $3000-$3FFf is a copy of $F000-$FFFF from the cartridge so
+      --    -- that the VIC-II can see it. On the M65, the Hypervisor has to copy
+      --    -- it down. Not yet implemented, and won't be perfectly compatible.
+      --    map_ext := '1';
+      --  end if;
+      --  if ((blocknum=4) or (blocknum=5)) then
+      --    -- $4000 - $5FFF Ultimax mode
+      --    map_ext := '1';
+      --  end if;
+      --  if ((blocknum=6) or (blocknum=7)) then
+      --    -- $6000 - $7FFF Ultimax mode
+      --    map_ext := '1';
+      --  end if;
+      --  if (blocknum=12) then
+      --    -- $C000 - $CFFF Ultimax mode
+      --    map_ext := '1';
+      --  end if;
+      --end if;
 
-      if map_ext = '1' then
-          nonmapped_page(19 downto 16) := x"7";  -- temp hack to pick something out of the way
-      end if;
+      --if map_ext = '1' then
+      --    nonmapped_page(19 downto 16) := x"7";  -- temp hack to pick something out of the way
+      --end if;
 
-      temp_address(19 downto 12) := nonmapped_page;
+      -- C65 DAT
+      -- This seems like it's in the wrong place.   If it's here then DMAgic can't write to 
+      -- the DAT, which I'm guessing actually worked on a real C65.   There's not a great way
+      -- to fix this though without somehow letting the VIC perform the raw memory access itself.
+      -- Since the VIC has it's own separate port to memory that wouldn't be too bad, it's just
+      -- that the I/O access would have to be coordinated with the half of the VIC that's unfortunately
+      -- currently doing everything based on a different clock so it would require a fair bit of
+      -- synchronization and support in the state machine to schedule the reads at a decent time.
+      -- The other reason to fix this would be to get this logic off of the address critical path
+      -- to memory where it's not needed for the vast majority of memory accesses. It'd be much
+      -- better to only have the wait states when actually accessing memory via the DAT/VIC.
+      
+      report "C65 VIC-III DAT: Address before translation is $" & to_hstring(short_address);      
+      if map_io='1' and viciii_iomode(0)='1' and short_address(11 downto 3) & "000" = x"040" then
+        temp_address(19 downto 17) := (others => '0');
+        temp_address(16) := short_address(0); -- odd/even bitplane bank select
+        -- Bit plane address
+        -- XXX only uses the address from upper nybl -- doesn't pick based on
+        -- odd/even line/frame.
+        temp_address(15 downto 13) :=
+          dat_bitplane_addresses(to_integer(short_address(2 downto 0)))(7 downto 5);
+        -- Bitplane offset
+        temp_address(12 downto 0) := dat_offset_drive(12 downto 0);
+        report "C65 VIC-III DAT: Address translated to $" & to_hstring(short_address);
+      else
+        temp_address(19 downto 12) := nonmapped_page;
+      end if;
+      
     end if;
-  
+    
     -- $D030 ROM select lines:
-    if hypervisor_mode = '0' then
+    if map_io='0' and hypervisor_mode = '0' then
       blocknum := to_integer(short_address(15 downto 12));
       if (blocknum=14 or blocknum=15) and (rom_at_e000='1') then
         temp_address(19 downto 16) := x"3";
@@ -273,23 +304,6 @@ begin
       if (blocknum=8 or blocknum=9) and (rom_at_8000='1') then
         temp_address(19 downto 16) := x"3";
       end if;
-    end if;
-
-    -- C65 DAT
-    -- This seems like it's in the wrong place.   If it's here then DMAgic can't write to 
-    -- the DAT, which I'm guessing actually worked on a real C65.
-    report "C65 VIC-III DAT: Address before translation is $" & to_hstring(temp_address);
-    if map_io='1' and viciii_iomode(0)='1' and temp_address(19 downto 3) & "000" = x"0D040" then
-      temp_address(19 downto 17) := (others => '0');
-      temp_address(16) := temp_address(0); -- odd/even bitplane bank select
-      -- Bit plane address
-      -- XXX only uses the address from upper nybl -- doesn't pick based on
-      -- odd/even line/frame.
-      temp_address(15 downto 13) :=
-        dat_bitplane_addresses(to_integer(temp_address(2 downto 0)))(7 downto 5);
-      -- Bitplane offset
-      temp_address(12 downto 0) := dat_offset_drive(12 downto 0);
-      report "C65 VIC-III DAT: Address translated to $" & to_hstring(temp_address);
     end if;
 
     if resolve_address='1' then

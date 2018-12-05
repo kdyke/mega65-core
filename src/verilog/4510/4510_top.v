@@ -22,14 +22,16 @@
 
 `include "65ce02_inc.vh"
 
-//`define EN_MARK_DEBUG
-`ifdef EN_MARK_DEBUG
+`undef MARK_DEBUG
+
+//`define CPU4510_TOP_DEBUG
+`ifdef CPU4510_TOP_DEBUG
 `define MARK_DEBUG (* mark_debug = "true", dont_touch = "true" *)
 `else
 `define MARK_DEBUG
 `endif
 
-`SCHEM_KEEP_HIER module cpu4510(input clk, `MARK_DEBUG input reset, `MARK_DEBUG input nmi, `MARK_DEBUG input irq, `MARK_DEBUG input hyp, `MARK_DEBUG input ready, 
+(* keep_hierarchy = "yes" *)  module cpu4510(input clk, `MARK_DEBUG input reset, `MARK_DEBUG input nmi, `MARK_DEBUG input irq, `MARK_DEBUG input hyp, `MARK_DEBUG input ready, 
                                 `MARK_DEBUG output wire write_out, `MARK_DEBUG output wire write_next, 
                                 `MARK_DEBUG output wire sync, `MARK_DEBUG output wire [19:0] address, `MARK_DEBUG output wire [19:0] address_next, 
                                 `MARK_DEBUG output wire map_next, `MARK_DEBUG output wire map_out,

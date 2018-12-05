@@ -22,14 +22,16 @@
 
 `include "65ce02_inc.vh"
 
-//`define EN_MARK_DEBUG
-`ifdef EN_MARK_DEBUG
+`undef MARK_DEBUG
+
+//`define CPU4510_HYPER_DEBUG
+`ifdef CPU4510_HYPER_DEBUG
 `define MARK_DEBUG (* mark_debug = "true", dont_touch = "true" *)
 `else
 `define MARK_DEBUG
 `endif
 
-`SCHEM_KEEP_HIER module hyper_ctrl(input clk, input reset, `MARK_DEBUG input hyper_cs, 
+(* keep_hierarchy = "yes" *) module hyper_ctrl(input clk, input reset, `MARK_DEBUG input hyper_cs, 
                   `MARK_DEBUG input [7:0] hyper_addr, `MARK_DEBUG input [7:0] hyper_io_data_i, `MARK_DEBUG output reg [7:0] hyper_data_o,
                   `MARK_DEBUG input cpu_write, `MARK_DEBUG input ready, `MARK_DEBUG input hyper_mode, `MARK_DEBUG output reg hyp, 
                   `MARK_DEBUG output reg load_user_reg, `MARK_DEBUG input [7:0] user_mapper_reg,

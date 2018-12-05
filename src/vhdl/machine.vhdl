@@ -42,6 +42,9 @@ use ieee.numeric_std.all;
 use Std.TextIO.all;
 use work.victypes.all;
 
+library unisim;
+use unisim.vcomponents.all;
+
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
 --use IEEE.NUMERIC_STD.ALL;
@@ -329,10 +332,11 @@ architecture Behavioral of machine is
     reset : in std_logic;
     ready : in std_logic;
     cs : in std_logic;
+    cpuport_ready : out std_logic;
     addr : in std_logic_vector(0 downto 0);
     bus_write : in std_logic;
     data_i : in unsigned(7 downto 0);
-    data_o : out unsigned(7 downto 0);
+    data_o : out std_logic_vector(7 downto 0);
     cpuport_ddr : out std_logic_vector(7 downto 0);
     cpuport_value : out std_logic_vector(7 downto 0)    
     );
@@ -593,6 +597,9 @@ architecture Behavioral of machine is
   signal shadow_write_next : std_logic := '0';
   signal shadow_rdata : std_logic_vector(7 downto 0)  := (others => '0');
 
+  signal rom_write_next : std_logic := '0';
+  signal rom_rdata : std_logic_vector(7 downto 0)  := (others => '0');
+
   --signal kickstart_address_next : std_logic_vector(13 downto 0);
   signal kickstart_cs_next : std_logic := '0';
   signal kickstart_rdata : std_logic_vector(7 downto 0) := (others => '0');
@@ -678,7 +685,8 @@ architecture Behavioral of machine is
   signal segled_counter : unsigned(19 downto 0) := (others => '0');
 
   signal phi0 : std_logic := '0';
-
+  signal phi0_internal : std_logic := '0';
+  
   -- Video pipeline plumbing
   signal pixel_strobe_viciv : std_logic := '0';
   signal vgared_viciv : unsigned(7 downto 0);
@@ -833,8 +841,10 @@ architecture Behavioral of machine is
   signal rom_writeprotect : std_logic; -- TEMP
   signal cpuport_ddr : std_logic_vector(7 downto 0); -- FIXME, we don't really need both of these.
   signal cpuport_value : std_logic_vector(7 downto 0);
-  signal cpuport_rdata : unsigned(7 downto 0);
+  signal cpuport_rdata : std_logic_vector(7 downto 0);
   signal cpuport_cs_next : std_logic;
+  signal cpuport_ready : std_logic;
+  signal cpuport_cs : std_logic;
   
   signal cpu_resolved_memory_access_address_next : std_logic_vector(19 downto 0);
   
@@ -1085,6 +1095,17 @@ begin
     addressb  => chipram_address,
     dob       => chipram_data
     );
+
+  rom0 : entity work.shadowram port map (
+    clkA      => cpuclock,
+    addressa  => system_address_next,
+    wea       => rom_write_next,
+    dia       => system_wdata_next,
+    doa       => rom_rdata,
+    clkB      => pixelclock,
+    addressb  => x"00000"
+    --dob       => chipram_data
+    );
   
   kickstartrom : entity work.kickstart port map (
     clk     => cpuclock,
@@ -1143,10 +1164,11 @@ begin
     clk         => cpuclock,
     reset       => cpu_reset,
     ready       => bus_ack,
-    cs          => cpuport_cs_next,
-    addr        => bus_memory_access_address_next(0 downto 0),
-    bus_write   => bus_memory_access_write_next,
-    data_i      => bus_memory_access_wdata_next,
+    cs          => cpuport_cs,
+    cpuport_ready => cpuport_ready,
+    addr        => system_address(0 downto 0),
+    bus_write   => system_write,
+    data_i      => unsigned(system_wdata),
     data_o      => cpuport_rdata,
     cpuport_ddr => cpuport_ddr,
     cpuport_value => cpuport_value
@@ -1325,6 +1347,11 @@ begin
         resolved_address => monitor_memory_access_address_next
       );
 
+      phi0_buf : BUFG
+      port map
+       (O => phi0,
+        I => phi0_internal);
+
       speed_ctrl : m65_speed_ctrl
       port map(
         clk => cpuclock,
@@ -1340,7 +1367,7 @@ begin
         mapper_busy => mapper_busy,
         bus_ready => arb_cpu_ready,
         cpu_ready => spd_cpu_ack,
-        phi0 => phi0 );
+        phi0 => phi0_internal );
       
       dmagic0: dmagic
       port map(
@@ -1468,6 +1495,9 @@ begin
           
           shadow_write_next  => shadow_write_next,          
           shadow_rdata       => shadow_rdata,
+
+          rom_write_next  => rom_write_next,          
+          rom_rdata       => rom_rdata,
       
           kickstart_cs_next  => kickstart_cs_next,
           kickstart_rdata    => kickstart_rdata,
@@ -1477,8 +1507,10 @@ begin
           dmagic_cs          => dmagic_cs,
           dmagic_rdata       => dmagic_rdata,
           
-          cpuport_rdata      => cpuport_rdata,
+          --cpuport_rdata      => cpuport_rdata,
           cpuport_cs_next    => cpuport_cs_next,
+          cpuport_cs         => cpuport_cs,
+          cpuport_ready      => cpuport_ready,
           
           --hypervisor_cs_next => hypervisor_cs_next,
           --hypervisor_rdata   => hypervisor_rdata,
@@ -2050,6 +2082,9 @@ begin
 
       hypervisor_cs => hypervisor_cs,
       hypervisor_rdata   => hypervisor_rdata,
+      
+      cpuport_cs => cpuport_cs,
+      cpuport_rdata => cpuport_rdata,
       
       ps2data => ps2data,
       ps2clock => ps2clock,

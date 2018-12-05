@@ -185,6 +185,7 @@ entity viciv is
     rom_at_8000 : out std_logic
     );
     
+    attribute keep_hierarchy : string;
     attribute mark_debug : string;
     attribute keep : string;
     attribute dont_touch : string;
@@ -197,6 +198,8 @@ entity viciv is
 end viciv;
 
 architecture Behavioral of viciv is
+
+  attribute keep_hierarchy of Behavioral : architecture is "yes";
 
   signal reset_drive : std_logic := '0';
   
@@ -1008,8 +1011,6 @@ architecture Behavioral of viciv is
   signal is_fetch_start : std_logic := '0';
   signal last_was_fetch_start : std_logic := '0';
   
-  --attribute keep_hierarchy of Behavioral : architecture is "yes";
-
 begin
   
   rasterbuffer1: entity work.ram18x2k

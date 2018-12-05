@@ -75,11 +75,11 @@ entity bus_interface is
     shadow_write_next : out std_logic := '0';
     shadow_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
 
+    rom_write_next : out std_logic := '0';
+    rom_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+
     kickstart_cs_next : inout std_logic := '0';
     kickstart_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
-    
-    --hypervisor_cs_next: inout std_logic := '0';
-    --hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
     
     ---------------------------------------------------------------------------
     -- fast IO port (clocked at core clock). 1MB address space
@@ -110,8 +110,10 @@ entity bus_interface is
     dmagic_rdata : in std_logic_vector(7 downto 0);
     dmagic_io_ready : in std_logic;
     
-    cpuport_rdata : in unsigned(7 downto 0) := x"AA";  
+    --cpuport_rdata : in unsigned(7 downto 0) := x"AA";  
     cpuport_cs_next : inout std_logic;
+    cpuport_cs : inout std_logic;
+    cpuport_ready : in std_logic;
     
     ---------------------------------------------------------------------------
     -- Slow device access 4GB address space
@@ -143,9 +145,6 @@ entity bus_interface is
     --
     --attribute mark_debug of kickstart_rdata: signal is "true";
     --attribute mark_debug of kickstart_cs_next: signal is "true";
-    --
-    --attribute mark_debug of hypervisor_rdata: signal is "true";
-    --attribute mark_debug of hypervisor_cs_next: signal is "true";
     --
     --attribute mark_debug of cpuport_rdata: signal is "true";
     --attribute mark_debug of cpuport_cs_next: signal is "true";
@@ -194,7 +193,7 @@ end entity bus_interface;
 
 architecture Behavioural of bus_interface is
   
-  --attribute keep_hierarchy of Behavioural : architecture is "yes";
+  attribute keep_hierarchy of Behavioural : architecture is "yes";
   
   signal reset_drive : std_logic := '0';
 
@@ -214,12 +213,10 @@ architecture Behavioural of bus_interface is
   -- Most of these are really just constants and are here to made things appear
   -- consistent.
   signal shadow_ready : std_logic := '1';
+  signal rom_ready : std_logic := '1';
   signal kickstart_ready : std_logic := '1';
-  --signal hypervisor_ready : std_logic := '1';
   --signal io_ready : std_logic := '0';
 
-  signal cpuport_ready : std_logic := '1';  
-  
   --signal rec_cs_next : std_logic := '0';
   --signal rec_rdata : unsigned(7 downto 0) := x"80";
   --signal rec_ready : std_logic := '1';
@@ -240,16 +237,17 @@ architecture Behavioural of bus_interface is
 
   type bus_device_type is (
     DMAgicNew,              -- 0x00
-    HypervisorRegister,     -- 0x01
-    CPUPort,                -- 0x02
+    --HypervisorRegister,     -- 0x01
+    --CPUPort,                -- 0x02
     Shadow,                 -- 0x03
+    ROM,                    -- 0x03
     FastIO,                 -- 0x04
     ColourRAM,              -- 0x05
     VICIV,                  -- 0x06
     Kickstart,              -- 0x07
-    SlowRAM,                -- 0x08
-    REC,                    -- 0x09
-    Unmapped                -- 0x0A
+    SlowRAM                -- 0x08
+    --REC,                    -- 0x09
+    --Unmapped                -- 0x0A
     );
 
   signal bus_device : bus_device_type;
@@ -280,7 +278,7 @@ begin
 
       wait_states <= (others => '0');
       --bus_ready <= '1';
-      bus_device <= Unmapped;
+      bus_device <= SlowRAM;
       slow_access_ready_internal <= '0';
       
     end procedure reset_bus_state;
@@ -295,24 +293,7 @@ begin
 
       long_address := unsigned(system_address_next);
       
-      report "Reading from long address $" & to_hstring(long_address) severity note;
-      
-      -- Schedule the memory read from the appropriate source.
-
-      report "MEMORY long_address = $" & to_hstring(long_address);
-      -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
-      -- @IO:C64 $0000001 6510/45GS10 CPU port data
-      if cpuport_cs_next='1' then
-        report "Preparing to read from a CPUPort";
-        bus_device <= CPUPort;
-      --elsif hypervisor_cs_next='1' then
-      --  report "Preparing for reading hypervisor register";
-      --  bus_device <= HypervisorRegister;
-      --elsif rec_cs_next='1' then
-      --  report "Preparing to read from CPU memory expansion controller port";
-      --  bus_device <= REC;
-      --  -- @IO:GS $F8000-$FBFFF 16KB Kickstart/Hypervisor ROM
-      elsif kickstart_cs_next='1' then
+      if kickstart_cs_next='1' then
         bus_device <= Kickstart;
       elsif colour_ram_cs_next='1' then
         bus_device <= ColourRAM;
@@ -320,10 +301,10 @@ begin
         bus_device <= VICIV;
       elsif dmagic_cs_next='1' then
         bus_device <= DMAgicNew;
-      elsif io_sel_next='1' then
+      elsif io_sel_next='1' or cpuport_cs_next='1' then
         report "Preparing to read from FastIO";
-        bus_device <= FastIO;        
-      elsif long_address(19)='0' and long_address(18)='0' then
+        bus_device <= FastIO;
+      elsif long_address(19 downto 17)="000" then
         -- Reading from chipram
         -- @ IO:C64 $00002-$0FFFF - 64KB RAM
         -- @ IO:C65 $10000-$1FFFF - 64KB RAM
@@ -341,17 +322,31 @@ begin
         bus_device <= Shadow;
           report "Reading from shadowed chipram address $"
           & to_hstring(long_address(19 downto 0)) severity note;
+        --Also mapped to 7F2 0000 - 7F3 FFFF
+      elsif long_address(19 downto 17)="001" then
+        -- Reading from chipram
+        -- @ IO:C64 $00002-$0FFFF - 64KB RAM
+        -- @ IO:C65 $10000-$1FFFF - 64KB RAM
+        -- @ IO:C65 $20000-$3FFFF - 128KB ROM (can be used as RAM in M65 mode)
+        -- @ IO:C65 $2A000-$2BFFF - 8KB C64 BASIC ROM
+        -- @ IO:C65 $2D000-$2DFFF - 4KB C64 CHARACTER ROM
+        -- @ IO:C65 $2E000-$2FFFF - 8KB C64 KERNAL ROM
+        -- @ IO:C65 $3E000-$3FFFF - 8KB C65 KERNAL ROM
+        -- @ IO:C65 $3C000-$3CFFF - 4KB C65 KERNAL/INTERFACE ROM
+        -- @ IO:C65 $38000-$3BFFF - 8KB C65 BASIC GRAPHICS ROM
+        -- @ IO:C65 $32000-$35FFF - 8KB C65 BASIC ROM
+        -- @ IO:C65 $30000-$31FFF - 16KB C65 DOS ROM
+        -- @ IO:M65 $40000-$5FFFF - 128KB RAM (in place of C65 cartridge support)
+        report "Preparing to read from Shadow";
+        bus_device <= ROM;
+          report "Reading from shadowed chipram address $"
+          & to_hstring(long_address(19 downto 0)) severity note;
                                         --Also mapped to 7F2 0000 - 7F3 FFFF
-      elsif ext_sel_next='1' then
+      else -- ext_sel_next='1' then
         -- @IO:GS $4000000 - $7FFFFFF Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF Slow Device memory (127MB)
         report "Preparing to read from SlowRAM";
         bus_device <= SlowRAM;
-      else
-        -- Don't let unmapped memory jam things up
-        report "hit unmapped memory -- clearing wait_states" severity note;
-        report "Preparing to read from Unmapped";
-        bus_device <= Unmapped;
       end if;
       
 
@@ -394,6 +389,7 @@ begin
           ext_sel <= ext_sel_next;
           vic_cs <= vic_cs_next;
           dmagic_cs <= dmagic_cs_next;
+          cpuport_cs <= cpuport_cs_next;
           
           bus_access(io_sel_next,ext_sel_next);
 
@@ -419,6 +415,7 @@ begin
     
     variable system_address_var : std_logic_vector(19 downto 0);
     variable shadow_write_var : std_logic := '0';
+    variable rom_write_var : std_logic := '0';
     variable io_sel_next_var : std_logic := '0';
     variable ext_sel_next_var : std_logic := '0';
     
@@ -433,6 +430,7 @@ begin
     -- Don't do anything by default...
     kickstart_cs_var := '0';    
     shadow_write_var := '0';
+    rom_write_var := '0';
     kickstart_write_var := '0';
     charrom_write_cs_next <= '0';
     memory_access_write_var := '0';
@@ -449,12 +447,14 @@ begin
       kickstart_cs_var := '0';
     end if;
     
+    
 		if memory_access_write_next='1' then
       
 		  if system_address_var(19 downto 17)="001" then
 		    report "writing to ROM. addr=$" & to_hstring(system_address_var) severity note;
-		    shadow_write_var := not rom_writeprotect;
-  		elsif system_address_var(19 downto 17)="000"then
+		    rom_write_var := not rom_writeprotect;
+      end if;
+      if system_address_var(19 downto 17)="000"then
 		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(system_address_var) severity note;
         -- Writes that don't hit I/O go to shadow memory
         if io_sel_next_var='0' then
@@ -476,6 +476,7 @@ begin
     io_sel_next <= io_sel_next_var;
     ext_sel_next <= ext_sel_next_var;    
     shadow_write_next <= shadow_write_var;
+    rom_write_next <= rom_write_var;
     
     system_address_next <= system_address_var;
     system_write_next <= memory_access_write_next;
@@ -543,16 +544,6 @@ begin
       end if;
     end if;                           -- $DXXX
     
-    --hypervisor_cs_next <= '0';
-    --if io_sel_next='1' and system_address_next(11 downto 6)&"00" = x"64" then
-    --  hypervisor_cs_next <= '1';
-    --end if;
-    --
-    --rec_cs_next <= '0';
-    --if (io_sel_next='1' and system_address_next = x"0d0a0") then
-    --  rec_cs_next <= '1';
-    --end if;
-    
     if bus_ready='1' then
       wait_states_next <= x"00";
     else
@@ -566,13 +557,16 @@ begin
   -- time.  Because the internal FPGA interfaces are in general clocked instead of asynchronous,
   -- the mux will switch one clock cycle after the address has been driven onto the bus and will
   -- be held until the read finishes. The mux also controls where we source the "ready" signal from.
-  process (bus_device, shadow_rdata, shadow_ready, kickstart_rdata, kickstart_ready,
+  process (bus_device, shadow_rdata, shadow_ready, rom_ready, kickstart_rdata, kickstart_ready,
            colour_ram_data, colour_ram_ready, vic_rdata, vic_ready, io_rdata, io_ready,
            slow_access_rdata, slow_access_ready_internal)
   begin
     if(bus_device = Shadow) then
       bus_read_data <= unsigned(shadow_rdata);
       bus_ready <= shadow_ready;
+    elsif(bus_device = ROM) then
+      bus_read_data <= unsigned(rom_rdata);
+      bus_ready <= rom_ready;
     elsif(bus_device = Kickstart) then
       bus_read_data <= unsigned(kickstart_rdata);
       bus_ready <= kickstart_ready;
@@ -585,21 +579,9 @@ begin
     elsif(bus_device = FastIO) then
       bus_read_data <= unsigned(io_rdata);
       bus_ready <= io_ready;
-    elsif bus_device = CPUPort then
-      bus_read_data <= cpuport_rdata;
-      bus_ready <= cpuport_ready;
-    --elsif bus_device=HypervisorRegister then
-    --  bus_read_data <= unsigned(hypervisor_rdata);
-    --  bus_ready <= hypervisor_ready;
     elsif bus_device = DMAgicNew then
       bus_read_data <= unsigned(dmagic_rdata);
       bus_ready <= dmagic_io_ready;
-    --elsif bus_device = REC then
-    --  bus_read_data <= rec_rdata;
-    --  bus_ready <= rec_ready;
-    elsif bus_device = Unmapped then
-      bus_read_data <= x"AA";
-      bus_ready <= '1';
     else
       bus_read_data <= slow_access_rdata;
       bus_ready <= slow_access_ready_internal;

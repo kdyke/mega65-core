@@ -7,7 +7,7 @@
 
 module cpu_port(input clk, input reset, input ready, 
                 `MARK_DEBUG input cs, `MARK_DEBUG input addr, `MARK_DEBUG input bus_write, `MARK_DEBUG input [7:0] data_i, 
-                `MARK_DEBUG output reg [7:0] data_o,
+                `MARK_DEBUG output reg [7:0] data_o, `MARK_DEBUG output reg cpuport_ready,
                 `MARK_DEBUG output reg [7:0] cpuport_ddr, `MARK_DEBUG output reg [7:0] cpuport_value);
 
 reg load_ddr;
@@ -32,6 +32,7 @@ begin
     0: data_o <= cpuport_ddr;
     1: data_o <= cpuport_value;
   endcase
+  cpuport_ready <= cs;
 end
 
 always @(*)

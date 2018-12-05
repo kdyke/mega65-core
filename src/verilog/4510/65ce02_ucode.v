@@ -22,7 +22,7 @@
 
 `include "65ce02_inc.vh"
 
-/* (* keep_hierarchy = "yes" *) */ module `microcode(
+(* keep_hierarchy = "yes" *) module `microcode(
                 input clk,
                 input ready,
                 input [7:0] ir,

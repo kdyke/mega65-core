@@ -212,6 +212,9 @@ entity iomapper is
     hypervisor_cs : inout std_logic := '0';
     hypervisor_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
 
+    cpuport_cs : inout std_logic := '0';
+    cpuport_rdata : in std_logic_vector(7 downto 0)  := (others => '0');
+
     ----------------------------------------------------------------------
     -- Flash RAM for holding config
     ----------------------------------------------------------------------
@@ -390,6 +393,7 @@ architecture behavioral of iomapper is
     IoBufferedUART,
     IoC65UART,
     IoHypervisor,
+    IoCPUPort,
     IoREC
     );
   
@@ -1421,6 +1425,8 @@ begin
           iomapper_output_mux_select <= IoC65UART;
         elsif hypervisor_cs='1' then
           iomapper_output_mux_select <= IoHypervisor;
+        elsif cpuport_cs='1' then
+          iomapper_output_mux_select <= IoCPUPort;
         elsif rec_cs='1' then
           iomapper_output_mux_select <= IoREC;
         else
@@ -1446,6 +1452,7 @@ begin
       when IoBufferedUART => data_o <= buffered_uart_o; io_ready <= fake_io_ready;
       when IoC65UART      => data_o <= c65uart_o; io_ready <= fake_io_ready;
       when IoHypervisor   => data_o <= hypervisor_rdata; io_ready <= fake_io_ready;
+      when IoCPUPort      => data_o <= cpuport_rdata; io_ready <= fake_io_ready;
       when IoREC          => data_o <= x"80"; io_ready <= fake_io_ready;
       when others         => data_o <= x"FF"; io_ready <= fake_io_ready;
     end case;

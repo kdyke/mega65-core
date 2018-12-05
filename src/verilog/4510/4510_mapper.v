@@ -22,14 +22,16 @@
 
 `include "65ce02_inc.vh"
 
-//`define EN_MARK_DEBUG
-`ifdef EN_MARK_DEBUG
+`undef MARK_DEBUG
+
+`define CPU4510_HYPER_DEBUG
+`ifdef CPU4510_MAPPER_DEBUG
 `define MARK_DEBUG (* mark_debug = "true", dont_touch = "true" *)
 `else
 `define MARK_DEBUG
 `endif
 
-`SCHEM_KEEP_HIER module mapper4510(input clk, input reset, input [7:0] data_i, `MARK_DEBUG input [7:0] data_o, input ready, input sync,
+(* keep_hierarchy = "yes" *) module mapper4510(input clk, input reset, input [7:0] data_i, `MARK_DEBUG input [7:0] data_o, input ready, input sync,
                   input [1:0] map_reg_write_sel, input hypervisor_load_user_reg,
                   input ext_irq, input ext_nmi, output cpu_irq, output cpu_nmi,
                   `MARK_DEBUG input hyper_mode, input map_insn, input [1:0] t,
@@ -171,13 +173,8 @@ always @(*) begin
   mapper_address[19:8] = current_offset[19:8] + core_address_next[15:8];
   mapper_address[7:0] = core_address_next[7:0];
   
-  if(ready) begin
-    address_next = mapper_address;
-    map_next = map_en;
-  end else begin
-    address_next = address;
-    map_next = map;
-  end
+  address_next = mapper_address;
+  map_next = map_en;
 end
 
 // Registered output address
