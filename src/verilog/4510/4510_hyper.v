@@ -34,6 +34,7 @@
 (* keep_hierarchy = "yes" *) module hyper_ctrl(input clk, input reset, `MARK_DEBUG input hyper_cs, 
                   `MARK_DEBUG input [7:0] hyper_addr, `MARK_DEBUG input [7:0] hyper_io_data_i, `MARK_DEBUG output reg [7:0] hyper_data_o,
                   `MARK_DEBUG input cpu_write, `MARK_DEBUG input ready, `MARK_DEBUG input hyper_mode, `MARK_DEBUG output reg hyp, 
+                  `MARK_DEBUG input matrix_trap,
                   `MARK_DEBUG output reg load_user_reg, `MARK_DEBUG input [7:0] user_mapper_reg,
                   output reg [7:0] virtualised_hardware, output reg [7:0] protected_hardware, 
                   output wire rom_writeprotect, output wire speed_gate_enable, output wire force_fast,
@@ -327,7 +328,10 @@ begin
   load_uart_out = 0;
   load_hyper_upgraded = 0;
   
-  if(hyper_cs & ready) begin
+  if(matrix_trap) begin
+    hyper_enter_req = 1;
+    hypervisor_trap_port = 7'b1000011; // Trap #67 ($43) = ALT-TAB key press (toggles matrix mode)
+  end else if(hyper_cs & ready) begin
     if(hyper_addr[7:6] == 2'b01) begin
       if(cpu_write) begin
         if(hyper_mode) begin

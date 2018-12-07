@@ -215,4 +215,4 @@ matrix_mode_toggle:
 ;	and #$0f
 ;	sta $D020
 
-	sta hypervisor_enterexit_trigger
+	jmp hypervisor_exit

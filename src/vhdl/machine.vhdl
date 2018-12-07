@@ -354,6 +354,7 @@ architecture Behavioral of machine is
       ready : in std_logic;
       hyper_mode : in std_logic;
       hyp : out std_logic;
+      matrix_trap : in std_logic;
       load_user_reg : out std_logic;
       user_mapper_reg : in std_logic_vector(7 downto 0);
       virtualised_hardware : out unsigned(7 downto 0);
@@ -1185,6 +1186,7 @@ begin
       ready             => bus_ack,
       hyper_mode        => cpu_hypervisor_mode,
       hyp               => hyp,
+      matrix_trap       => matrix_trap,
       load_user_reg     => hypervisor_load_user_reg,
       user_mapper_reg   => map_reg_data,
       virtualised_hardware    => virtualised_hardware_sig,
